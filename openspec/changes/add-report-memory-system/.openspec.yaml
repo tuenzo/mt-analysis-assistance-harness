@@ -1,0 +1,10 @@
+schema: spec-driven
+name: add-report-memory-system
+description: 报告生成（report.md）+ 记忆桥接（MemoryCandidate + approve/reject）
+phase: 5
+status: pending
+artifacts:
+  - proposal
+  - design
+  - tasks
+applyRequires: [add-analysis-pipelines]

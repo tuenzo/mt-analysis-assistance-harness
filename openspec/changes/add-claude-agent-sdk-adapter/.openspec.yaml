@@ -1,0 +1,10 @@
+schema: spec-driven
+name: add-claude-agent-sdk-adapter
+description: Claude Agent SDK 真实 adapter（MCP server、streaming mode、session persistence）
+phase: 6-7
+status: pending
+artifacts:
+  - proposal
+  - design
+  - tasks
+applyRequires: [add-report-memory-system]

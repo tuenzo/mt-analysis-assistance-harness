@@ -1,0 +1,10 @@
+schema: spec-driven
+name: add-analysis-pipelines
+description: panel build / diagnostics / PSM-DID / LocalGap / GPS-Uplift / full_pipeline
+phase: 4
+status: pending
+artifacts:
+  - proposal
+  - design
+  - tasks
+applyRequires: [add-business-analysis-tool-gateway]

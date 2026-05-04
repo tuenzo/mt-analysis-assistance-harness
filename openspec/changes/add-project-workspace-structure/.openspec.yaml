@@ -1,0 +1,9 @@
+schema: spec-driven
+name: add-project-workspace-structure
+description: 建立 workspace 目录结构 + project_manifest.json + context_summary.md + .claude/CLAUDE.md
+phase: 0-1
+status: pending
+artifacts:
+  - proposal
+  - tasks
+applyRequires: []

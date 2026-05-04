@@ -1,0 +1,10 @@
+schema: spec-driven
+name: add-business-analysis-tool-gateway
+description: business_analysis 工具网关（action enum、schema 校验、permission/approval、ToolCall）
+phase: 3
+status: pending
+artifacts:
+  - proposal
+  - design
+  - tasks
+applyRequires: [add-agent-message-runtime]

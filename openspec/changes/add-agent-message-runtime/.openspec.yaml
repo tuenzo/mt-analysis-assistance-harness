@@ -1,0 +1,10 @@
+schema: spec-driven
+name: add-agent-message-runtime
+description: message-first runtime + SSE 事件流 + MockClaudeRuntimeAdapter
+phase: 2
+status: pending
+artifacts:
+  - proposal
+  - design
+  - tasks
+applyRequires: [add-backend-database-models]

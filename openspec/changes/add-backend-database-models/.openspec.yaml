@@ -1,0 +1,10 @@
+schema: spec-driven
+name: add-backend-database-models
+description: 数据库 models（Project、ProjectFile、AnalysisSession 等）+ projects/files API
+phase: 1
+status: pending
+artifacts:
+  - proposal
+  - design
+  - tasks
+applyRequires: [add-project-workspace-structure]
