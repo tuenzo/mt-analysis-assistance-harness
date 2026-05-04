@@ -16,13 +16,13 @@ def send_message(body: AgentMessageRequest):
 
 
 @router.get("/sessions/{session_id}/events")
-async def stream_events(session_id: str):
+async def stream_events(session_id: str, after_turn_id: str | None = None):
     runtime = get_message_runtime()
 
     async def event_generator():
         import asyncio
         while True:
-            events = runtime.get_events(session_id)
+            events = runtime.get_events(session_id, after_turn_id)
             for event in events:
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             if events:

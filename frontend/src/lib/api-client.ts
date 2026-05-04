@@ -133,8 +133,12 @@ class ApiClient {
     return this.request<AgentSession>(`/api/agent/sessions/${sessionId}`)
   }
 
-  getSessionEventsUrl(sessionId: string): string {
-    return `${this.baseUrl}/api/agent/sessions/${sessionId}/events`
+  getSessionEventsUrl(sessionId: string, afterTurnId?: string | null): string {
+    const url = `${this.baseUrl}/api/agent/sessions/${sessionId}/events`
+    if (afterTurnId) {
+      return `${url}?after_turn_id=${encodeURIComponent(afterTurnId)}`
+    }
+    return url
   }
 
   async interruptSession(sessionId: string): Promise<ApiResponse<void>> {

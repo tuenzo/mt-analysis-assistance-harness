@@ -21,6 +21,8 @@ class MessageRuntime:
         config = get_agent_runtime_config()
         self.adapter = get_claude_adapter(config)
         self._event_buffers: dict[str, list[dict]] = {}
+        self._turn_sequences: dict[str, int] = {}  # track which turn events belong to
+        self._last_confirmed_turn: dict[str, int] = {}  # last turn_id confirmed by client
 
     def handle_message(self, project_id: str, session_id: Optional[str], message: str, ui_context: dict | None = None) -> dict:
         db = get_session()
@@ -128,8 +130,29 @@ class MessageRuntime:
         finally:
             db.close()
 
-    def get_events(self, session_id: str) -> list[dict]:
+    def get_events(self, session_id: str, after_turn_id: str | None = None) -> list[dict]:
+        """
+        Get buffered events for session, optionally filtering by turn_id.
+        If after_turn_id is provided, only returns events for turns after that turn.
+        This prevents duplicate events when client polls after reconnecting.
+        Clears returned events from buffer to prevent duplicate delivery.
+        """
         events = self._event_buffers.get(session_id, [])
+
+        if after_turn_id:
+            # Filter to only events from turns after the specified one
+            filtered_events = []
+            remaining_events = []
+            for event in events:
+                event_turn_id = event.get("turn_id", "")
+                if event_turn_id and event_turn_id > after_turn_id:
+                    filtered_events.append(event)
+                else:
+                    remaining_events.append(event)
+            self._event_buffers[session_id] = remaining_events
+            return filtered_events
+
+        # No filter - return all events and clear buffer
         self._event_buffers[session_id] = []
         return events
 

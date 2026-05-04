@@ -24,6 +24,8 @@ export function useAgentEvents(
   const { onEvent, onError, onConnect, onDisconnect } = options
   const [connected, setConnected] = useState(false)
   const [error, setError] = useState<Error | null>(null)
+  const [lastTurnId, setLastTurnId] = useState<string | null>(null)
+  const lastTurnIdRef = useRef<string | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -35,7 +37,7 @@ export function useAgentEvents(
       eventSourceRef.current.close()
     }
 
-    const eventSource = new EventSource(api.getSessionEventsUrl(sessionId))
+    const eventSource = new EventSource(api.getSessionEventsUrl(sessionId, lastTurnIdRef.current))
     eventSourceRef.current = eventSource
 
     eventSource.onopen = () => {
@@ -47,6 +49,9 @@ export function useAgentEvents(
     eventSource.onmessage = (event) => {
       try {
         const data: SSEEvent = JSON.parse(event.data)
+        if (data.turn_id) {
+          setLastTurnId(data.turn_id)
+        }
         onEvent?.(data)
       } catch (e) {
         console.error('Failed to parse SSE event:', e)
@@ -71,6 +76,10 @@ export function useAgentEvents(
       }, 3000)
     }
   }, [sessionId, onEvent, onError, onConnect, onDisconnect])
+
+  useEffect(() => {
+    lastTurnIdRef.current = lastTurnId
+  }, [lastTurnId])
 
   useEffect(() => {
     if (sessionId) {
