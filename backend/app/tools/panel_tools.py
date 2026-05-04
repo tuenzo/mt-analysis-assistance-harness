@@ -1,11 +1,19 @@
+from pathlib import Path
 from app.tools.schemas import ToolResult
+from app.projects.service import ProjectService
+from app.analysis.pipelines.build_panel import build_category_day_panel
 
 
 def panel_build_category_day(project_id: str, payload: dict) -> ToolResult:
-    return ToolResult(
-        ok=True,
-        action="panel.build_category_day",
-        summary="品类×日期面板构建完成（stub）",
-        artifacts=[{"type": "panel", "title": "category_day_panel.parquet", "path": "data/processed/category_day_panel.parquet"}],
-        assistant_hint="面板已生成，可以开始诊断分析。"
-    )
+    service = ProjectService()
+    project = service.get_project(project_id)
+    if not project:
+        return ToolResult(
+            ok=False,
+            action="panel.build_category_day",
+            summary="",
+            error={"code": "NOT_FOUND", "message": "Project not found"},
+        )
+
+    workspace_path = Path(project.workspace_path)
+    return build_category_day_panel(project_id, str(workspace_path))

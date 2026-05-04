@@ -1,6 +1,7 @@
 from pathlib import Path
 from app.tools.schemas import ToolResult
 from app.projects.service import ProjectService
+from app.analysis.pipelines.build_panel import validate_files
 
 
 def data_ingest(project_id: str, payload: dict) -> ToolResult:
@@ -13,33 +14,31 @@ def data_validate(project_id: str, payload: dict) -> ToolResult:
     if not project:
         return ToolResult(ok=False, action="data.validate", summary="", error={"code": "NOT_FOUND", "message": "Project not found"})
 
-    files = service.list_files(project_id)
-    missing = []
-    issues = []
-
-    required_roles = ["order_info", "exposure_info", "activity_timeline"]
-    current_roles = {f.role for f in files}
-
-    for role in required_roles:
-        if role not in current_roles:
-            missing.append(role)
-
-    if missing:
-        issues.append(f"缺少文件类型: {', '.join(missing)}")
-
     workspace_path = Path(project.workspace_path)
-    for f in files:
-        fpath = workspace_path / f.current_path
-        if not fpath.exists():
-            issues.append(f"文件不存在: {f.original_name}")
+    val_result = validate_files(workspace_path)
 
-    ok = len(missing) == 0 and len(issues) == 0
+    issues = val_result.issues.copy()
+    warnings = val_result.warnings.copy()
+    file_info = val_result.file_info
+
+    ok = val_result.ok
+    summary = "数据校验通过" if ok else f"发现 {len(issues)} 个问题"
+
+    artifacts = [{"type": "validation_report", "title": "数据质量报告", "issues": issues, "warnings": warnings}]
+    for role, info in file_info.items():
+        artifacts.append({
+            "type": "file_info",
+            "role": role,
+            "rows": info.get("rows", 0),
+            "columns": info.get("columns", []),
+        })
+
     return ToolResult(
         ok=ok,
         action="data.validate",
-        summary="数据校验完成" if ok else f"发现 {len(issues)} 个问题",
-        artifacts=[{"type": "validation_report", "title": "数据质量报告", "issues": issues, "missing": missing}],
-        assistant_hint="如果有问题，请上传缺失文件。" if not ok else "数据校验通过。"
+        summary=summary,
+        artifacts=artifacts,
+        assistant_hint="如果有问题，请上传缺失文件或修正数据。" if not ok else "数据校验通过，可以继续分析。"
     )
 
 
