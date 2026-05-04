@@ -2,7 +2,7 @@
 
 ### Phase 1: Action Enum & Schemas
 
-- [ ] **T1.1** — 创建 `backend/app/tools/schemas.py`
+- [x] **T1.1** — 创建 `backend/app/tools/schemas.py`
   ```python
   class BusinessAnalysisAction(str, Enum):
       PROJECT_GET_STATE = "project.get_state"
@@ -22,11 +22,11 @@
       REPORT_GENERATE = "report.generate"
       MEMORY_PROPOSE_UPDATE = "memory.propose_update"
   ```
-- [ ] **T1.2** — 定义每种 action 的 payload schema（如 `data.validate` 需要 `{}`，`analysis.run_localgap` 可能需要 `{"category_filter": [...]}`）
+- [x] **T1.2** — 定义每种 action 的 payload schema（如 `data.validate` 需要 `{}`，`analysis.run_localgap` 可能需要 `{"category_filter": [...]}`）
 
 ### Phase 2: Tool Registry
 
-- [ ] **T2.1** — 创建 `backend/app/tools/registry.py`
+- [x] **T2.1** — 创建 `backend/app/tools/registry.py`
   ```python
   class ToolRegistry:
       def __init__(self):
@@ -41,11 +41,11 @@
       def list_actions(self) -> list[BusinessAnalysisAction]:
           return list(self._tools.keys())
   ```
-- [ ] **T2.2** — 创建内部工具注册函数 `register_all_tools()`，在应用启动时调用
+- [x] **T2.2** — 创建内部工具注册函数 `register_all_tools()`，在应用启动时调用
 
 ### Phase 3: Analysis Tool Gateway
 
-- [ ] **T3.1** — 创建 `backend/app/tools/gateway.py`
+- [x] **T3.1** — 创建 `backend/app/tools/gateway.py`
   ```python
   class AnalysisToolGateway:
       def __init__(self, registry: ToolRegistry, session_store: SessionStore):
@@ -65,7 +65,7 @@
 
 ### Phase 4: Permission System
 
-- [ ] **T4.1** — 创建 `backend/app/core/permissions.py`
+- [x] **T4.1** — 创建 `backend/app/core/permissions.py`
   ```python
   class PermissionLevel(IntEnum):
       READ_STATE = 0
@@ -84,7 +84,7 @@
       # report.generate → WRITE_ARTIFACT
       # memory.propose_update → EXTERNAL_SYNC
   ```
-- [ ] **T4.2** — ApprovalRequest 高风险判断：
+- [x] **T4.2** — ApprovalRequest 高风险判断：
   ```python
   HIGH_RISK_ACTIONS = {"panel.build_category_day", "analysis.run_full_pipeline", "memory.propose_update"}
   RISK_LEVEL_MAP = {"memory.propose_update": "high", "data.validate": "low", ...}
@@ -92,7 +92,7 @@
 
 ### Phase 5: Approval API
 
-- [ ] **T5.1** — 创建 `backend/app/api/approvals.py`
+- [x] **T5.1** — 创建 `backend/app/api/approvals.py`
   ```python
   @router.post("/approvals/{approval_id}/approve")
   def approve_tool_call(approval_id: str):
@@ -108,33 +108,33 @@
 
 ### Phase 6: 内部工具实现（Stub）
 
-- [ ] **T6.1** — 创建 `backend/app/tools/project_tools.py`
+- [x] **T6.1** — 创建 `backend/app/tools/project_tools.py`
   ```python
   def project_get_state(project_id: str, payload: dict) -> ToolResult:
       # 读取 project_manifest.json，返回当前状态摘要
   ```
-- [ ] **T6.2** — 创建 `backend/app/tools/data_tools.py`（stub）
+- [x] **T6.2** — 创建 `backend/app/tools/data_tools.py`（stub）
   ```python
   def data_ingest(project_id: str, payload: dict) -> ToolResult: ...
   def data_validate(project_id: str, payload: dict) -> ToolResult: ...
   def schema_infer(project_id: str, payload: dict) -> ToolResult: ...
   def schema_apply_mapping(project_id: str, payload: dict) -> ToolResult: ...
   ```
-- [ ] **T6.3** — 创建其余 stub：`panel_tools.py`, `analysis_tools.py`, `chart_tools.py`, `report_tools.py`, `memory_tools.py`（每个只返回 `ToolResult(ok=true, summary="stub")`）
+- [x] **T6.3** — 创建其余 stub：`panel_tools.py`, `analysis_tools.py`, `chart_tools.py`, `report_tools.py`, `memory_tools.py`（每个只返回 `ToolResult(ok=true, summary="stub")`）
 
 ### Phase 7: Message Runtime 接入
 
-- [ ] **T7.1** — 修改 `message_runtime.py`：tool_call_started 事件触发 `AnalysisToolGateway.execute()`
-- [ ] **T7.2** — tool result 转为 `tool_call_finished` / `tool_call_failed` 事件并 SSE 推送
+- [x] **T7.1** — 修改 `message_runtime.py`：tool_call_started 事件触发 `AnalysisToolGateway.execute()`
+- [x] **T7.2** — tool result 转为 `tool_call_finished` / `tool_call_failed` 事件并 SSE 推送
 
 ### Phase 8: 测试
 
-- [ ] **T8.1** — `test_action_enum.py` — action 只能是 enum 值
-- [ ] **T8.2** — `test_payload_validation.py` — 无效 payload 被拒绝
-- [ ] **T8.3** — `test_permission_check.py` — 权限不足返回错误
-- [ ] **T8.4** — `test_tool_call_logging.py` — tool_calls.jsonl 有记录
-- [ ] **T8.5** — `test_approval_flow.py` — 高风险 action 创建 ApprovalRequest
-- [ ] **T8.6** — 运行所有测试，修复问题
+- [x] **T8.1** — `test_action_enum.py` — action 只能是 enum 值
+- [x] **T8.2** — `test_payload_validation.py` — 无效 payload 被拒绝
+- [x] **T8.3** — `test_permission_check.py` — 权限不足返回错误
+- [x] **T8.4** — `test_tool_call_logging.py` — tool_calls.jsonl 有记录
+- [x] **T8.5** — `test_approval_flow.py` — 高风险 action 创建 ApprovalRequest
+- [x] **T8.6** — 运行所有测试，修复问题
 
 ---
 

@@ -3,11 +3,13 @@ import uuid
 from datetime import datetime
 from typing import Optional
 from app.core.database import get_session
-from app.projects.models import AgentTurn, AgentEvent
+from app.projects.models import AgentTurn, AgentEvent, ToolCall
 from app.agent.session_store import SessionStore
 from app.agent.context_builder import ContextBuilder
 from app.agent.prompt_composer import PromptComposer
 from app.agent.claude_adapter import MockClaudeRuntimeAdapter
+from app.tools.gateway import get_gateway
+from app.core.permissions import PermissionLevel
 
 
 class MessageRuntime:
@@ -46,6 +48,59 @@ class MessageRuntime:
             for event in self.adapter.send_message(session_id, prompt, context):
                 event["turn_id"] = turn.id
                 self._event_buffers[session_id].append(event)
+
+                if event["type"] == "tool_call_started":
+                    action = event.get("action", "")
+                    tool_name = event.get("tool", "business_analysis")
+                    payload = event.get("payload", {})
+
+                    tc = ToolCall(
+                        id=f"tc_{uuid.uuid4().hex[:12]}",
+                        session_id=session_id,
+                        turn_id=turn.id,
+                        project_id=project_id,
+                        tool_name=tool_name,
+                        action=action,
+                        payload_json=json.dumps(payload, ensure_ascii=False),
+                        payload_hash=f"sha256:{uuid.uuid4().hex}",
+                        status="pending",
+                        permission_level=PermissionLevel.SAFE_COMPUTE,
+                        created_at=datetime.now().isoformat(),
+                    )
+                    db.add(tc)
+                    db.commit()
+                    db.refresh(tc)
+
+                    gateway = get_gateway()
+                    result = gateway.execute(
+                        tool_call_id=tc.id,
+                        project_id=project_id,
+                        action_str=action,
+                        payload=payload,
+                        reason="",
+                        session_id=session_id,
+                        turn_id=turn.id,
+                        user_permission_level=PermissionLevel.SAFE_COMPUTE,
+                    )
+
+                    tool_result_event = {
+                        "type": "tool_call_finished" if result.ok else "tool_call_failed",
+                        "turn_id": turn.id,
+                        "tool": tool_name,
+                        "action": action,
+                        "ok": result.ok,
+                        "summary": result.summary,
+                        "approval_required": not result.ok and "需要用户审批" in result.summary,
+                    }
+                    self._event_buffers[session_id].append(tool_result_event)
+
+                    tc.result_json = json.dumps(result.model_dump(), ensure_ascii=False)
+                    if result.ok:
+                        tc.status = "succeeded" if "需要用户审批" not in result.summary else "waiting_approval"
+                    else:
+                        tc.status = "failed"
+                    tc.completed_at = datetime.now().isoformat()
+                    db.commit()
 
                 agent_event = AgentEvent(
                     id=f"evt_{uuid.uuid4().hex[:12]}",
