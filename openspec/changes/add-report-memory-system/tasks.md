@@ -2,7 +2,7 @@
 
 ### Phase 1: Report Generation (report.generate)
 
-- [ ] **T1.1** — 创建 `backend/app/reports/renderer.py`
+- [x] **T1.1** — 创建 `backend/app/reports/renderer.py`
   ```python
   def generate_report(project_id: str, template: str = "promo_analysis_default") -> ReportResult:
       # 1. 读取 .analysis/latest_result.json
@@ -20,15 +20,15 @@
       # 5. 保存到 reports/report.md
       # 6. 注册 artifact type=report_source
   ```
-- [ ] **T1.2** — 创建 `backend/app/reports/templates/promo_analysis_default.md`
-- [ ] **T1.3** — 注册到 `report_tools.py`
-- [ ] **T1.4** — 创建 `backend/app/reports/exporters.py`
+- [x] **T1.2** — 创建 `backend/app/reports/templates/promo_analysis_default.md`
+- [x] **T1.3** — 注册到 `report_tools.py`
+- [x] **T1.4** — 创建 `backend/app/reports/exporters.py`
   ```python
   def export_report(report_id: str, format: str) -> ExportResult:
       # format: "pdf" | "docx" | "tex"
       # pandoc 转换 或 python-docx/tex、反回路径
   ```
-- [ ] **T1.5** — Reports API
+- [x] **T1.5** — Reports API
   ```python
   @router.post("/projects/{project_id}/reports/generate")
   def generate_report(project_id: str, body: ReportGenerateRequest): ...
@@ -42,7 +42,7 @@
 
 ### Phase 2: Memory Bridge
 
-- [ ] **T2.1** — 创建 `backend/app/memory/summarizer.py`
+- [x] **T2.1** — 创建 `backend/app/memory/summarizer.py`
   ```python
   def generate_memory_candidate(project_id: str, scope: str) -> MemoryCandidate:
       # 从 latest_result.json + context_summary.md 生成摘要
@@ -54,7 +54,7 @@
       #   - 策略模式（可选）
       #   - 不包含原始数据
   ```
-- [ ] **T2.2** — 创建 `backend/app/memory/store.py`
+- [x] **T2.2** — 创建 `backend/app/memory/store.py`
   ```python
   def sync_to_project_memory(candidate_id: str):
       # approved scope=project → 写入 .analysis/memory_candidates.md
@@ -63,18 +63,18 @@
       # approved scope=global_business_memory → 写入 .analysis/global_memory_export.md
       # 不要直接写 ~/.claude（除非配置 allow_global_memory_write=true）
   ```
-- [ ] **T2.3** — 创建 `backend/app/memory/bridge.py`
+- [x] **T2.3** — 创建 `backend/app/memory/bridge.py`
   ```python
   class MemoryBridge:
       def propose_update(self, project_id: str, content: str, scope: str, source_artifact_ids: list[str]) -> MemoryCandidate
       def approve(self, candidate_id: str, scope: str) -> bool
       def reject(self, candidate_id: str) -> bool
   ```
-- [ ] **T2.4** — 注册 `memory_tools.py` 中的 `memory_propose_update()`
+- [x] **T2.4** — 注册 `memory_tools.py` 中的 `memory_propose_update()`
 
 ### Phase 3: Memory API
 
-- [ ] **T3.1** — 创建 `backend/app/api/memory.py`
+- [x] **T3.1** — 创建 `backend/app/api/memory.py`
   ```python
   @router.get("/projects/{project_id}/memory/candidates")
   def list_memory_candidates(project_id: str): ...
@@ -88,17 +88,17 @@
 
 ### Phase 4: 工具调用集成
 
-- [ ] **T4.1** — `report.generate` 接入 ReportService
-- [ ] **T4.2** — `memory.propose_update` 接入 MemoryBridge
-- [ ] **T4.3** — AnalysisToolGateway 处理这两个 action
+- [x] **T4.1** — `report.generate` 接入 ReportService
+- [x] **T4.2** — `memory.propose_update` 接入 MemoryBridge
+- [x] **T4.3** — AnalysisToolGateway 处理这两个 action
 
 ### Phase 5: 测试
 
-- [ ] **T5.1** — `test_report_generation.py` — 生成 report.md 并包含正确 sections
-- [ ] **T5.2** — `test_memory_propose.py` — 生成 memory candidate
-- [ ] **T5.3** — `test_memory_approve_reject.py` — approve 写入 memory store，reject 保持 pending
-- [ ] **T5.4** — `test_global_memory_boundary.py` — 验证不直接写 ~/.claude
-- [ ] **T5.5** — 运行所有测试，修复问题
+- [x] **T5.1** — `test_report_generation.py` — 生成 report.md 并包含正确 sections
+- [x] **T5.2** — `test_memory_propose.py` — 生成 memory candidate
+- [x] **T5.3** — `test_memory_approve_reject.py` — approve 写入 memory store，reject 保持 pending
+- [x] **T5.4** — `test_global_memory_boundary.py` — 验证不直接写 ~/.claude
+- [x] **T5.5** — 运行所有测试，修复问题
 
 ---
 

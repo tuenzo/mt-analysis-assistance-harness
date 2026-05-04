@@ -3,6 +3,9 @@ from datetime import datetime
 from app.tools.schemas import ToolResult
 from app.core.database import get_session
 from app.projects.models import MemoryCandidate
+from app.memory.bridge import MemoryBridge
+from app.projects.service import ProjectService
+from pathlib import Path
 
 
 def memory_propose_update(project_id: str, payload: dict) -> ToolResult:
@@ -34,3 +37,22 @@ def memory_propose_update(project_id: str, payload: dict) -> ToolResult:
         )
     finally:
         db.close()
+
+
+def memory_generate_summary(project_id: str, payload: dict) -> ToolResult:
+    """从分析结果生成记忆摘要"""
+    bridge = MemoryBridge()
+    return bridge.generate_summary(project_id)
+
+
+def memory_get(project_id: str, payload: dict) -> ToolResult:
+    """获取项目记忆"""
+    scope = payload.get("scope", "project")
+    bridge = MemoryBridge()
+    return bridge.get_memory(project_id, scope)
+
+
+def memory_approve(project_id: str, candidate_id: str, content: str, scope: str) -> ToolResult:
+    """审批通过，写入记忆存储"""
+    bridge = MemoryBridge()
+    return bridge.approve_and_store(project_id, candidate_id, content, scope)
