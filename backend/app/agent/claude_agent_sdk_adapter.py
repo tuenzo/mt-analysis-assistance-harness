@@ -71,20 +71,31 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
     """
 
     def __init__(self, settings: dict | None = None):
+        from app.core.config import settings as app_settings
+
         self._settings = settings or {}
         self._sessions: dict[str, dict] = {}
         self._interrupted: set[str] = set()
         self._gateway = get_gateway()
         self._mcp_server = BusinessAnalysisMCPServer(self._gateway)
 
-        self._api_key = os.environ.get("ANTHROPIC_API_KEY")
+        self._api_key = os.environ.get("ANTHROPIC_API_KEY") or app_settings.anthropic_api_key
+        self._base_url = os.environ.get("ANTHROPIC_API_BASE_URL") or app_settings.anthropic_api_base_url or None
+        self._model = os.environ.get("ANTHROPIC_API_MODEL") or app_settings.anthropic_api_model or "claude-opus-4-5-20250501"
         self._client: Optional["Anthropic"] = None
         self._permission_mode = self._settings.get("permission_mode", "dontAsk")
         self._enable_user_settings = self._settings.get("enable_user_setting_sources", True)
         self._workspace_root = Path(self._settings.get("workspace_root", "./workspaces"))
 
         if self._api_key and HAS_ANTHROPIC_SDK:
-            self._client = Anthropic(api_key=self._api_key)
+            if self._base_url:
+                self._client = Anthropic(
+                    api_key=self._api_key,
+                    base_url=self._base_url.rstrip("/") + "/",
+                    default_headers={"Authorization": f"Bearer {self._api_key}"}
+                )
+            else:
+                self._client = Anthropic(api_key=self._api_key)
 
     def create_session(self, project_id: str) -> str:
         if not self._client:
@@ -134,7 +145,7 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
 
         try:
             response = self._client.messages.create(
-                model="claude-opus-4-5-20250501",
+                model=self._model,
                 max_tokens=4096,
                 tools=tools,
                 messages=[{"role": "user", "content": prompt}],
@@ -212,7 +223,9 @@ def get_claude_adapter(settings: dict | None = None) -> ClaudeRuntimeAdapter:
     """
     Get appropriate adapter based on configuration and API key availability
     """
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    from app.core.config import settings as app_settings
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or app_settings.anthropic_api_key
     provider = (settings or {}).get("provider", "mock")
 
     if provider == "claude_agent_sdk" and api_key and HAS_ANTHROPIC_SDK:

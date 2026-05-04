@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # 第三方 API 配置
     anthropic_api_key: str = ""
     anthropic_api_base_url: str = ""
+    anthropic_api_model: str = "claude-opus-4-5-20250501"
 
 
 settings = Settings()
