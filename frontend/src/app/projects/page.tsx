@@ -6,12 +6,21 @@ import { useProjectStore } from '@/store/project-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Modal, ModalContent, ModalHeader, ModalTitle, ModalDescription, ModalFooter, ModalClose } from '@/components/ui/modal'
+import {
+  Modal,
+  ModalTrigger,
+  ModalContent,
+  ModalHeader,
+  ModalTitle,
+  ModalDescription,
+  ModalFooter,
+  ModalClose,
+} from '@/components/ui/modal'
 import { Plus, FolderOpen, Clock, ChevronRight } from 'lucide-react'
 
 export default function ProjectsPage() {
   const { projects, loading, error, loadProjects, createProject } = useProjectStore()
-  const [showNewProjectModal, setShowNewProjectModal] = useState(false)
+  const [open, setOpen] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [creating, setCreating] = useState(false)
 
@@ -25,7 +34,7 @@ export default function ProjectsPage() {
     const project = await createProject(newProjectName.trim())
     setCreating(false)
     if (project) {
-      setShowNewProjectModal(false)
+      setOpen(false)
       setNewProjectName('')
     }
   }
@@ -39,10 +48,39 @@ export default function ProjectsPage() {
             Manage your business analysis projects
           </p>
         </div>
-        <Button onClick={() => setShowNewProjectModal(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          New Project
-        </Button>
+        <Modal open={open} onOpenChange={setOpen}>
+          <ModalTrigger asChild>
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              New Project
+            </Button>
+          </ModalTrigger>
+          <ModalContent>
+            <ModalHeader>
+              <ModalTitle>Create New Project</ModalTitle>
+              <ModalDescription>
+                Enter a name for your new business analysis project.
+              </ModalDescription>
+            </ModalHeader>
+            <div className="py-4">
+              <Input
+                placeholder="Project name"
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCreateProject()}
+                autoFocus
+              />
+            </div>
+            <ModalFooter>
+              <ModalClose asChild>
+                <Button variant="outline">Cancel</Button>
+              </ModalClose>
+              <Button onClick={handleCreateProject} disabled={!newProjectName.trim() || creating}>
+                {creating ? 'Creating...' : 'Create Project'}
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
       </div>
 
       {error && (
@@ -64,10 +102,39 @@ export default function ProjectsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button onClick={() => setShowNewProjectModal(true)} className="w-full">
-              <Plus className="h-4 w-4 mr-2" />
-              Create Project
-            </Button>
+            <Modal open={open} onOpenChange={setOpen}>
+              <ModalTrigger asChild>
+                <Button className="w-full">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Project
+                </Button>
+              </ModalTrigger>
+              <ModalContent>
+                <ModalHeader>
+                  <ModalTitle>Create New Project</ModalTitle>
+                  <ModalDescription>
+                    Enter a name for your new business analysis project.
+                  </ModalDescription>
+                </ModalHeader>
+                <div className="py-4">
+                  <Input
+                    placeholder="Project name"
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleCreateProject()}
+                    autoFocus
+                  />
+                </div>
+                <ModalFooter>
+                  <ModalClose asChild>
+                    <Button variant="outline">Cancel</Button>
+                  </ModalClose>
+                  <Button onClick={handleCreateProject} disabled={!newProjectName.trim() || creating}>
+                    {creating ? 'Creating...' : 'Create Project'}
+                  </Button>
+                </ModalFooter>
+              </ModalContent>
+            </Modal>
           </CardContent>
         </Card>
       ) : (
@@ -109,34 +176,6 @@ export default function ProjectsPage() {
           ))}
         </div>
       )}
-
-      <Modal open={showNewProjectModal} onOpenChange={setShowNewProjectModal}>
-        <ModalContent>
-          <ModalHeader>
-            <ModalTitle>Create New Project</ModalTitle>
-            <ModalDescription>
-              Enter a name for your new business analysis project.
-            </ModalDescription>
-          </ModalHeader>
-          <div className="py-4">
-            <Input
-              placeholder="Project name"
-              value={newProjectName}
-              onChange={(e) => setNewProjectName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreateProject()}
-              autoFocus
-            />
-          </div>
-          <ModalFooter>
-            <ModalClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </ModalClose>
-            <Button onClick={handleCreateProject} disabled={!newProjectName.trim() || creating}>
-              {creating ? 'Creating...' : 'Create Project'}
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
     </div>
   )
 }
