@@ -64,6 +64,32 @@ Analysis Workspace (每个项目独立目录)
 
 项目开始构建后补充。当前为空项目，无可执行命令。
 
+## 环境配置
+
+敏感配置通过 `.env` 文件管理（不会被提交到 git）。
+
+**配置步骤：**
+1. 复制 `.env.example` 为 `.env`
+2. 填写你的 API Key 和 Base URL
+3. 重启服务生效
+
+```bash
+cp .env.example .env
+# 编辑 .env 填入你的配置
+```
+
+**关键配置项：**
+
+| 变量名 | 说明 | 默认值 |
+|--------|------|--------|
+| `ANTHROPIC_API_KEY` | 第三方 API 密钥 | - |
+| `ANTHROPIC_API_BASE_URL` | 自定义 API 地址 | - |
+| `APP_AGENT_RUNTIME_PROVIDER` | 运行时类型 (`mock`/`claude_agent_sdk`) | `mock` |
+| `APP_AGENT_PERMISSION_MODE` | 权限模式 (`dontAsk`/`manual`) | `dontAsk` |
+| `APP_WORKSPACE_ROOT` | 工作区根目录 | `./workspaces` |
+
+**配置优先级：** 环境变量 > `.env` 文件 > 代码默认值
+
 ## 数据分析流程
 
 系统固化的标准 pipeline（从 specV1）：

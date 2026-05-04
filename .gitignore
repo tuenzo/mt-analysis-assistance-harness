@@ -1,0 +1,54 @@
+# 环境配置
+.env
+.env.local
+.env.*.local
+
+# 数据库
+*.db
+*.db-journal
+
+# 日志
+logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# 虚拟环境
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+.DS_Store
+Thumbs.db
+
+# 工作区数据
+workspaces/
+outputs/
+artifacts/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# 敏感文件
+*.pem
+*.key
+credentials.json
+secrets.json
