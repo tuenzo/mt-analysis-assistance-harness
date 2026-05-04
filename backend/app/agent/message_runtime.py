@@ -133,19 +133,23 @@ class MessageRuntime:
     def get_events(self, session_id: str, after_turn_id: str | None = None) -> list[dict]:
         """
         Get buffered events for session, optionally filtering by turn_id.
-        If after_turn_id is provided, only returns events for turns after that turn.
-        This prevents duplicate events when client polls after reconnecting.
+        If after_turn_id is provided, returns events for the specified turn
+        and any turns after it (including subsequent turns).
+        This allows reconnecting clients to resume receiving events for the
+        current turn without missing subsequent events.
         Clears returned events from buffer to prevent duplicate delivery.
         """
         events = self._event_buffers.get(session_id, [])
 
         if after_turn_id:
-            # Filter to only events from turns after the specified one
+            # Include the specified turn and any turns after it.
+            # Use >= so that events within the same turn are not dropped
+            # on reconnect (turn_id string comparison is best-effort for UUIDs).
             filtered_events = []
             remaining_events = []
             for event in events:
                 event_turn_id = event.get("turn_id", "")
-                if event_turn_id and event_turn_id > after_turn_id:
+                if event_turn_id and event_turn_id >= after_turn_id:
                     filtered_events.append(event)
                 else:
                     remaining_events.append(event)

@@ -23,9 +23,12 @@ async def stream_events(session_id: str, after_turn_id: str | None = None):
         import asyncio
         while True:
             events = runtime.get_events(session_id, after_turn_id)
+            has_terminal = False
             for event in events:
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-            if events:
+                if event.get("type") in ("final_answer", "error", "runtime_error"):
+                    has_terminal = True
+            if has_terminal:
                 break
             await asyncio.sleep(0.1)
 
