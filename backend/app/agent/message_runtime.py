@@ -7,9 +7,10 @@ from app.projects.models import AgentTurn, AgentEvent, ToolCall
 from app.agent.session_store import SessionStore
 from app.agent.context_builder import ContextBuilder
 from app.agent.prompt_composer import PromptComposer
-from app.agent.claude_adapter import MockClaudeRuntimeAdapter
+from app.agent.claude_agent_sdk_adapter import get_claude_adapter
 from app.tools.gateway import get_gateway
 from app.core.permissions import PermissionLevel
+from app.core.config import get_agent_runtime_config
 
 
 class MessageRuntime:
@@ -17,7 +18,8 @@ class MessageRuntime:
         self.session_store = SessionStore()
         self.context_builder = ContextBuilder()
         self.prompt_composer = PromptComposer()
-        self.adapter = MockClaudeRuntimeAdapter()
+        config = get_agent_runtime_config()
+        self.adapter = get_claude_adapter(config)
         self._event_buffers: dict[str, list[dict]] = {}
 
     def handle_message(self, project_id: str, session_id: Optional[str], message: str, ui_context: dict | None = None) -> dict:
