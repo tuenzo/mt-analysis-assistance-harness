@@ -4,13 +4,20 @@ import type {
   ProjectState,
   ProjectFile,
   FileUploadResponse,
+  DataSourceResponse,
+  DataDiscoverResult,
+  DataIngestResult,
+  SelectedSourceFile,
   SchemaInferResponse,
   FieldMapping,
   AgentSession,
   MessageResponse,
+  AgentMessage,
+  DemoStatus,
   Artifact,
   ArtifactsFilter,
   Report,
+  LatestReport,
   MemoryCandidate,
   MemoryFilter,
 } from './api-types'
@@ -49,7 +56,7 @@ class ApiClient {
 
       return {
         ok: data.ok !== false,
-        data: data.data ?? data,
+        data: data.data ?? data.result ?? data,
         error: data.error || null,
       }
     } catch (error) {
@@ -71,6 +78,10 @@ class ApiClient {
 
   async listProjects(): Promise<ApiResponse<Project[]>> {
     return this.request<Project[]>('/api/projects')
+  }
+
+  async getDemoStatus(): Promise<ApiResponse<DemoStatus>> {
+    return this.request<DemoStatus>('/api/demo/status')
   }
 
   async getProject(projectId: string): Promise<ApiResponse<Project>> {
@@ -95,16 +106,50 @@ class ApiClient {
       body: formData,
     })
 
-    const data = await response.json()
+    const raw = await response.json()
+    const data = raw.data ?? raw
     return {
       ok: response.ok,
-      data: data,
-      error: data.error || null,
+      data: response.ok
+        ? {
+            ...data,
+            id: data.id ?? data.file_id,
+          }
+        : null,
+      error: raw.error || raw.detail || null,
     }
   }
 
+  async getDataSource(projectId: string): Promise<ApiResponse<DataSourceResponse>> {
+    return this.request<DataSourceResponse>(`/api/projects/${projectId}/data-source`)
+  }
+
+  async setDataSource(projectId: string, path: string): Promise<ApiResponse<DataSourceResponse>> {
+    return this.request<DataSourceResponse>(`/api/projects/${projectId}/data-source`, {
+      method: 'PUT',
+      body: JSON.stringify({ path }),
+    })
+  }
+
+  async discoverDataSource(projectId: string, sourcePath?: string): Promise<ApiResponse<DataDiscoverResult>> {
+    return this.request<DataDiscoverResult>(`/api/projects/${projectId}/data-source/discover`, {
+      method: 'POST',
+      body: JSON.stringify(sourcePath ? { source_path: sourcePath } : {}),
+    })
+  }
+
+  async ingestDataSource(projectId: string, selectedFiles: SelectedSourceFile[], sourcePath?: string): Promise<ApiResponse<DataIngestResult>> {
+    return this.request<DataIngestResult>(`/api/projects/${projectId}/data-source/ingest`, {
+      method: 'POST',
+      body: JSON.stringify({
+        ...(sourcePath ? { source_path: sourcePath } : {}),
+        selected_files: selectedFiles,
+      }),
+    })
+  }
+
   async inferSchema(projectId: string): Promise<ApiResponse<SchemaInferResponse>> {
-    return this.request<SchemaInferResponse>(`/api/projects/${projectId}/schema/infer`, {
+    return this.request<SchemaInferResponse>(`/api/projects/${projectId}/files/infer-schema`, {
       method: 'POST',
     })
   }
@@ -112,7 +157,7 @@ class ApiClient {
   async applySchema(projectId: string, mapping: FieldMapping): Promise<ApiResponse<void>> {
     return this.request<void>(`/api/projects/${projectId}/schema/apply`, {
       method: 'POST',
-      body: JSON.stringify({ mapping }),
+      body: JSON.stringify({ mappings: mapping }),
     })
   }
 
@@ -131,6 +176,10 @@ class ApiClient {
 
   async getSession(sessionId: string): Promise<ApiResponse<AgentSession>> {
     return this.request<AgentSession>(`/api/agent/sessions/${sessionId}`)
+  }
+
+  async getSessionMessages(sessionId: string): Promise<ApiResponse<AgentMessage[]>> {
+    return this.request<AgentMessage[]>(`/api/agent/sessions/${sessionId}/messages`)
   }
 
   getSessionEventsUrl(sessionId: string, afterTurnId?: string | null): string {
@@ -166,18 +215,21 @@ class ApiClient {
 
   // ===== Reports API =====
   async generateReport(projectId: string, reportType: string = 'standard'): Promise<ApiResponse<Report>> {
-    return this.request<Report>(`/api/projects/${projectId}/reports`, {
+    return this.request<Report>(`/api/projects/${projectId}/reports/generate`, {
       method: 'POST',
-      body: JSON.stringify({ report_type: reportType }),
+      body: JSON.stringify({ format: reportType }),
     })
   }
 
-  async getLatestReport(projectId: string): Promise<ApiResponse<Report>> {
-    return this.request<Report>(`/api/projects/${projectId}/reports/latest`)
+  async getLatestReport(projectId: string): Promise<ApiResponse<LatestReport>> {
+    return this.request<LatestReport>(`/api/projects/${projectId}/reports/latest`)
   }
 
-  async exportReport(reportId: string, format: string): Promise<ApiResponse<string>> {
-    return this.request<string>(`/api/reports/${reportId}/export?format=${format}`)
+  async exportReport(projectId: string, reportPath: string = '', format: string = 'md'): Promise<ApiResponse<string>> {
+    return this.request<string>(`/api/projects/${projectId}/reports/export`, {
+      method: 'POST',
+      body: JSON.stringify({ report_path: reportPath, format }),
+    })
   }
 
   // ===== Memory API =====

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AgentSession, AgentMessage, SSEEvent } from '@/lib/api-types'
+import type { AgentSession, AgentMessage, MessageResponse, SSEEvent } from '@/lib/api-types'
 import { api } from '@/lib/api-client'
 
 // Extended types for Agent Command Center
@@ -53,11 +53,13 @@ interface AgentStore {
   // Actions
   createSession: (projectId: string) => Promise<string | null>
   setCurrentSession: (sessionId: string | null) => void
-  sendMessage: (projectId: string, message: string) => Promise<string | null>
+  sendMessage: (projectId: string, message: string) => Promise<MessageResponse | null>
+  loadSessionMessages: (sessionId: string) => Promise<void>
   handleSSEEvent: (event: SSEEvent) => void
   interruptSession: (sessionId: string) => Promise<void>
   clearMessages: () => void
   clearError: () => void
+  failRun: (error: string) => void
   selectToolCall: (toolCall: ToolCall | null) => void
   approveApproval: (approvalId: string) => Promise<void>
   rejectApproval: (approvalId: string) => Promise<void>
@@ -76,6 +78,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   selectedToolCall: null,
 
   createSession: async (projectId: string) => {
+    void projectId
     return null
   },
 
@@ -130,14 +133,38 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           messageQueue: [...state.messageQueue, userMessage],
         }))
 
-        return session_id
+        return response.data
       } else {
-        set({ error: response.error || 'Failed to send message' })
+        set({ error: response.error || 'Failed to send message', isRunning: false })
         return null
       }
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Unknown error', isRunning: false })
       return null
+    }
+  },
+
+  loadSessionMessages: async (sessionId: string) => {
+    try {
+      const [sessionResponse, messagesResponse] = await Promise.all([
+        api.getSession(sessionId),
+        api.getSessionMessages(sessionId),
+      ])
+      if (sessionResponse.ok && sessionResponse.data) {
+        const sessionData = sessionResponse.data as AgentSession
+        set((state) => ({
+          sessions: {
+            ...state.sessions,
+            [sessionId]: sessionData,
+          },
+          currentSession: sessionData,
+        }))
+      }
+      if (messagesResponse.ok && messagesResponse.data) {
+        set({ messageQueue: messagesResponse.data })
+      }
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to load session history' })
     }
   },
 
@@ -259,12 +286,13 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       case 'job_progress':
         {
           const currentJob = get().jobs[event.job_id]
+          const totalSteps = currentJob?.totalSteps || 8
           const job: JobStatus = {
             id: event.job_id,
             turnId: event.turn_id,
             action: currentJob?.action || '',
-            currentStep: `Step ${Math.floor(event.progress * currentJob!.totalSteps)}`,
-            totalSteps: currentJob?.totalSteps || 8,
+            currentStep: `Step ${Math.floor(event.progress * totalSteps)}`,
+            totalSteps,
             progress: event.progress,
             message: event.message,
           }
@@ -279,18 +307,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
       case 'job_finished':
         {
-          const currentJob = get().jobs[event.job_id]
-          const job: JobStatus = {
-            id: event.job_id,
-            turnId: event.turn_id,
-            action: currentJob?.action || '',
-            currentStep: 'Complete',
-            totalSteps: currentJob?.totalSteps || 8,
-            progress: 1,
-            message: 'Finished',
-          }
           set((state) => {
-            const { [event.job_id]: _, ...rest } = state.jobs
+            const rest = { ...state.jobs }
+            delete rest[event.job_id]
             return { jobs: rest }
           })
         }
@@ -338,6 +357,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         set({ error: event.error, isRunning: false })
         break
 
+      case 'runtime_error':
+        set({ error: event.error, isRunning: false })
+        break
+
       case 'session_created':
         if (event.session_id) {
           api.getSession(event.session_id).then((response) => {
@@ -368,6 +391,8 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   clearMessages: () => set({ messageQueue: [], toolCalls: {}, approvalRequests: [], jobs: {} }),
 
   clearError: () => set({ error: null }),
+
+  failRun: (error: string) => set({ error, isRunning: false }),
 
   selectToolCall: (toolCall: ToolCall | null) => set({ selectedToolCall: toolCall }),
 

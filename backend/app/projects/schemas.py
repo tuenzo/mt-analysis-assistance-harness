@@ -6,6 +6,7 @@ class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = None
     domain: Optional[str] = "promo_analysis"
+    is_test: Optional[bool] = None
 
 
 class ProjectResponse(BaseModel):
@@ -16,6 +17,8 @@ class ProjectResponse(BaseModel):
     workspace_path: str
     status: str
     current_stage: str
+    is_test: bool = False
+    data_source_path: Optional[str] = None
 
 
 class FileUploadResponse(BaseModel):
@@ -56,6 +59,67 @@ class ProjectFileResponse(BaseModel):
     current_path: str
     status: str
     checksum: str
+
+
+class DataSourceRequest(BaseModel):
+    path: str
+
+
+class DataSourceResponse(BaseModel):
+    data_source_path: Optional[str] = None
+
+
+class DataIngestRequest(BaseModel):
+    source_path: Optional[str] = None
+    mode: Optional[str] = "scan_project_source"
+    roles: Optional[dict[str, str]] = None
+    selected_files: Optional[list[dict[str, str]]] = None
+
+
+class DataDiscoverRequest(BaseModel):
+    source_path: Optional[str] = None
+
+
+class SourceFileCandidate(BaseModel):
+    name: str
+    source_path: str
+    size_bytes: Optional[int] = None
+    modified_at: Optional[str] = None
+    extension: str
+    kind: str
+    skipped: bool = False
+    skip_reason: Optional[str] = None
+    headers: list[str] = []
+    preview: str = ""
+    preview_truncated: bool = False
+
+
+class DataDiscoverResponse(BaseModel):
+    source_path: str
+    candidates: list[SourceFileCandidate]
+    candidate_count: int
+
+
+class ImportedFileInfo(BaseModel):
+    file_id: str
+    role: str
+    original_name: str
+    current_path: str
+    checksum: str
+    reason: Optional[str] = None
+
+
+class SkippedFileInfo(BaseModel):
+    name: str
+    reason: str
+
+
+class DataIngestResponse(BaseModel):
+    imported_count: int
+    skipped_count: int
+    imported: list[ImportedFileInfo]
+    skipped: list[SkippedFileInfo]
+    source_path: str
 
 
 class AgentMessageRequest(BaseModel):

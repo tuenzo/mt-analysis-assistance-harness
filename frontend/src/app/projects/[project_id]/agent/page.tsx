@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Toaster, toast } from 'sonner'
 import { useAgentStore } from '@/store/agent-store'
 import { useAgentEvents } from '@/lib/sse-hooks'
+import { api } from '@/lib/api-client'
 import type { SSEEvent } from '@/lib/api-types'
 import { MessageList } from '@/features/agent/message-list'
 import { MessageInput } from '@/features/agent/message-input'
@@ -20,7 +21,6 @@ export default function AgentPage() {
   const projectId = params.project_id as string
 
   const {
-    currentSession,
     messageQueue,
     isRunning,
     error,
@@ -29,9 +29,11 @@ export default function AgentPage() {
     jobs,
     selectedToolCall,
     sendMessage,
+    loadSessionMessages,
     handleSSEEvent,
     interruptSession,
     clearMessages,
+    failRun,
     selectToolCall,
     approveApproval,
     rejectApproval,
@@ -39,9 +41,29 @@ export default function AgentPage() {
 
   const [input, setInput] = useState('')
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [turnId, setTurnId] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    api.getDemoStatus().then(async (response) => {
+      if (
+        !cancelled &&
+        response.ok &&
+        response.data?.enabled &&
+        response.data.project_id === projectId &&
+        response.data.session_id
+      ) {
+        setSessionId(response.data.session_id)
+        await loadSessionMessages(response.data.session_id)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, loadSessionMessages])
 
   // Handle SSE events with toast notifications
-  const handleEventWithToast = (event: SSEEvent) => {
+  const handleEventWithToast = useCallback((event: SSEEvent) => {
     // Show toast for artifact created
     if (event.type === 'artifact_created') {
       toast.success(`Artifact created: ${event.name}`, {
@@ -50,10 +72,15 @@ export default function AgentPage() {
       })
     }
     handleSSEEvent(event)
-  }
+  }, [handleSSEEvent])
 
-  const { connected, error: sseError } = useAgentEvents(sessionId, {
+  const handleSSEError = useCallback((eventError: Error) => {
+    failRun(eventError.message)
+  }, [failRun])
+
+  const { connected, error: sseError } = useAgentEvents(sessionId, turnId, {
     onEvent: handleEventWithToast,
+    onError: handleSSEError,
   })
 
   // Get current turn's tool calls
@@ -63,9 +90,10 @@ export default function AgentPage() {
   const handleSend = async () => {
     if (!input.trim() || isRunning) return
 
-    const newSessionId = await sendMessage(projectId, input.trim())
-    if (newSessionId) {
-      setSessionId(newSessionId)
+    const messageResponse = await sendMessage(projectId, input.trim())
+    if (messageResponse) {
+      setSessionId(messageResponse.session_id)
+      setTurnId(messageResponse.turn_id)
     }
     setInput('')
   }

@@ -16,9 +16,11 @@ class Project(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     workspace_path = Column(String(512), nullable=False)
+    data_source_path = Column(String(1024), nullable=True)
     domain = Column(String(64), default="promo_analysis")
     status = Column(String(32), nullable=False, default="created")
     current_stage = Column(String(32), default="created")
+    is_test = Column(Integer, nullable=False, default=0)
     created_at = Column(String(32), nullable=False, default=lambda: datetime.now().isoformat())
     updated_at = Column(String(32), nullable=False, default=lambda: datetime.now().isoformat())
 
