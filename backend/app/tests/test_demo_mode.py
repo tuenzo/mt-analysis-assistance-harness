@@ -8,7 +8,7 @@ from app.core import config
 from app.core.database import get_session, init_db, reset_engine
 from app.demo.seed import DemoSeedService, seed_demo_if_enabled
 from app.main import app
-from app.projects.models import AgentTurn, AnalysisSession, Artifact, Project, ProjectFile, Report
+from app.projects.models import AgentTurn, AnalysisSession, Artifact, Job, MemoryCandidate, Project, ProjectFile, Report
 
 
 @pytest.fixture
@@ -56,7 +56,7 @@ def test_demo_seed_enabled_creates_fixed_project(isolated_demo_env, monkeypatch,
     data = response.json()["data"]
     assert data["enabled"] is True
     assert data["project_id"] == "proj_demo_test"
-    assert data["session_id"] == "demo_session_keemart"
+    assert data["session_id"] == "demo_session_keemart_full"
 
     db = get_session()
     try:
@@ -64,8 +64,10 @@ def test_demo_seed_enabled_creates_fixed_project(isolated_demo_env, monkeypatch,
         assert project.is_test == 1
         assert project.current_stage == "report_ready"
         assert db.query(ProjectFile).filter(ProjectFile.project_id == project.id).count() == 4
-        assert db.query(Artifact).filter(Artifact.project_id == project.id).count() >= 2
+        assert db.query(Artifact).filter(Artifact.project_id == project.id).count() >= 8
         assert db.query(Report).filter(Report.project_id == project.id).count() == 1
+        assert db.query(Job).filter(Job.project_id == project.id).count() >= 1
+        assert db.query(MemoryCandidate).filter(MemoryCandidate.project_id == project.id).count() >= 2
         session = db.query(AnalysisSession).filter(AnalysisSession.project_id == project.id).one()
         assert session.external_session_id is None
     finally:
@@ -80,7 +82,7 @@ def test_demo_seed_resets_existing_project(isolated_demo_env, monkeypatch):
     try:
         db.add(AgentTurn(
             id="temporary_demo_turn",
-            session_id="demo_session_keemart",
+            session_id="demo_session_keemart_full",
             project_id="proj_demo_test",
             user_message="temp",
             assistant_message="temp",
@@ -110,25 +112,27 @@ def test_demo_seed_writes_workspace_manifest_context_latest_result(isolated_demo
     assert (workspace / "data" / "raw" / "order_info.csv").exists()
     assert (workspace / "reports" / "report.md").exists()
     assert (workspace / ".analysis" / "context_summary.md").exists()
+    assert (workspace / ".analysis" / "memory_candidates.md").exists()
     latest = json.loads((workspace / ".analysis" / "latest_result.json").read_text(encoding="utf-8"))
     manifest = json.loads((workspace / ".analysis" / "project_manifest.json").read_text(encoding="utf-8"))
 
     assert latest["demo"] is True
+    assert "diagnostics" in latest
     assert manifest["current_stage"] == "report_ready"
     assert len(manifest["files"]) == 4
-    assert len(manifest["derived_assets"]) >= 2
+    assert len(manifest["derived_assets"]) >= 8
 
 
 def test_demo_session_messages_returns_seeded_history(isolated_demo_env, monkeypatch, client):
     monkeypatch.setenv("APP_DEMO_MODE", "true")
     DemoSeedService().seed(reset=True)
 
-    response = client.get("/api/agent/sessions/demo_session_keemart/messages")
+    response = client.get("/api/agent/sessions/demo_session_keemart_full/messages")
     assert response.status_code == 200
     messages = response.json()["data"]
     assert len(messages) == 4
     assert messages[0]["role"] == "user"
-    assert "数据准备好" in messages[0]["content"]
+    assert "演示项目" in messages[0]["content"]
     assert messages[-1]["role"] == "assistant"
 
 

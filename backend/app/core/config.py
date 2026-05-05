@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     agent_allow_builtin_read_tools: bool = False
     test_mode: bool = False
     demo_mode: bool = False
-    demo_project_id: str = "proj_demo_keemart_promo"
+    demo_project_id: str = "proj_demo_keemart_full_showcase"
     demo_reset_on_start: bool = True
     # Third-party model/API configuration.
     anthropic_api_key: str = ""
