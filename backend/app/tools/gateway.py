@@ -25,6 +25,7 @@ class AnalysisToolGateway:
         session_id: str = "",
         turn_id: str = "",
         user_permission_level: int = PermissionLevel.SAFE_COMPUTE,
+        skip_approval: bool = False,
     ) -> ToolResult:
         try:
             action = BusinessAnalysisAction(action_str)
@@ -64,7 +65,7 @@ class AnalysisToolGateway:
                 tc.status = "running"
                 db.commit()
 
-            if action in HIGH_RISK_ACTIONS:
+            if action in HIGH_RISK_ACTIONS and not skip_approval:
                 approval = ApprovalRequest(
                     id=uuid.uuid4().hex,
                     project_id=project_id,
@@ -181,6 +182,7 @@ class AnalysisToolGateway:
                     session_id=approval.session_id or "",
                     turn_id=approval.turn_id or "",
                     user_permission_level=PermissionLevel.EXTERNAL_SYNC,
+                    skip_approval=True,
                 )
                 return result
 

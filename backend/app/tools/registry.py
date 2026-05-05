@@ -30,7 +30,7 @@ def get_registry() -> ToolRegistry:
 
 def _register_all_tools(registry: ToolRegistry):
     from app.tools.project_tools import project_get_state
-    from app.tools.data_tools import data_ingest, data_validate, schema_infer, schema_apply_mapping
+    from app.tools.data_tools import data_discover_source_files, data_ingest, data_validate, schema_infer, schema_apply_mapping
     from app.tools.panel_tools import panel_build_category_day
     from app.tools.analysis_tools import (
         analysis_run_diagnostics, analysis_run_psm_did, analysis_run_localgap,
@@ -43,6 +43,7 @@ def _register_all_tools(registry: ToolRegistry):
     from app.core.permissions import PermissionLevel
 
     registry.register(BusinessAnalysisAction.PROJECT_GET_STATE, project_get_state, PermissionLevel.READ_STATE)
+    registry.register(BusinessAnalysisAction.DATA_DISCOVER_SOURCE_FILES, data_discover_source_files, PermissionLevel.SAFE_COMPUTE)
     registry.register(BusinessAnalysisAction.DATA_INGEST, data_ingest, PermissionLevel.MODIFY_WORKSPACE)
     registry.register(BusinessAnalysisAction.DATA_VALIDATE, data_validate, PermissionLevel.SAFE_COMPUTE)
     registry.register(BusinessAnalysisAction.SCHEMA_INFER, schema_infer, PermissionLevel.READ_STATE)
