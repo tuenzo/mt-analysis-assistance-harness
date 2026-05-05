@@ -220,8 +220,13 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         {
           set((state) => {
             const turnToolCalls = state.toolCalls[event.turn_id] || []
+            const baseId = event.tool_call_id || `tc_${event.turn_id}_${event.action}_${turnToolCalls.length}_${Date.now()}`
+            const existingIndex = event.tool_call_id
+              ? turnToolCalls.findIndex((tc) => tc.id === event.tool_call_id)
+              : -1
+
             const toolCall: ToolCall = {
-              id: event.tool_call_id || `tc_${event.turn_id}_${turnToolCalls.length}_${Date.now()}`,
+              id: baseId,
               turnId: event.turn_id,
               tool: event.tool,
               action: event.action,
@@ -229,6 +234,25 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
               status: 'running',
               startedAt: new Date().toISOString(),
             }
+
+            if (existingIndex >= 0) {
+              const updatedCalls = [...turnToolCalls]
+              updatedCalls[existingIndex] = {
+                ...updatedCalls[existingIndex],
+                tool: event.tool,
+                action: event.action,
+                payload: event.payload || updatedCalls[existingIndex].payload,
+                status: updatedCalls[existingIndex].status === 'pending' ? 'running' : updatedCalls[existingIndex].status,
+                startedAt: updatedCalls[existingIndex].startedAt || toolCall.startedAt,
+              }
+              return {
+                toolCalls: {
+                  ...state.toolCalls,
+                  [event.turn_id]: updatedCalls,
+                },
+              }
+            }
+
             return {
               toolCalls: {
                 ...state.toolCalls,

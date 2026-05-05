@@ -185,9 +185,9 @@ export default function AgentPage() {
               <h3 className="font-medium text-sm">Tool Calls</h3>
             </div>
             <div className="p-2 space-y-2">
-              {currentToolCalls.map((toolCall) => (
+              {currentToolCalls.map((toolCall, index) => (
                 <ToolCallItem
-                  key={toolCall.id}
+                  key={`${toolCall.turnId}_${toolCall.id}_${toolCall.startedAt || index}`}
                   toolCall={toolCall}
                   isSelected={selectedToolCall?.id === toolCall.id}
                   onSelect={selectToolCall}
