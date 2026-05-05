@@ -7,6 +7,8 @@ from app.projects.schemas import (
     DataDiscoverRequest, DataDiscoverResponse, DataIngestRequest, DataIngestResponse
 )
 from app.projects.service import ProjectService
+from app.core.database import get_session
+from app.projects.models import Artifact
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 service = ProjectService()
@@ -54,6 +56,41 @@ def get_project_state(project_id: str):
     if "error" in state:
         raise HTTPException(status_code=404, detail="Project not found")
     return {"ok": True, "data": state}
+
+
+@router.get("/{project_id}/artifacts")
+def list_artifacts(project_id: str, type: str | None = None, job_id: str | None = None, tool_call_id: str | None = None):
+    db = get_session()
+    try:
+        query = db.query(Artifact).filter(Artifact.project_id == project_id)
+        if type:
+            query = query.filter(Artifact.type == type)
+        if job_id:
+            query = query.filter(Artifact.job_id == job_id)
+        if tool_call_id:
+            query = query.filter(Artifact.tool_call_id == tool_call_id)
+        artifacts = query.order_by(Artifact.created_at.desc()).all()
+        return {
+            "ok": True,
+            "data": [
+                {
+                    "id": artifact.id,
+                    "project_id": artifact.project_id,
+                    "job_id": artifact.job_id,
+                    "tool_call_id": artifact.tool_call_id,
+                    "type": artifact.type,
+                    "title": artifact.title,
+                    "path": artifact.path,
+                    "mime_type": artifact.mime_type,
+                    "metadata_json": artifact.metadata_json,
+                    "checksum": artifact.checksum,
+                    "created_at": artifact.created_at,
+                }
+                for artifact in artifacts
+            ],
+        }
+    finally:
+        db.close()
 
 
 @router.get("/{project_id}/files", response_model=list[ProjectFileResponse])

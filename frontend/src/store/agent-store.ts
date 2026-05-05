@@ -34,6 +34,7 @@ export interface JobStatus {
   totalSteps: number
   progress: number
   message: string
+  status?: 'running' | 'succeeded' | 'failed'
 }
 
 interface AgentStore {
@@ -55,6 +56,7 @@ interface AgentStore {
   setCurrentSession: (sessionId: string | null) => void
   sendMessage: (projectId: string, message: string) => Promise<MessageResponse | null>
   loadSessionMessages: (sessionId: string) => Promise<void>
+  loadPendingApprovals: (projectId: string, sessionId?: string | null) => Promise<void>
   handleSSEEvent: (event: SSEEvent) => void
   interruptSession: (sessionId: string) => Promise<void>
   clearMessages: () => void
@@ -168,6 +170,31 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     }
   },
 
+  loadPendingApprovals: async (projectId: string, sessionId?: string | null) => {
+    const response = await api.listPendingApprovals(projectId, sessionId || undefined)
+    if (!response.ok || !response.data) return
+
+    const approvals: ApprovalRequest[] = response.data.map((approval) => ({
+      id: approval.id,
+      turnId: approval.turn_id,
+      action: approval.action,
+      reason: approval.reason,
+      riskLevel: approval.risk_level || 'medium',
+      payload: approval.payload || {},
+      createdAt: approval.created_at,
+    }))
+
+    set((state) => {
+      const existingIds = new Set(state.approvalRequests.map((approval) => approval.id))
+      return {
+        approvalRequests: [
+          ...state.approvalRequests,
+          ...approvals.filter((approval) => !existingIds.has(approval.id)),
+        ],
+      }
+    })
+  },
+
   handleSSEEvent: (event: SSEEvent) => {
     switch (event.type) {
       case 'assistant_message_delta':
@@ -185,7 +212,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
               created_at: new Date().toISOString(),
             })
           }
-          return { messageQueue: messages }
+          return { messageQueue: messages, error: null }
         })
         break
 
@@ -235,6 +262,23 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
             }
             return { toolCalls: updatedToolCalls }
           })
+
+          if (event.approval_required && event.approval_id) {
+            const approval: ApprovalRequest = {
+              id: event.approval_id,
+              turnId: event.turn_id,
+              action: event.action,
+              reason: event.approval_reason || event.summary || '',
+              riskLevel: event.risk_level || 'medium',
+              payload: event.approval_payload || {},
+              createdAt: new Date().toISOString(),
+            }
+            set((state) => ({
+              approvalRequests: state.approvalRequests.some((item) => item.id === approval.id)
+                ? state.approvalRequests
+                : [...state.approvalRequests, approval],
+            }))
+          }
         }
         break
 
@@ -273,8 +317,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
             totalSteps: 8,
             progress: 0,
             message: 'Starting...',
+            status: 'running',
           }
           set((state) => ({
+            isRunning: true,
             jobs: {
               ...state.jobs,
               [event.job_id]: job,
@@ -295,6 +341,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
             totalSteps,
             progress: event.progress,
             message: event.message,
+            status: 'running',
           }
           set((state) => ({
             jobs: {
@@ -307,11 +354,24 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
       case 'job_finished':
         {
-          set((state) => {
-            const rest = { ...state.jobs }
-            delete rest[event.job_id]
-            return { jobs: rest }
-          })
+          set((state) => ({
+            jobs: {
+              ...state.jobs,
+              [event.job_id]: {
+                ...(state.jobs[event.job_id] || {
+                  id: event.job_id,
+                  turnId: event.turn_id,
+                  action: '',
+                  currentStep: '',
+                  totalSteps: 8,
+                }),
+                progress: 1,
+                message: event.ok ? 'Pipeline completed.' : 'Pipeline failed.',
+                status: event.ok ? 'succeeded' : 'failed',
+              },
+            },
+            isRunning: false,
+          }))
         }
         break
 
@@ -322,12 +382,14 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
             turnId: event.turn_id,
             action: event.action,
             reason: event.reason,
-            riskLevel: 'medium', // Default, actual risk level would come from backend
-            payload: {},
+            riskLevel: event.risk_level || 'medium',
+            payload: event.payload || {},
             createdAt: new Date().toISOString(),
           }
           set((state) => ({
-            approvalRequests: [...state.approvalRequests, approval],
+            approvalRequests: state.approvalRequests.some((item) => item.id === approval.id)
+              ? state.approvalRequests
+              : [...state.approvalRequests, approval],
           }))
         }
         break
@@ -349,7 +411,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
               created_at: new Date().toISOString(),
             })
           }
-          return { messageQueue: messages, isRunning: false }
+          return { messageQueue: messages, isRunning: false, error: null }
         })
         break
 
@@ -398,10 +460,15 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   approveApproval: async (approvalId: string) => {
     try {
-      await api.approveApproval(approvalId)
+      set({ isRunning: true, error: null })
+      const response = await api.approveApproval(approvalId)
       set((state) => ({
         approvalRequests: state.approvalRequests.filter((a) => a.id !== approvalId),
       }))
+      response.data?.events?.forEach((event) => get().handleSSEEvent(event))
+      if (!response.ok) {
+        set({ error: response.error || 'Failed to approve', isRunning: false })
+      }
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to approve' })
     }
@@ -409,10 +476,11 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   rejectApproval: async (approvalId: string) => {
     try {
-      await api.rejectApproval(approvalId)
+      const response = await api.rejectApproval(approvalId)
       set((state) => ({
         approvalRequests: state.approvalRequests.filter((a) => a.id !== approvalId),
       }))
+      response.data?.events?.forEach((event) => get().handleSSEEvent(event))
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to reject' })
     }

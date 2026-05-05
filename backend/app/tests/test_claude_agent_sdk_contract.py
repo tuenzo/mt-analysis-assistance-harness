@@ -26,9 +26,11 @@ def isolated_db():
 
 def test_adapter_factory_falls_back_to_mock_without_key(monkeypatch):
     import app.agent.claude_agent_sdk_adapter as sdk_adapter
+    from app.core.config import settings as app_settings
 
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr(sdk_adapter, "HAS_CLAUDE_AGENT_SDK", True)
+    monkeypatch.setattr(app_settings, "anthropic_api_key", "")
 
     adapter = sdk_adapter.get_claude_adapter({"provider": "claude_agent_sdk"})
 
@@ -179,6 +181,58 @@ def test_sdk_event_mapping_emits_tool_call_failed_when_tool_result_is_not_ok(mon
     assert failed
     assert failed[0]["ok"] is False
     assert failed[0]["action"] == "data.validate"
+
+
+def test_sdk_event_mapping_emits_approval_requested_for_pending_approval(monkeypatch):
+    import app.agent.claude_agent_sdk_adapter as sdk_adapter
+
+    class FakeToolResultBlock:
+        tool_use_id = "toolu_approval"
+        is_error = False
+        content = [{"type": "text", "text": '{"ok": true, "summary": "需要用户审批"}'}]
+
+    adapter = sdk_adapter.ClaudeAgentSDKAdapter(
+        {"provider": "claude_agent_sdk", "workspace_root": "./workspaces"}
+    )
+    monkeypatch.setattr(
+        adapter,
+        "_pending_approval",
+        lambda *_, **__: {
+            "id": "approval_123",
+            "tool_call_id": "tc_approval",
+            "reason": "高风险 panel build",
+            "risk_level": "medium",
+            "payload": {"foo": "bar"},
+        },
+    )
+
+    events = []
+    event = adapter._tool_result_event(
+        FakeToolResultBlock(),
+        {
+            "toolu_approval": {
+                "tool": "business_analysis",
+                "action": "panel.build_category_day",
+                "tool_call_id": "tc_approval",
+                "persisted": True,
+            }
+        },
+    )
+    events.append(event)
+    events.append(adapter._approval_requested_event(event))
+
+    assert events[0]["approval_required"] is True
+    assert events[0]["approval_id"] == "approval_123"
+    assert events[1] == {
+        "type": "approval_requested",
+        "approval_id": "approval_123",
+        "action": "panel.build_category_day",
+        "reason": "高风险 panel build",
+        "risk_level": "medium",
+        "payload": {"foo": "bar"},
+        "tool_call_id": "tc_approval",
+        "sdk_executed": True,
+    }
 
 
 def test_sdk_event_mapping_emits_error_on_sdk_exception(monkeypatch):

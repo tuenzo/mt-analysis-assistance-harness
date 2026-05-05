@@ -4,8 +4,18 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Load .env from the backend directory.
-load_dotenv(Path(__file__).parent.parent.parent / ".env")
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = BACKEND_ROOT.parent
+
+# Load project-level dotenv files first so the backend can use the same local
+# configuration as the frontend/dev harness. Existing process env still wins.
+for env_file in (
+    PROJECT_ROOT / ".env",
+    PROJECT_ROOT / ".env.local",
+    BACKEND_ROOT / ".env",
+    BACKEND_ROOT / ".env.local",
+):
+    load_dotenv(env_file, override=False)
 
 
 class Settings(BaseSettings):

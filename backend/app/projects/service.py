@@ -110,7 +110,7 @@ class ProjectService:
                 "latest_session": {"id": sessions[-1].id, "status": sessions[-1].status} if sessions else None,
                 "latest_jobs": [{"id": j.id, "action": j.action, "status": j.status} for j in jobs],
                 "latest_artifacts": [{"id": a.id, "type": a.type, "title": a.title} for a in artifacts],
-                "latest_report": {"id": r.id, "status": r.status} if reports else None,
+                "latest_report": {"id": reports[0].id, "status": reports[0].status} if reports else None,
                 "memory_candidates_count": memory_count,
                 "next_actions": next_actions,
                 "files_count": len(files),

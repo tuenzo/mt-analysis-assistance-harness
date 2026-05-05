@@ -20,6 +20,8 @@ import type {
   LatestReport,
   MemoryCandidate,
   MemoryFilter,
+  PendingApproval,
+  ApprovalActionResponse,
 } from './api-types'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'
@@ -258,16 +260,22 @@ class ApiClient {
   }
 
   // ===== Approvals API =====
-  async approveApproval(approvalId: string): Promise<ApiResponse<void>> {
-    return this.request<void>(`/api/approvals/${approvalId}/approve`, {
+  async approveApproval(approvalId: string): Promise<ApiResponse<ApprovalActionResponse>> {
+    return this.request<ApprovalActionResponse>(`/api/approvals/${approvalId}/approve`, {
       method: 'POST',
     })
   }
 
-  async rejectApproval(approvalId: string): Promise<ApiResponse<void>> {
-    return this.request<void>(`/api/approvals/${approvalId}/reject`, {
+  async rejectApproval(approvalId: string): Promise<ApiResponse<ApprovalActionResponse>> {
+    return this.request<ApprovalActionResponse>(`/api/approvals/${approvalId}/reject`, {
       method: 'POST',
     })
+  }
+
+  async listPendingApprovals(projectId: string, sessionId?: string): Promise<ApiResponse<PendingApproval[]>> {
+    const params = new URLSearchParams({ project_id: projectId })
+    if (sessionId) params.set('session_id', sessionId)
+    return this.request<PendingApproval[]>(`/api/approvals?${params.toString()}`)
   }
 }
 

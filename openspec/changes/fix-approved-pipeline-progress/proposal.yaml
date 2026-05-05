@@ -1,0 +1,7 @@
+id: fix-approved-pipeline-progress
+title: Fix approved pipeline progress and generated outputs
+status: in-progress
+summary: >
+  Ensure approved full-pipeline actions continue execution visibly in the Agent UI,
+  persist job/artifact/report records, and make generated outputs available in
+  Dashboard and Reports.

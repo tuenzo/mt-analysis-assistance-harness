@@ -401,6 +401,8 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
                         "payload": tool_input,
                         "tool_call_id": runtime_tool_call_id,
                         "persisted": bool(runtime_session_id and runtime_turn_id),
+                        "runtime_session_id": runtime_session_id,
+                        "runtime_turn_id": runtime_turn_id,
                     }
                     events.append(
                         {
@@ -422,6 +424,9 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
                     event = self._tool_result_event(block, tool_uses)
                     if event:
                         events.append(event)
+                        approval_event = self._approval_requested_event(event)
+                        if approval_event:
+                            events.append(approval_event)
             return events
 
         if ResultMessage is not None and isinstance(sdk_message, ResultMessage):
@@ -512,22 +517,82 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             "tool_call_id": tool_use.get("tool_call_id"),
             "sdk_executed": True,
         }
-        approval = self._pending_approval(tool_use.get("tool_call_id")) if tool_use.get("persisted") else None
+        approval = (
+            self._pending_approval(
+                tool_use.get("tool_call_id"),
+                session_id=tool_use.get("runtime_session_id"),
+                turn_id=tool_use.get("runtime_turn_id"),
+                action=action,
+            )
+            if tool_use.get("persisted")
+            else None
+        )
         if approval:
             event["approval_required"] = True
-            event["approval_id"] = approval.id
+            event["approval_id"] = approval["id"]
+            event["approval_reason"] = approval["reason"]
+            event["risk_level"] = approval["risk_level"]
+            event["approval_payload"] = approval["payload"]
+            event["tool_call_id"] = approval["tool_call_id"]
         return event
 
-    def _pending_approval(self, tool_call_id: str | None):
+    @staticmethod
+    def _approval_requested_event(event: dict) -> dict | None:
+        if not event.get("approval_required") or not event.get("approval_id"):
+            return None
+        return {
+            "type": "approval_requested",
+            "approval_id": event["approval_id"],
+            "action": event.get("action", ""),
+            "reason": event.get("approval_reason") or event.get("summary") or "",
+            "risk_level": event.get("risk_level", "medium"),
+            "payload": event.get("approval_payload") or {},
+            "tool_call_id": event.get("tool_call_id"),
+            "sdk_executed": True,
+        }
+
+    def _pending_approval(
+        self,
+        tool_call_id: str | None,
+        *,
+        session_id: str | None = None,
+        turn_id: str | None = None,
+        action: str | None = None,
+    ):
         if not tool_call_id:
             return None
         db = get_session()
         try:
-            return (
+            approval = (
                 db.query(ApprovalRequest)
                 .filter(ApprovalRequest.tool_call_id == tool_call_id, ApprovalRequest.status == "pending")
                 .first()
             )
+            if not approval and session_id and turn_id and action:
+                approval = (
+                    db.query(ApprovalRequest)
+                    .filter(
+                        ApprovalRequest.session_id == session_id,
+                        ApprovalRequest.turn_id == turn_id,
+                        ApprovalRequest.action == action,
+                        ApprovalRequest.status == "pending",
+                    )
+                    .order_by(ApprovalRequest.created_at.desc(), ApprovalRequest.id.desc())
+                    .first()
+                )
+            if not approval:
+                return None
+            try:
+                payload = json.loads(approval.payload_json or "{}")
+            except json.JSONDecodeError:
+                payload = {}
+            return {
+                "id": approval.id,
+                "tool_call_id": approval.tool_call_id,
+                "reason": approval.reason or "",
+                "risk_level": approval.risk_level or "medium",
+                "payload": payload,
+            }
         finally:
             db.close()
 

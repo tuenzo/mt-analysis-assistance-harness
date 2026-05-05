@@ -1,9 +1,10 @@
 from pathlib import Path
-from app.tools.schemas import ToolResult
-from app.projects.service import ProjectService
+
 from app.analysis.pipelines.diagnostics import run_diagnostics
 from app.analysis.pipelines.localgap import run_localgap
 from app.analysis.pipelines.psm_did import run_psm_did
+from app.projects.service import ProjectService
+from app.tools.schemas import ToolResult
 
 
 def analysis_run_diagnostics(project_id: str, payload: dict) -> ToolResult:
@@ -55,7 +56,7 @@ def analysis_run_gps_uplift(project_id: str, payload: dict) -> ToolResult:
     return ToolResult(
         ok=True,
         action="analysis.run_gps_uplift",
-        summary="GPS-Uplift 分析完成（stub）",
+        summary="GPS-Uplift analysis completed (stub).",
         artifacts=[
             {"type": "chart", "title": "gps_dose_response.png"},
             {"type": "model_output", "title": "uplift_result.json", "method_status": "stub"},
@@ -75,48 +76,52 @@ def analysis_run_full_pipeline(project_id: str, payload: dict) -> ToolResult:
         )
 
     workspace_path = Path(project.workspace_path)
-
-    results = []
+    results: list[tuple[str, bool]] = []
+    artifacts: list[dict] = []
     all_ok = True
 
+    def record(step_result: ToolResult) -> None:
+        nonlocal all_ok
+        results.append((step_result.action, step_result.ok))
+        artifacts.extend(step_result.artifacts)
+        if not step_result.ok:
+            all_ok = False
+
+    from app.tools.data_tools import data_validate
+    record(data_validate(project_id, {}))
+
     from app.analysis.pipelines.build_panel import build_category_day_panel
-    result = build_category_day_panel(project_id, str(workspace_path))
-    results.append(("panel.build_category_day", result.ok))
-    if not result.ok:
-        all_ok = False
+    record(build_category_day_panel(project_id, str(workspace_path)))
 
-    result = run_diagnostics(project_id, str(workspace_path))
-    results.append(("analysis.run_diagnostics", result.ok))
-    if not result.ok:
-        all_ok = False
-
-    result = run_localgap(project_id, str(workspace_path))
-    results.append(("analysis.run_localgap", result.ok))
-    if not result.ok:
-        all_ok = False
-
-    result = run_psm_did(project_id, str(workspace_path))
-    results.append(("analysis.run_psm_did", result.ok))
-    if not result.ok:
-        all_ok = False
+    record(run_diagnostics(project_id, str(workspace_path)))
+    record(run_psm_did(project_id, str(workspace_path)))
+    record(run_localgap(project_id, str(workspace_path)))
+    record(analysis_run_gps_uplift(project_id, {}))
 
     from app.tools.chart_tools import chart_render
-    result = chart_render(project_id, {"type": "gmv_trend"})
-    results.append(("chart.render", result.ok))
+    record(chart_render(project_id, {"type": "gmv_trend"}))
+    record(chart_render(project_id, {"type": "localgap"}))
 
     from app.tools.result_tools import result_get_latest
-    result = result_get_latest(project_id, {})
-    results.append(("result.get_latest", result.ok))
+    record(result_get_latest(project_id, {}))
+
+    from app.tools.report_tools import report_generate
+    record(report_generate(project_id, {"format": payload.get("format", "md")}))
 
     failed = [name for name, ok in results if not ok]
-    summary = f"Full pipeline {'完成' if all_ok else '部分完成'}: {', '.join(n.split('.')[-1] for n, _ in results)}"
+    summary = (
+        "Full pipeline completed: "
+        if all_ok
+        else "Full pipeline partially completed: "
+    )
+    summary += ", ".join(name for name, _ in results)
     if failed:
-        summary += f", 失败: {', '.join(failed)}"
+        summary += f"; failed: {', '.join(failed)}"
 
     return ToolResult(
         ok=all_ok,
         action="analysis.run_full_pipeline",
         summary=summary,
-        artifacts=[{"type": "pipeline_result", "steps": results}],
-        assistant_hint="完整 pipeline 执行完成，可以查看各步骤结果。"
+        artifacts=[*artifacts, {"type": "pipeline_result", "steps": results}],
+        assistant_hint="Full pipeline finished. Open Dashboard or Reports to review outputs.",
     )

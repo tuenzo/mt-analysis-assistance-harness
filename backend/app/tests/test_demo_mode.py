@@ -66,7 +66,8 @@ def test_demo_seed_enabled_creates_fixed_project(isolated_demo_env, monkeypatch,
         assert db.query(ProjectFile).filter(ProjectFile.project_id == project.id).count() == 4
         assert db.query(Artifact).filter(Artifact.project_id == project.id).count() >= 2
         assert db.query(Report).filter(Report.project_id == project.id).count() == 1
-        assert db.query(AnalysisSession).filter(AnalysisSession.project_id == project.id).count() == 1
+        session = db.query(AnalysisSession).filter(AnalysisSession.project_id == project.id).one()
+        assert session.external_session_id is None
     finally:
         db.close()
 

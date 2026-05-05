@@ -26,6 +26,9 @@ export interface ProjectState {
   reports_count: number
   current_stage: string
   last_activity?: string
+  latest_jobs?: Array<{ id: string; action: string; status: string }>
+  latest_artifacts?: Array<{ id: string; type: string; title: string }>
+  latest_report?: { id: string; status: string } | null
 }
 
 export interface ProjectFile {
@@ -141,13 +144,33 @@ export interface AgentMessage {
 export type SSEEvent =
   | { type: 'assistant_message_delta'; turn_id: string; delta: string }
   | { type: 'tool_call_started'; turn_id: string; tool: string; action: string; payload?: Record<string, unknown> }
-  | { type: 'tool_call_finished'; turn_id: string; tool: string; action: string; ok: boolean; summary?: string }
+  | {
+      type: 'tool_call_finished'
+      turn_id: string
+      tool: string
+      action: string
+      ok: boolean
+      summary?: string
+      approval_required?: boolean
+      approval_id?: string
+      approval_reason?: string
+      risk_level?: 'low' | 'medium' | 'high'
+      approval_payload?: Record<string, unknown>
+    }
   | { type: 'tool_call_failed'; turn_id: string; tool: string; action: string; error?: string }
   | { type: 'job_started'; turn_id: string; job_id: string; action: string }
   | { type: 'job_progress'; turn_id: string; job_id: string; progress: number; message: string }
   | { type: 'job_finished'; turn_id: string; job_id: string; ok: boolean }
   | { type: 'artifact_created'; turn_id: string; artifact_id: string; name: string; path?: string }
-  | { type: 'approval_requested'; turn_id: string; approval_id: string; action: string; reason: string }
+  | {
+      type: 'approval_requested'
+      turn_id: string
+      approval_id: string
+      action: string
+      reason: string
+      risk_level?: 'low' | 'medium' | 'high'
+      payload?: Record<string, unknown>
+    }
   | { type: 'final_answer'; turn_id: string; message: string }
   | { type: 'error'; turn_id: string; error: string }
   | { type: 'runtime_error'; turn_id: string; error: string }
@@ -195,6 +218,21 @@ export interface DemoStatus {
   project_id: string
   project_name: string
   session_id: string | null
+}
+
+export interface PendingApproval {
+  id: string
+  turn_id: string
+  action: string
+  reason: string
+  risk_level: 'low' | 'medium' | 'high'
+  payload: Record<string, unknown>
+  created_at: string
+}
+
+export interface ApprovalActionResponse {
+  result: Record<string, unknown>
+  events: SSEEvent[]
 }
 
 export interface LatestReport {

@@ -61,7 +61,7 @@ class ContextBuilder:
             result_path = workspace_path / ".analysis" / "latest_result.json"
             if result_path.exists():
                 import json
-                latest_result = json.loads(result_path.read_text())
+                latest_result = json.loads(result_path.read_text(encoding="utf-8"))
 
             return {
                 "project_id": project.id,

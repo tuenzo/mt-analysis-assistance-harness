@@ -30,6 +30,7 @@ export default function AgentPage() {
     selectedToolCall,
     sendMessage,
     loadSessionMessages,
+    loadPendingApprovals,
     handleSSEEvent,
     interruptSession,
     clearMessages,
@@ -61,6 +62,12 @@ export default function AgentPage() {
       cancelled = true
     }
   }, [projectId, loadSessionMessages])
+
+  useEffect(() => {
+    if (sessionId) {
+      void loadPendingApprovals(projectId, sessionId)
+    }
+  }, [projectId, sessionId, loadPendingApprovals])
 
   // Handle SSE events with toast notifications
   const handleEventWithToast = useCallback((event: SSEEvent) => {

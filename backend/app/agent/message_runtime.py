@@ -232,6 +232,35 @@ class MessageRuntime:
         finally:
             db.close()
 
+    def publish_events(self, session_id: str, project_id: str, turn_id: str, events: list[dict]) -> None:
+        if not events:
+            return
+
+        self._event_buffers.setdefault(session_id, [])
+        turn_order = self._turn_order.setdefault(session_id, [])
+        if turn_id and turn_id not in turn_order:
+            turn_order.append(turn_id)
+
+        db = get_session()
+        try:
+            for event in events:
+                event.setdefault("turn_id", turn_id)
+                self._event_buffers[session_id].append(event)
+                db.add(
+                    AgentEvent(
+                        id=f"evt_{uuid.uuid4().hex[:12]}",
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        project_id=project_id,
+                        type=event["type"],
+                        payload_json=json.dumps(event, ensure_ascii=False),
+                        created_at=datetime.now().isoformat(),
+                    )
+                )
+            db.commit()
+        finally:
+            db.close()
+
     def interrupt(self, session_id: str) -> None:
         session = self.session_store.get_session(session_id)
         external_session_id = session.external_session_id if session else session_id

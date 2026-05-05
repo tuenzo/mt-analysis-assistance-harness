@@ -188,7 +188,7 @@ class DemoSeedService:
             id=DEMO_SESSION_ID,
             project_id=project_id,
             runtime_provider="demo",
-            external_session_id="demo_keemart_seed",
+            external_session_id=None,
             status="active",
             created_at=now,
             updated_at=now,
