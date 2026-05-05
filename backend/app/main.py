@@ -5,8 +5,11 @@ from app.api.projects import router as projects_router
 from app.api.files import router as files_router
 from app.api.agent_messages import router as agent_router
 from app.api.sessions import router as sessions_router
+from app.api.approvals import router as approvals_router
 from app.api.reports import router as reports_router
 from app.api.memory import router as memory_router
+from app.api.demo import router as demo_router
+from app.demo.seed import seed_demo_if_enabled
 
 app = FastAPI(title="Business Analysis Companion Workspace")
 
@@ -19,13 +22,16 @@ app.add_middleware(
 )
 
 init_db()
+seed_demo_if_enabled()
 
 app.include_router(projects_router, prefix="/api")
 app.include_router(files_router, prefix="/api")
 app.include_router(agent_router, prefix="/api")
 app.include_router(sessions_router, prefix="/api")
+app.include_router(approvals_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(memory_router, prefix="/api")
+app.include_router(demo_router, prefix="/api")
 
 
 @app.get("/health")

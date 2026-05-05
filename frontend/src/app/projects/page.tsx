@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useProjectStore } from '@/store/project-store'
+import { api } from '@/lib/api-client'
+import type { DemoStatus } from '@/lib/api-types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -16,16 +18,22 @@ import {
   ModalFooter,
   ModalClose,
 } from '@/components/ui/modal'
-import { Plus, FolderOpen, Clock, ChevronRight } from 'lucide-react'
+import { Plus, FolderOpen, Clock, ChevronRight, Sparkles } from 'lucide-react'
 
 export default function ProjectsPage() {
   const { projects, loading, error, loadProjects, createProject } = useProjectStore()
   const [open, setOpen] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [creating, setCreating] = useState(false)
+  const [demoStatus, setDemoStatus] = useState<DemoStatus | null>(null)
 
   useEffect(() => {
     loadProjects()
+    api.getDemoStatus().then((response) => {
+      if (response.ok && response.data) {
+        setDemoStatus(response.data)
+      }
+    })
   }, [loadProjects])
 
   const handleCreateProject = async () => {
@@ -87,6 +95,31 @@ export default function ProjectsPage() {
         <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-lg mb-6">
           {error}
         </div>
+      )}
+
+      {demoStatus?.enabled && (
+        <Card className="mb-6 border-primary/30 bg-primary/5">
+          <CardContent className="flex flex-col gap-4 py-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="rounded-md bg-primary/10 p-2">
+                <Sparkles className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="font-medium">Demo Mode</p>
+                  <span className="rounded-md bg-primary px-2 py-0.5 text-xs text-primary-foreground">Enabled</span>
+                </div>
+                <p className="text-sm text-muted-foreground">{demoStatus.project_name}</p>
+              </div>
+            </div>
+            <Link href={`/projects/${demoStatus.project_id}/agent`}>
+              <Button>
+                <Sparkles className="mr-2 h-4 w-4" />
+                Enter Demo Project
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
       )}
 
       {loading && projects.length === 0 ? (

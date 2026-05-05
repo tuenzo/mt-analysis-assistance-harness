@@ -52,13 +52,13 @@ class ProjectManifest:
         path = ProjectManifest.manifest_path(workspace_path)
         if not path.exists():
             raise FileNotFoundError(f"Manifest not found at {path}")
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         return ProjectManifest(**data)
 
     def save(self, workspace_path: Path) -> None:
         path = ProjectManifest.manifest_path(workspace_path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(asdict(self), indent=2, ensure_ascii=False))
+        path.write_text(json.dumps(asdict(self), indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def compute_file_checksum(file_path: Path) -> str:

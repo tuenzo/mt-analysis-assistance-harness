@@ -15,6 +15,8 @@ export interface Project {
   created_at?: string
   description?: string
   domain?: string
+  data_source_path?: string | null
+  is_test?: boolean
 }
 
 export interface ProjectState {
@@ -39,21 +41,72 @@ export interface ProjectFile {
 
 export interface FileUploadResponse {
   id: string
+  file_id?: string
   role: string
   original_name: string
-  current_path: string
+  current_path?: string
   status: string
   checksum: string
 }
 
-export interface SchemaInferResponse {
-  fields: Array<{
-    name: string
-    inferred_type: string
-    nullable: boolean
-    sample_values: string[]
+export interface DataSourceResponse {
+  data_source_path: string | null
+}
+
+export interface DataIngestResult {
+  imported_count: number
+  skipped_count: number
+  source_path: string
+  imported: Array<{
+    file_id: string
+    role: string
+    original_name: string
+    current_path: string
+    checksum: string
   }>
-  suggested_mappings: Record<string, string>
+  skipped: Array<{
+    name: string
+    reason: string
+  }>
+}
+
+export interface SourceFileCandidate {
+  name: string
+  source_path: string
+  size_bytes?: number | null
+  modified_at?: string | null
+  extension: string
+  kind: string
+  skipped: boolean
+  skip_reason?: string | null
+  headers: string[]
+  preview: string
+  preview_truncated: boolean
+}
+
+export interface DataDiscoverResult {
+  source_path: string
+  candidates: SourceFileCandidate[]
+  candidate_count: number
+}
+
+export interface SelectedSourceFile {
+  source_path: string
+  role: 'order_info' | 'exposure_info' | 'activity_timeline' | 'unknown'
+  reason: string
+}
+
+export interface SchemaInferResponse {
+  files: Array<{
+    file_id: string
+    role_guess: string
+    columns: Array<{
+    name: string
+      dtype: string
+      mapped_to?: string | null
+      confidence: number
+    }>
+  }>
 }
 
 export interface FieldMapping {
@@ -97,6 +150,7 @@ export type SSEEvent =
   | { type: 'approval_requested'; turn_id: string; approval_id: string; action: string; reason: string }
   | { type: 'final_answer'; turn_id: string; message: string }
   | { type: 'error'; turn_id: string; error: string }
+  | { type: 'runtime_error'; turn_id: string; error: string }
   | { type: 'session_created'; turn_id: string; session_id: string }
 
 // Artifact types
@@ -134,6 +188,18 @@ export interface Report {
   metadata_json?: string
   created_at: string
   updated_at: string
+}
+
+export interface DemoStatus {
+  enabled: boolean
+  project_id: string
+  project_name: string
+  session_id: string | null
+}
+
+export interface LatestReport {
+  content: string
+  path: string
 }
 
 // Memory types
