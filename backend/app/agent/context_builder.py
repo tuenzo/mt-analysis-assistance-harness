@@ -7,6 +7,7 @@ from app.core.config import settings
 
 AVAILABLE_ACTIONS = [
     "project.get_state",
+    "data.discover_source_files",
     "data.ingest",
     "data.validate",
     "schema.infer",

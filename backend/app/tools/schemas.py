@@ -5,6 +5,7 @@ from typing import Optional, Any
 
 class BusinessAnalysisAction(str, Enum):
     PROJECT_GET_STATE = "project.get_state"
+    DATA_DISCOVER_SOURCE_FILES = "data.discover_source_files"
     DATA_INGEST = "data.ingest"
     DATA_VALIDATE = "data.validate"
     SCHEMA_INFER = "schema.infer"

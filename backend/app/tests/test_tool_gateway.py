@@ -4,6 +4,7 @@ import shutil
 import os
 import uuid
 import json
+from pathlib import Path
 from fastapi.testclient import TestClient
 from app.main import app
 from app.core.database import init_db, get_session
@@ -122,6 +123,27 @@ def test_memory_propose_update_creates_approval_request(gateway, project):
         db.close()
 
 
+def test_data_ingest_creates_approval_request(gateway, project):
+    result = gateway.execute(
+        tool_call_id="tc_test_ingest",
+        project_id=project["id"],
+        action_str="data.ingest",
+        payload={},
+        reason="import local data source",
+        user_permission_level=PermissionLevel.MODIFY_WORKSPACE,
+    )
+    assert result.ok is True
+
+    db = get_session()
+    try:
+        approval = db.query(ApprovalRequest).filter(ApprovalRequest.tool_call_id == "tc_test_ingest").first()
+        assert approval is not None
+        assert approval.action == "data.ingest"
+        assert approval.risk_level == "medium"
+    finally:
+        db.close()
+
+
 def test_tool_call_logged_to_file(gateway, project, test_db):
     result = gateway.execute(
         tool_call_id="tc_test_logged",
@@ -204,7 +226,8 @@ def test_approve_and_execute(gateway, project, test_db):
         db.commit()
 
         resume_result = gateway.resume_from_approval(approval.id, approved=True)
-        assert resume_result.ok is True
+        assert resume_result.ok is False
+        assert resume_result.error["code"] == "VALIDATION_FAILED"
     finally:
         db.close()
 
@@ -213,6 +236,3 @@ def test_approval_not_found(gateway):
     result = gateway.resume_from_approval("nonexistent_id", approved=True)
     assert result.ok is False
     assert result.error["code"] == "NOT_FOUND"
-
-
-from pathlib import Path

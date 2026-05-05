@@ -12,6 +12,7 @@ class PermissionLevel(IntEnum):
 
 ACTION_PERMISSION_MAP: dict[BusinessAnalysisAction, PermissionLevel] = {
     BusinessAnalysisAction.PROJECT_GET_STATE: PermissionLevel.READ_STATE,
+    BusinessAnalysisAction.DATA_DISCOVER_SOURCE_FILES: PermissionLevel.SAFE_COMPUTE,
     BusinessAnalysisAction.DATA_INGEST: PermissionLevel.MODIFY_WORKSPACE,
     BusinessAnalysisAction.DATA_VALIDATE: PermissionLevel.SAFE_COMPUTE,
     BusinessAnalysisAction.SCHEMA_INFER: PermissionLevel.READ_STATE,
@@ -30,13 +31,14 @@ ACTION_PERMISSION_MAP: dict[BusinessAnalysisAction, PermissionLevel] = {
 }
 
 
-HIGH_RISK_ACTIONS = {BusinessAnalysisAction.PANEL_BUILD_CATEGORY_DAY, BusinessAnalysisAction.ANALYSIS_RUN_FULL_PIPELINE, BusinessAnalysisAction.MEMORY_PROPOSE_UPDATE}
+HIGH_RISK_ACTIONS = {BusinessAnalysisAction.DATA_INGEST, BusinessAnalysisAction.PANEL_BUILD_CATEGORY_DAY, BusinessAnalysisAction.ANALYSIS_RUN_FULL_PIPELINE, BusinessAnalysisAction.MEMORY_PROPOSE_UPDATE}
 
 RISK_LEVEL_MAP: dict[BusinessAnalysisAction, str] = {
     BusinessAnalysisAction.MEMORY_PROPOSE_UPDATE: "high",
     BusinessAnalysisAction.ANALYSIS_RUN_FULL_PIPELINE: "high",
     BusinessAnalysisAction.PANEL_BUILD_CATEGORY_DAY: "medium",
     BusinessAnalysisAction.DATA_INGEST: "medium",
+    BusinessAnalysisAction.DATA_DISCOVER_SOURCE_FILES: "low",
     BusinessAnalysisAction.SCHEMA_APPLY_MAPPING: "medium",
     BusinessAnalysisAction.DATA_VALIDATE: "low",
     BusinessAnalysisAction.SCHEMA_INFER: "low",
