@@ -2,7 +2,6 @@
 
 import { useProjectStore } from '@/store/project-store'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { Database, Bot, FileText, Brain, Clock, FolderOpen } from 'lucide-react'
 import Link from 'next/link'
 

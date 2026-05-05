@@ -44,7 +44,6 @@ export function JobProgressIndicator({ job, jobs }: JobProgressIndicatorProps) {
           {PIPELINE_STEPS.map((step, index) => {
             const isComplete = index < currentStepIndex
             const isCurrent = index === currentStepIndex
-            const isPending = index > currentStepIndex
 
             return (
               <div key={step} className="flex items-center gap-2">
