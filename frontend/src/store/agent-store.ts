@@ -218,18 +218,17 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
       case 'tool_call_started':
         {
-          const toolCall: ToolCall = {
-            id: `tc_${Date.now()}`,
-            turnId: event.turn_id,
-            tool: event.tool,
-            action: event.action,
-            payload: event.payload || {},
-            status: 'running',
-            startedAt: new Date().toISOString(),
-          }
-
           set((state) => {
             const turnToolCalls = state.toolCalls[event.turn_id] || []
+            const toolCall: ToolCall = {
+              id: event.tool_call_id || `tc_${event.turn_id}_${turnToolCalls.length}_${Date.now()}`,
+              turnId: event.turn_id,
+              tool: event.tool,
+              action: event.action,
+              payload: event.payload || {},
+              status: 'running',
+              startedAt: new Date().toISOString(),
+            }
             return {
               toolCalls: {
                 ...state.toolCalls,

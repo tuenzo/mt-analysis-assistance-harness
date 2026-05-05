@@ -22,6 +22,9 @@ import type {
   MemoryFilter,
   PendingApproval,
   ApprovalActionResponse,
+  ProjectMemory,
+  MemorySummaryResponse,
+  ProjectTimeline,
 } from './api-types'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'
@@ -246,17 +249,33 @@ class ApiClient {
     )
   }
 
+  async getProjectMemory(projectId: string, scope: string = 'project'): Promise<ApiResponse<ProjectMemory[]>> {
+    const params = new URLSearchParams({ scope })
+    return this.request<ProjectMemory[]>(`/api/projects/${projectId}/memory?${params.toString()}`)
+  }
+
+  async generateMemorySummary(projectId: string): Promise<ApiResponse<MemorySummaryResponse>> {
+    return this.request<MemorySummaryResponse>(`/api/projects/${projectId}/memory/summary`, {
+      method: 'POST',
+    })
+  }
+
   async approveMemoryCandidate(candidateId: string, syncTarget: string = 'project'): Promise<ApiResponse<MemoryCandidate>> {
-    return this.request<MemoryCandidate>(`/api/memory/candidates/${candidateId}/approve`, {
+    return this.request<MemoryCandidate>(`/api/projects/memory/candidates/${candidateId}/approve`, {
       method: 'POST',
       body: JSON.stringify({ sync_target: syncTarget }),
     })
   }
 
   async rejectMemoryCandidate(candidateId: string): Promise<ApiResponse<MemoryCandidate>> {
-    return this.request<MemoryCandidate>(`/api/memory/candidates/${candidateId}/reject`, {
+    return this.request<MemoryCandidate>(`/api/projects/memory/candidates/${candidateId}/reject`, {
       method: 'POST',
     })
+  }
+
+  // ===== Timeline API =====
+  async getProjectTimeline(projectId: string): Promise<ApiResponse<ProjectTimeline>> {
+    return this.request<ProjectTimeline>(`/api/projects/${projectId}/timeline`)
   }
 
   // ===== Approvals API =====

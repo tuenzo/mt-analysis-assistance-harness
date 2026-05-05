@@ -370,7 +370,7 @@ class ProjectService:
 
     @staticmethod
     def _can_read_hidden_project(project_id: str) -> bool:
-        return is_test_mode() or (is_demo_mode() and project_id == get_demo_project_id())
+        return is_test_mode() or project_id == get_demo_project_id()
 
     def _register_file_bytes(self, db, project: Project, file_content: bytes, original_name: str, role: str) -> ProjectFile:
         workspace_path = Path(project.workspace_path)

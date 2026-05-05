@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.projects.service import ProjectService
-from app.tools.memory_tools import memory_generate_summary, memory_get, memory_approve
+from app.tools.memory_tools import memory_generate_summary, memory_get, memory_approve, memory_propose_update
 from app.core.database import get_session
 from app.projects.models import MemoryCandidate
 
@@ -45,7 +45,25 @@ def generate_memory_summary(project_id: str):
     result = memory_generate_summary(project_id, {})
     if not result.ok:
         raise HTTPException(status_code=400, detail=result.error)
-    return {"ok": True, "result": result.model_dump()}
+    content = ""
+    scope = "project"
+    for artifact in result.artifacts:
+        if artifact.get("type") == "memory_summary":
+            content = artifact.get("content", "")
+            scope = artifact.get("scope", scope)
+            break
+
+    if content:
+        candidate = memory_propose_update(project_id, {"content": content, "scope": scope})
+        return {
+            "ok": True,
+            "data": {
+                "summary": result.model_dump(),
+                "candidate": candidate.model_dump(),
+            },
+        }
+
+    return {"ok": True, "data": {"summary": result.model_dump(), "candidate": None}}
 
 
 @router.post("/memory/candidates/{candidate_id}/approve")

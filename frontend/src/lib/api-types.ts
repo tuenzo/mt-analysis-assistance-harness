@@ -143,7 +143,7 @@ export interface AgentMessage {
 // SSE Event types
 export type SSEEvent =
   | { type: 'assistant_message_delta'; turn_id: string; delta: string }
-  | { type: 'tool_call_started'; turn_id: string; tool: string; action: string; payload?: Record<string, unknown> }
+  | { type: 'tool_call_started'; turn_id: string; tool: string; action: string; payload?: Record<string, unknown>; tool_call_id?: string }
   | {
       type: 'tool_call_finished'
       turn_id: string
@@ -257,6 +257,41 @@ export interface MemoryCandidate {
 export interface MemoryFilter {
   scope?: string
   status?: string
+}
+
+export interface ProjectMemory {
+  content: string
+  scope: string
+}
+
+export interface MemorySummaryResponse {
+  summary: Record<string, unknown>
+  candidate: Record<string, unknown> | null
+}
+
+export interface TimelineEntry {
+  id: string
+  action?: string
+  status?: string
+  progress?: number
+  type?: string
+  reason?: string
+  summary?: string
+  risk_level?: string
+  created_at: string
+  started_at?: string | null
+  finished_at?: string | null
+  completed_at?: string | null
+  resolved_at?: string | null
+  error_message?: string | null
+  payload?: Record<string, unknown>
+}
+
+export interface ProjectTimeline {
+  jobs: TimelineEntry[]
+  tool_calls: TimelineEntry[]
+  approvals: TimelineEntry[]
+  events: TimelineEntry[]
 }
 
 // Notification types

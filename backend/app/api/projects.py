@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from typing import Optional
 from app.projects.schemas import (
@@ -8,7 +10,7 @@ from app.projects.schemas import (
 )
 from app.projects.service import ProjectService
 from app.core.database import get_session
-from app.projects.models import Artifact
+from app.projects.models import AgentEvent, ApprovalRequest, Artifact, Job, ToolCall
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 service = ProjectService()
@@ -91,6 +93,115 @@ def list_artifacts(project_id: str, type: str | None = None, job_id: str | None 
         }
     finally:
         db.close()
+
+
+@router.get("/{project_id}/timeline")
+def get_project_timeline(project_id: str):
+    db = get_session()
+    try:
+        jobs = (
+            db.query(Job)
+            .filter(Job.project_id == project_id)
+            .order_by(Job.created_at.desc(), Job.id.desc())
+            .limit(30)
+            .all()
+        )
+        tool_calls = (
+            db.query(ToolCall)
+            .filter(ToolCall.project_id == project_id)
+            .order_by(ToolCall.created_at.desc(), ToolCall.id.desc())
+            .limit(80)
+            .all()
+        )
+        approvals = (
+            db.query(ApprovalRequest)
+            .filter(ApprovalRequest.project_id == project_id)
+            .order_by(ApprovalRequest.created_at.desc(), ApprovalRequest.id.desc())
+            .limit(40)
+            .all()
+        )
+        events = (
+            db.query(AgentEvent)
+            .filter(AgentEvent.project_id == project_id)
+            .order_by(AgentEvent.created_at.desc(), AgentEvent.id.desc())
+            .limit(120)
+            .all()
+        )
+        return {
+            "ok": True,
+            "data": {
+                "jobs": [
+                    {
+                        "id": job.id,
+                        "action": job.action,
+                        "status": job.status,
+                        "progress": job.progress or 0,
+                        "started_at": job.started_at,
+                        "finished_at": job.finished_at,
+                        "created_at": job.created_at,
+                        "error_message": job.error_message,
+                    }
+                    for job in jobs
+                ],
+                "tool_calls": [
+                    {
+                        "id": call.id,
+                        "turn_id": call.turn_id,
+                        "action": call.action,
+                        "status": call.status,
+                        "summary": _tool_call_summary(call.result_json),
+                        "created_at": call.created_at,
+                        "completed_at": call.completed_at,
+                        "error_message": call.error_message,
+                    }
+                    for call in tool_calls
+                ],
+                "approvals": [
+                    {
+                        "id": approval.id,
+                        "turn_id": approval.turn_id,
+                        "action": approval.action,
+                        "status": approval.status,
+                        "risk_level": approval.risk_level,
+                        "reason": approval.reason or "",
+                        "created_at": approval.created_at,
+                        "resolved_at": approval.resolved_at,
+                    }
+                    for approval in approvals
+                ],
+                "events": [
+                    {
+                        "id": event.id,
+                        "turn_id": event.turn_id,
+                        "type": event.type,
+                        "created_at": event.created_at,
+                        "payload": _event_payload(event.payload_json),
+                    }
+                    for event in events
+                ],
+            },
+        }
+    finally:
+        db.close()
+
+
+def _tool_call_summary(result_json: str | None) -> str:
+    if not result_json:
+        return ""
+    try:
+        data = json.loads(result_json)
+    except json.JSONDecodeError:
+        return ""
+    return str(data.get("summary") or "")
+
+
+def _event_payload(payload_json: str | None) -> dict:
+    if not payload_json:
+        return {}
+    try:
+        return json.loads(payload_json)
+    except json.JSONDecodeError:
+        return {}
 
 
 @router.get("/{project_id}/files", response_model=list[ProjectFileResponse])
