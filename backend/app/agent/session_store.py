@@ -6,14 +6,19 @@ from app.projects.models import AnalysisSession
 
 
 class SessionStore:
-    def create_session(self, project_id: str, provider: str = "mock") -> AnalysisSession:
+    def create_session(
+        self,
+        project_id: str,
+        provider: str = "mock",
+        external_session_id: str | None = None,
+    ) -> AnalysisSession:
         db = get_session()
         try:
             session = AnalysisSession(
                 id=uuid.uuid4().hex,
                 project_id=project_id,
                 runtime_provider=provider,
-                external_session_id=uuid.uuid4().hex,
+                external_session_id=external_session_id or uuid.uuid4().hex,
                 status="active",
                 created_at=datetime.now().isoformat(),
                 updated_at=datetime.now().isoformat(),

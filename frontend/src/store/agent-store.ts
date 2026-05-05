@@ -136,10 +136,8 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         return null
       }
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : 'Unknown error' })
+      set({ error: e instanceof Error ? e.message : 'Unknown error', isRunning: false })
       return null
-    } finally {
-      set({ isRunning: false })
     }
   },
 
@@ -318,16 +316,21 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       case 'final_answer':
         set((state) => {
           const messages = [...state.messageQueue]
-          const lastUserIndex = messages.map((m) => m.role).lastIndexOf('user')
-          const cleanedMessages = messages.slice(0, lastUserIndex + 1)
-          cleanedMessages.push({
-            id: `msg_${Date.now()}_final`,
-            turn_id: event.turn_id,
-            role: 'assistant',
-            content: event.message,
-            created_at: new Date().toISOString(),
-          })
-          return { messageQueue: cleanedMessages, isRunning: false }
+          const lastMsg = messages[messages.length - 1]
+          if (lastMsg && lastMsg.role === 'assistant') {
+            // Update existing assistant message with the final content
+            lastMsg.content = event.message
+          } else {
+            // No assistant message yet, append one
+            messages.push({
+              id: `msg_${Date.now()}_final`,
+              turn_id: event.turn_id,
+              role: 'assistant',
+              content: event.message,
+              created_at: new Date().toISOString(),
+            })
+          }
+          return { messageQueue: messages, isRunning: false }
         })
         break
 
