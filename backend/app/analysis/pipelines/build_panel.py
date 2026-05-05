@@ -1,10 +1,60 @@
-import csv
+from __future__ import annotations
+
 import json
-from pathlib import Path
-from datetime import datetime
-from typing import Optional
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
 from app.tools.schemas import ToolResult
+
+
+ROLE_ALIASES: dict[str, dict[str, list[str]]] = {
+    "order_info": {
+        "order_id": ["order_id", "main_order_id", "stat_pay_main_order_id"],
+        "user_id": ["user_id", "stat_pay_user_id"],
+        "sku_id": ["sku_id", "base_sku_id", "sku"],
+        "category_id": ["category_id", "cate_id"],
+        "category_name": ["category_name", "category_name_cn", "category", "cat_name"],
+        "date": ["date", "dt", "pay_date", "pay_time", "order_date"],
+        "gmv": ["gmv", "sale_amount", "sku_sale_amt", "pay_amount"],
+        "discount_amount": ["discount_amount", "discount", "coupon_amount", "biz_total_discount_amt"],
+        "quantity": ["quantity", "qty"],
+        "order_count": ["order_count"],
+    },
+    "exposure_info": {
+        "sku_id": ["sku_id", "base_sku_id", "sku"],
+        "category_id": ["category_id", "cate_id"],
+        "category_name": ["category_name", "category_name_cn", "category", "cat_name"],
+        "date": ["date", "dt", "exposure_date"],
+        "view_uv": ["view_uv", "exposure", "exposure_count", "expo_uv"],
+        "buy_uv": ["buy_uv"],
+        "exposure_pv": ["exposure_pv", "view_pv"],
+    },
+    "activity_timeline": {
+        "category_id": ["category_id", "cate_id"],
+        "category_name": ["category_name", "category_name_cn", "category", "cat_name"],
+        "date": ["date", "dt", "activity_date"],
+        "start_date": ["start_date"],
+        "end_date": ["end_date"],
+        "activity_name": ["activity_name", "activity_id", "activity"],
+        "payday": ["payday", "is_payday"],
+    },
+}
+
+ROLE_PATTERNS = {
+    "order_info": ["order_info", "orders", "order"],
+    "exposure_info": ["exposure_info", "exposure", "expo"],
+    "activity_timeline": ["activity_timeline", "activity", "timeline"],
+}
+
+REQUIRED_FIELDS = {
+    "order_info": ["date", "category_name", "gmv"],
+    "exposure_info": ["date", "view_uv"],
+    "activity_timeline": [],
+}
 
 
 @dataclass
@@ -12,232 +62,567 @@ class ValidationResult:
     ok: bool
     issues: list[str]
     warnings: list[str]
-    file_info: dict
+    file_info: dict[str, dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class PanelConfig:
+    project_id: str
+    payday_day: int = 27
+    pre_activity_days: int = 7
+    post_activity_days: int = 7
+
+
+@dataclass(frozen=True)
+class PanelBuildResult:
+    panel_df: pd.DataFrame
+    summary: dict[str, Any]
 
 
 def validate_files(workspace_path: Path) -> ValidationResult:
-    """检查 order_info, exposure_info, activity_timeline 三个 CSV 文件"""
-    issues = []
-    warnings = []
-
-    required_roles = {
-        "order_info": ["category", "gmv", "date"],
-        "exposure_info": ["category", "exposure", "date"],
-        "activity_timeline": ["category", "date", "payday"],
-    }
-
     workspace_path = Path(workspace_path)
     data_dir = workspace_path / "data" / "raw"
+    files = _find_role_files(data_dir)
+    issues: list[str] = []
+    warnings: list[str] = []
+    file_info: dict[str, dict[str, Any]] = {}
 
-    file_info = {}
-    for role, required_fields in required_roles.items():
-        matching_files = list(data_dir.glob(f"*{role}*.csv")) + list(data_dir.glob(f"*{role.replace('_', '')}*.csv"))
-
-        if not matching_files:
-            issues.append(f"缺少文件类型: {role}")
+    for role in ROLE_ALIASES:
+        csv_path = files.get(role)
+        if csv_path is None:
+            issues.append(f"Missing required CSV for role `{role}`.")
             continue
 
-        csv_file = matching_files[0]
-        file_info[role] = {"path": str(csv_file), "rows": 0, "columns": []}
-
         try:
-            with open(csv_file, newline="", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                headers = [h.lower().strip() for h in reader.fieldnames or []]
-                file_info[role]["columns"] = headers
+            frame = _read_csv(csv_path)
+        except Exception as exc:
+            issues.append(f"{role}: failed to read CSV: {exc}")
+            continue
 
-                missing_fields = []
-                for field in required_fields:
-                    if not any(field in h for h in headers):
-                        missing_fields.append(field)
+        mappings = infer_csv_schema(csv_path, role)
+        role_issues, role_warnings = _validate_frame(frame, role, mappings)
+        issues.extend(f"{role}: {issue}" for issue in role_issues)
+        warnings.extend(f"{role}: {warning}" for warning in role_warnings)
+        file_info[role] = {
+            "path": str(csv_path),
+            "rows": int(len(frame)),
+            "columns": frame.columns.tolist(),
+            "recommended_mappings": mappings,
+        }
 
-                if missing_fields:
-                    issues.append(f"{role}: 缺少必需字段 {missing_fields}")
-
-                row_count = 0
-                for row in reader:
-                    row_count += 1
-                file_info[role]["rows"] = row_count
-
-                if row_count == 0:
-                    warnings.append(f"{role}: 文件为空")
-                elif row_count < 100:
-                    warnings.append(f"{role}: 数据量较少 ({row_count} 行)")
-
-        except Exception as e:
-            issues.append(f"{role}: 读取失败 - {str(e)}")
-
-    ok = len(issues) == 0
-    return ValidationResult(ok=ok, issues=issues, warnings=warnings, file_info=file_info)
+    return ValidationResult(ok=not issues, issues=issues, warnings=warnings, file_info=file_info)
 
 
-def build_category_day_panel(project_id: str, workspace_path: str) -> ToolResult:
-    """
-    构建 category × day panel
+def infer_csv_schema(csv_path: Path, role: str) -> dict[str, str]:
+    headers = _read_headers(csv_path)
+    return infer_schema_from_columns(headers, role)
 
-    输入:
-        - order_info.csv: category, date, gmv, discount, order_id, user_id
-        - exposure_info.csv: category, date, exposure
-        - activity_timeline.csv: category, date, payday, activity_id
 
-    输出:
-        - data/processed/category_day_panel.parquet (JSON for MVP)
-        - 字段: date, category, gmv, discount, discount_rate,
-                exposure, exposure_rate, order_count, user_count,
-                is_payday, is_activity, is_payday_activity
-    """
-    workspace_path = Path(workspace_path)
-    data_dir = workspace_path / "data" / "raw"
-    output_dir = workspace_path / "data" / "processed"
+def infer_schema_from_columns(columns: list[str], role: str) -> dict[str, str]:
+    aliases = ROLE_ALIASES.get(role, {})
+    lower_to_original = {str(column).strip().lower(): str(column) for column in columns}
+    mappings: dict[str, str] = {}
+
+    for standard_field, candidates in aliases.items():
+        for candidate in candidates:
+            match = lower_to_original.get(candidate.lower())
+            if match is not None:
+                mappings[standard_field] = match
+                break
+
+    return mappings
+
+
+def build_category_day_panel(
+    project_id: str,
+    workspace_path: str,
+    schema_mappings: dict[str, dict[str, str]] | None = None,
+) -> ToolResult:
+    workspace = Path(workspace_path)
+    output_dir = workspace / "data" / "processed"
+    analysis_dir = workspace / ".analysis"
     output_dir.mkdir(parents=True, exist_ok=True)
+    analysis_dir.mkdir(parents=True, exist_ok=True)
 
-    val_result = validate_files(workspace_path)
-    if not val_result.ok:
+    files = _find_role_files(workspace / "data" / "raw")
+    validation = validate_files(workspace)
+    if not validation.ok:
         return ToolResult(
             ok=False,
             action="panel.build_category_day",
-            summary="数据校验失败",
-            error={"code": "VALIDATION_FAILED", "message": "; ".join(val_result.issues)},
+            summary="Data validation failed before panel build.",
+            error={"code": "VALIDATION_FAILED", "message": "; ".join(validation.issues), "details": {"warnings": validation.warnings}},
         )
 
-    order_file = None
-    exposure_file = None
-    activity_file = None
+    try:
+        orders_raw = _read_csv(files["order_info"])
+        exposure_raw = _read_csv(files["exposure_info"])
+        activity_raw = _read_csv(files["activity_timeline"])
 
-    for f in data_dir.glob("*.csv"):
-        fname_lower = f.name.lower()
-        if "order" in fname_lower:
-            order_file = f
-        elif "exposure" in fname_lower:
-            exposure_file = f
-        elif "activity" in fname_lower or "timeline" in fname_lower:
-            activity_file = f
+        mappings = schema_mappings or {}
+        orders = standardize_orders(orders_raw, mappings.get("order_info") or infer_schema_from_columns(orders_raw.columns.tolist(), "order_info"))
+        exposure = standardize_exposure(exposure_raw, mappings.get("exposure_info") or infer_schema_from_columns(exposure_raw.columns.tolist(), "exposure_info"))
+        activity = standardize_activity(activity_raw, mappings.get("activity_timeline") or infer_schema_from_columns(activity_raw.columns.tolist(), "activity_timeline"))
+        result = build_panel_from_frames(orders, exposure, activity, PanelConfig(project_id=project_id))
+    except Exception as exc:
+        return ToolResult(
+            ok=False,
+            action="panel.build_category_day",
+            summary="Panel build failed.",
+            error={"code": "PANEL_BUILD_FAILED", "message": str(exc), "details": {}},
+        )
 
-    order_data = _read_csv_by_category_date(order_file) if order_file else {}
-    exposure_data = _read_csv_by_category_date(exposure_file) if exposure_file else {}
-    activity_data = _read_activity(activity_file) if activity_file else {}
+    json_path = output_dir / "category_day_panel.json"
+    csv_path = output_dir / "category_day_panel.csv"
+    summary_path = analysis_dir / "panel_summary.json"
 
-    all_keys = set(order_data.keys()) | set(exposure_data.keys())
-    panel_rows = []
+    records = result.panel_df.to_dict(orient="records")
+    json_path.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+    result.panel_df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+    summary_path.write_text(json.dumps(result.summary, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    for cat_date in all_keys:
-        category, date = cat_date.split("||")
-        order_row = order_data.get(cat_date, {})
-        exposure_row = exposure_data.get(cat_date, {})
-        activity_row = activity_data.get(cat_date, {})
-
-        gmv = order_row.get("gmv", 0) or 0
-        discount = order_row.get("discount", 0) or 0
-        order_count = order_row.get("order_count", 0) or 0
-        user_count = order_row.get("user_count", 0) or 0
-        exposure = exposure_row.get("exposure", 0) or 0
-
-        discount_rate = (discount / gmv * 100) if gmv > 0 else 0
-        exposure_rate = (exposure / order_count * 100) if order_count > 0 else 0
-
-        panel_rows.append({
-            "date": date,
-            "category": category,
-            "gmv": float(gmv),
-            "discount": float(discount),
-            "discount_rate": round(discount_rate, 2),
-            "exposure": float(exposure),
-            "exposure_rate": round(exposure_rate, 2),
-            "order_count": int(order_count),
-            "user_count": int(user_count),
-            "is_payday": activity_row.get("is_payday", False),
-            "is_activity": activity_row.get("is_activity", False),
-            "is_payday_activity": activity_row.get("is_payday_activity", False),
-        })
-
-    panel_rows.sort(key=lambda x: (x["date"], x["category"]))
-
-    output_path = output_dir / "category_day_panel.json"
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(panel_rows, f, ensure_ascii=False, indent=2)
-
-    summary = f"Panel 构建完成: {len(panel_rows)} 行, {len(set(r['category'] for r in panel_rows))} 个品类"
     return ToolResult(
         ok=True,
         action="panel.build_category_day",
-        summary=summary,
-        artifacts=[{
-            "type": "panel_data",
-            "title": "category_day_panel.json",
-            "path": str(output_path.relative_to(workspace_path)),
-            "rows": len(panel_rows),
-        }],
-        assistant_hint="Panel 已生成，可以进行诊断分析和因果推断。"
+        summary=(
+            f"Panel build completed: {result.summary['row_count']} rows, "
+            f"{result.summary['category_count']} categories, "
+            f"{result.summary['date_range']['start']} to {result.summary['date_range']['end']}."
+        ),
+        artifacts=[
+            {"type": "panel_data", "title": "category_day_panel.json", "path": str(json_path.relative_to(workspace)), "rows": result.summary["row_count"]},
+            {"type": "panel_data", "title": "category_day_panel.csv", "path": str(csv_path.relative_to(workspace)), "rows": result.summary["row_count"]},
+            {"type": "panel_summary", "title": "panel_summary.json", "path": str(summary_path.relative_to(workspace)), **result.summary},
+        ],
+        state_patch={"current_stage": "panel_ready"},
+        assistant_hint="Panel is ready. Continue with diagnostics or full pipeline analysis.",
     )
 
 
-def _read_csv_by_category_date(csv_path: Path) -> dict[str, dict]:
-    """按 category||date 聚合 CSV 数据"""
-    result = {}
+def build_panel_from_frames(
+    orders_df: pd.DataFrame,
+    exposure_df: pd.DataFrame,
+    activity_df: pd.DataFrame,
+    config: PanelConfig,
+) -> PanelBuildResult:
+    clean_orders = _prepare_orders(orders_df)
+    clean_exposure = _prepare_exposure(exposure_df, clean_orders)
+    clean_activity = _prepare_activity(activity_df, config)
 
-    with open(csv_path, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            category = row.get("category", "").strip()
-            date = row.get("date", "").strip()
+    categories = pd.concat(
+        [
+            clean_orders[["category_key", "category_name"]].drop_duplicates(),
+            clean_exposure[["category_key", "category_name"]].drop_duplicates(),
+        ],
+        ignore_index=True,
+    ).dropna(subset=["category_key"]).drop_duplicates(subset=["category_key"])
 
-            if not category or not date:
-                continue
+    if categories.empty:
+        raise ValueError("No categories could be inferred from order or exposure data.")
 
-            key = f"{category}||{date}"
+    min_date, max_date = _date_bounds(clean_orders, clean_exposure, clean_activity)
+    all_dates = pd.date_range(min_date, max_date, freq="D")
+    full_index = pd.MultiIndex.from_product([categories["category_key"], all_dates], names=["category_key", "date"])
+    panel = full_index.to_frame(index=False).merge(categories, on="category_key", how="left")
 
-            if key not in result:
-                result[key] = {
-                    "gmv": 0.0,
-                    "discount": 0.0,
-                    "order_count": 0,
-                    "user_count": 0,
-                }
+    order_agg = _aggregate_orders(clean_orders)
+    exposure_agg = _aggregate_exposure(clean_exposure)
+    panel = panel.merge(order_agg, on=["category_key", "date"], how="left", suffixes=("", "_order"))
+    panel = panel.merge(exposure_agg, on=["category_key", "date"], how="left", suffixes=("", "_exposure"))
+    panel = _merge_activity(panel, clean_activity)
 
-            try:
-                result[key]["gmv"] += float(row.get("gmv") or 0)
-            except (ValueError, TypeError):
-                pass
+    for column in ["gmv", "order_count", "quantity", "discount_amount", "user_count", "view_uv", "buy_uv", "exposure_pv"]:
+        panel[column] = pd.to_numeric(panel[column], errors="coerce").fillna(0.0)
 
-            try:
-                result[key]["discount"] += float(row.get("discount") or 0)
-            except (ValueError, TypeError):
-                pass
+    panel["project_id"] = config.project_id
+    panel["category"] = panel["category_name"]
+    panel["discount"] = panel["discount_amount"]
+    panel["exposure"] = panel["view_uv"]
+    panel["discount_rate"] = np.where(panel["gmv"] > 0, panel["discount_amount"] / panel["gmv"], 0.0)
+    panel["conversion_rate"] = np.where(panel["view_uv"] > 0, panel["buy_uv"] / panel["view_uv"], 0.0)
+    panel["exposure_rate"] = panel["conversion_rate"] * 100
+    panel["weekday"] = panel["date"].dt.weekday
+    panel["month"] = panel["date"].dt.month
+    panel["is_weekend"] = (panel["weekday"] >= 5).astype(int)
+    panel["days_to_payday"] = panel["date"].dt.day - int(config.payday_day)
+    panel["payday_phase"] = panel["days_to_payday"].apply(_build_payday_phase)
+    panel["is_payday"] = panel["is_payday"] | (panel["days_to_payday"] == 0)
+    panel["is_payday_activity"] = panel["is_activity"] & panel["is_payday"]
+    panel["pre_activity_window"] = panel["date"].isin(_build_window_dates(clean_activity["date"], before=config.pre_activity_days, after=0)).astype(int)
+    panel["post_activity_window"] = panel["date"].isin(_build_window_dates(clean_activity["date"], before=0, after=config.post_activity_days)).astype(int)
 
-            result[key]["order_count"] += 1
+    output = panel[
+        [
+            "project_id",
+            "category_key",
+            "category_name",
+            "category",
+            "date",
+            "gmv",
+            "order_count",
+            "quantity",
+            "discount_amount",
+            "discount",
+            "discount_rate",
+            "view_uv",
+            "buy_uv",
+            "exposure",
+            "exposure_pv",
+            "conversion_rate",
+            "exposure_rate",
+            "user_count",
+            "is_activity",
+            "activity_name",
+            "is_payday",
+            "is_payday_activity",
+            "days_to_payday",
+            "payday_phase",
+            "weekday",
+            "month",
+            "is_weekend",
+            "pre_activity_window",
+            "post_activity_window",
+        ]
+    ].sort_values(["category_key", "date"]).reset_index(drop=True)
 
-            user_id = row.get("user_id", "").strip()
-            if user_id:
-                result[key]["user_count"] += 1
+    summary = {
+        "date_range": {"start": str(output["date"].min().date()), "end": str(output["date"].max().date())},
+        "category_count": int(output["category_key"].nunique()),
+        "row_count": int(len(output)),
+        "total_gmv": float(output["gmv"].sum()),
+        "total_discount": float(output["discount_amount"].sum()),
+        "total_view_uv": float(output["view_uv"].sum()),
+        "activity_day_count": int(output.loc[output["is_activity"], "date"].nunique()),
+        "missing_summary": {
+            "zero_gmv_rows": int((output["gmv"] == 0).sum()),
+            "zero_view_uv_rows": int((output["view_uv"] == 0).sum()),
+            "non_activity_rows": int((~output["is_activity"]).sum()),
+        },
+    }
+    output["date"] = output["date"].dt.strftime("%Y-%m-%d")
+    output["is_activity"] = output["is_activity"].astype(bool)
+    output["is_payday"] = output["is_payday"].astype(bool)
+    output["is_payday_activity"] = output["is_payday_activity"].astype(bool)
+    return PanelBuildResult(panel_df=output, summary=summary)
 
-    return result
+
+def standardize_orders(frame: pd.DataFrame, mappings: dict[str, str]) -> pd.DataFrame:
+    data = _apply_mappings(frame, mappings)
+    if "category_name" not in data.columns and "category" in data.columns:
+        data["category_name"] = data["category"]
+    if "category_id" not in data.columns:
+        data["category_id"] = None
+    if "quantity" not in data.columns:
+        data["quantity"] = 0
+    if "order_count" not in data.columns:
+        data["order_count"] = 1
+    if "discount_amount" not in data.columns:
+        data["discount_amount"] = 0
+    if "user_id" not in data.columns:
+        data["user_id"] = None
+    return data
 
 
-def _read_activity(csv_path: Path) -> dict[str, dict]:
-    """读取活动 timeline，返回 {category||date: activity_info}"""
-    result = {}
+def standardize_exposure(frame: pd.DataFrame, mappings: dict[str, str]) -> pd.DataFrame:
+    data = _apply_mappings(frame, mappings)
+    if "category_name" not in data.columns and "category" in data.columns:
+        data["category_name"] = data["category"]
+    if "category_id" not in data.columns:
+        data["category_id"] = None
+    if "buy_uv" not in data.columns:
+        data["buy_uv"] = 0
+    if "exposure_pv" not in data.columns:
+        data["exposure_pv"] = 0
+    return data
 
-    with open(csv_path, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            category = row.get("category", "").strip()
-            date = row.get("date", "").strip()
 
-            if not category or not date:
-                continue
+def standardize_activity(frame: pd.DataFrame, mappings: dict[str, str]) -> pd.DataFrame:
+    data = _apply_mappings(frame, mappings)
+    if "category_name" not in data.columns and "category" in data.columns:
+        data["category_name"] = data["category"]
+    if "activity_name" not in data.columns:
+        data["activity_name"] = "activity"
+    if "payday" not in data.columns:
+        data["payday"] = False
+    return data
 
-            key = f"{category}||{date}"
 
-            payday_val = row.get("payday", "").strip().lower()
-            activity_val = row.get("activity_id", "").strip()
+def parse_date_series(values: Any) -> pd.Series:
+    series = pd.Series(values, copy=False)
+    text = series.astype("string").str.strip()
+    parsed = pd.Series(pd.NaT, index=series.index, dtype="datetime64[ns]")
 
-            is_payday = payday_val in ("1", "true", "yes", "是")
-            is_activity = activity_val not in ("", "0", "none", "无")
+    compact_mask = text.str.fullmatch(r"\d{8}").fillna(False)
+    if compact_mask.any():
+        parsed.loc[compact_mask] = pd.to_datetime(text.loc[compact_mask], format="%Y%m%d", errors="coerce")
 
-            result[key] = {
-                "is_payday": is_payday,
-                "is_activity": is_activity,
-                "is_payday_activity": is_payday and is_activity,
+    remaining_mask = parsed.isna() & text.notna() & (text != "")
+    if remaining_mask.any():
+        parsed.loc[remaining_mask] = pd.to_datetime(text.loc[remaining_mask], errors="coerce")
+
+    return parsed.dt.normalize()
+
+
+def _find_role_files(data_dir: Path) -> dict[str, Path]:
+    files: dict[str, Path] = {}
+    if not data_dir.exists():
+        return files
+    candidates = sorted(data_dir.glob("*.csv"), key=lambda path: path.name.lower())
+    for role, patterns in ROLE_PATTERNS.items():
+        for candidate in candidates:
+            lower = candidate.name.lower()
+            if any(pattern in lower for pattern in patterns):
+                files[role] = candidate
+                break
+    return files
+
+
+def _read_csv(path: Path) -> pd.DataFrame:
+    return pd.read_csv(path, encoding="utf-8-sig")
+
+
+def _read_headers(path: Path) -> list[str]:
+    return pd.read_csv(path, encoding="utf-8-sig", nrows=0).columns.tolist()
+
+
+def _validate_frame(frame: pd.DataFrame, role: str, mappings: dict[str, str]) -> tuple[list[str], list[str]]:
+    issues: list[str] = []
+    warnings: list[str] = []
+    if frame.empty:
+        warnings.append("CSV has no data rows.")
+
+    for required in REQUIRED_FIELDS[role]:
+        if required not in mappings:
+            issues.append(f"Missing required field `{required}`.")
+
+    if role == "activity_timeline" and not ("date" in mappings or ("start_date" in mappings and "end_date" in mappings)):
+        issues.append("Missing activity date field; expected `date` or `start_date` plus `end_date`.")
+
+    if role in {"order_info", "exposure_info"} and "category_name" not in mappings and "sku_id" not in mappings:
+        issues.append("Missing category field; expected `category`, `category_name`, or `sku_id` for backfill.")
+
+    for standard_field in ("date", "start_date", "end_date"):
+        source = mappings.get(standard_field)
+        if source and source in frame.columns:
+            invalid = int(parse_date_series(frame[source]).isna().sum())
+            if invalid:
+                issues.append(f"`{standard_field}` has {invalid} unparsable row(s).")
+
+    for standard_field in ("gmv", "discount_amount", "quantity", "order_count", "view_uv", "buy_uv", "exposure_pv"):
+        source = mappings.get(standard_field)
+        if source and source in frame.columns:
+            numeric = pd.to_numeric(frame[source], errors="coerce")
+            invalid = int(numeric.isna().sum())
+            if invalid:
+                issues.append(f"`{standard_field}` has {invalid} non-numeric row(s).")
+            negative = int((numeric.fillna(0) < 0).sum())
+            if negative:
+                warnings.append(f"`{standard_field}` has {negative} negative value(s).")
+
+    return issues, warnings
+
+
+def _apply_mappings(frame: pd.DataFrame, mappings: dict[str, str]) -> pd.DataFrame:
+    data = pd.DataFrame(index=frame.index)
+    for standard_field, source_field in mappings.items():
+        if source_field in frame.columns:
+            data[standard_field] = frame[source_field]
+    return data
+
+
+def _prepare_orders(frame: pd.DataFrame) -> pd.DataFrame:
+    clean = frame.copy()
+    clean["date"] = parse_date_series(clean["date"])
+    clean["category_name"] = clean["category_name"].astype("string").str.strip()
+    clean["category_key"] = clean["category_id"].where(clean["category_id"].notna(), clean["category_name"]).astype("string")
+    clean["gmv"] = pd.to_numeric(clean["gmv"], errors="coerce").fillna(0.0)
+    clean["discount_amount"] = pd.to_numeric(clean["discount_amount"], errors="coerce").fillna(0.0)
+    clean["quantity"] = pd.to_numeric(clean["quantity"], errors="coerce").fillna(0.0)
+    clean["order_count"] = pd.to_numeric(clean["order_count"], errors="coerce").fillna(1.0)
+    return clean.dropna(subset=["date", "category_key"])
+
+
+def _prepare_exposure(frame: pd.DataFrame, orders: pd.DataFrame) -> pd.DataFrame:
+    clean = frame.copy()
+    clean["date"] = parse_date_series(clean["date"])
+    if "category_name" not in clean.columns:
+        clean["category_name"] = pd.NA
+    if "category_id" not in clean.columns:
+        clean["category_id"] = pd.NA
+    clean = _backfill_exposure_categories(clean, orders)
+    clean["category_name"] = clean["category_name"].astype("string").str.strip()
+    clean["category_key"] = clean["category_id"].where(clean["category_id"].notna(), clean["category_name"]).astype("string")
+    clean["view_uv"] = pd.to_numeric(clean["view_uv"], errors="coerce").fillna(0.0)
+    clean["buy_uv"] = pd.to_numeric(clean["buy_uv"], errors="coerce").fillna(0.0)
+    clean["exposure_pv"] = pd.to_numeric(clean["exposure_pv"], errors="coerce").fillna(0.0)
+    return clean.dropna(subset=["date", "category_key"])
+
+
+def _prepare_activity(frame: pd.DataFrame, config: PanelConfig) -> pd.DataFrame:
+    if frame.empty:
+        return pd.DataFrame(
+            {
+                "date": pd.Series(dtype="datetime64[ns]"),
+                "category_key": pd.Series(dtype="string"),
+                "activity_name": pd.Series(dtype="object"),
+                "is_activity": pd.Series(dtype="bool"),
+                "is_payday": pd.Series(dtype="bool"),
             }
+        )
 
-    return result
+    records: list[dict[str, Any]] = []
+    has_range = "start_date" in frame.columns and "end_date" in frame.columns
+    for _, row in frame.iterrows():
+        raw_activity = row.get("activity_name")
+        activity_name = str(raw_activity).strip() if pd.notna(raw_activity) else ""
+        payday = _to_bool(row.get("payday"))
+        is_activity = bool(activity_name and activity_name.lower() not in {"0", "none", "nan", "false", "no"}) or payday
+        category_name = row.get("category_name") if "category_name" in frame.columns else pd.NA
+        category_id = row.get("category_id") if "category_id" in frame.columns else pd.NA
+        category_key = category_id if pd.notna(category_id) else category_name
+        category_key = str(category_key).strip() if pd.notna(category_key) and str(category_key).strip() else pd.NA
+
+        dates: list[pd.Timestamp] = []
+        if "date" in frame.columns:
+            parsed = parse_date_series([row.get("date")]).iloc[0]
+            if pd.notna(parsed):
+                dates.append(parsed)
+        elif has_range:
+            start_date = parse_date_series([row.get("start_date")]).iloc[0]
+            end_date = parse_date_series([row.get("end_date")]).iloc[0]
+            if pd.notna(start_date) and pd.notna(end_date):
+                dates.extend(pd.date_range(start_date, end_date, freq="D").tolist())
+
+        for date in dates:
+            records.append(
+                {
+                    "date": date,
+                    "category_key": category_key,
+                    "activity_name": activity_name or "activity",
+                    "is_activity": is_activity,
+                    "is_payday": payday or date.day == config.payday_day,
+                }
+            )
+
+    if not records:
+        return pd.DataFrame(columns=["date", "category_key", "activity_name", "is_activity", "is_payday"])
+    activity = pd.DataFrame(records)
+    return (
+        activity.groupby(["category_key", "date"], dropna=False, as_index=False)
+        .agg(
+            activity_name=("activity_name", lambda values: next((value for value in values if value), "activity")),
+            is_activity=("is_activity", "max"),
+            is_payday=("is_payday", "max"),
+        )
+    )
+
+
+def _aggregate_orders(frame: pd.DataFrame) -> pd.DataFrame:
+    grouped = (
+        frame.groupby(["category_key", "date"], as_index=False)
+        .agg(
+            gmv=("gmv", "sum"),
+            order_count=("order_count", "sum"),
+            quantity=("quantity", "sum"),
+            discount_amount=("discount_amount", "sum"),
+            user_count=("user_id", lambda values: int(pd.Series(values).dropna().nunique())),
+        )
+    )
+    return grouped
+
+
+def _aggregate_exposure(frame: pd.DataFrame) -> pd.DataFrame:
+    return (
+        frame.groupby(["category_key", "date"], as_index=False)
+        .agg(view_uv=("view_uv", "sum"), buy_uv=("buy_uv", "sum"), exposure_pv=("exposure_pv", "sum"))
+    )
+
+
+def _merge_activity(panel: pd.DataFrame, activity: pd.DataFrame) -> pd.DataFrame:
+    if activity.empty:
+        panel["activity_name"] = "non_activity"
+        panel["is_activity"] = False
+        panel["is_payday"] = False
+        return panel
+
+    categorized = activity[activity["category_key"].notna()].copy()
+    global_activity = activity[activity["category_key"].isna()].copy()
+
+    if not categorized.empty:
+        panel = panel.merge(categorized, on=["category_key", "date"], how="left")
+    else:
+        panel["activity_name"] = pd.NA
+        panel["is_activity"] = pd.NA
+        panel["is_payday"] = pd.NA
+
+    if not global_activity.empty:
+        global_activity = (
+            global_activity.groupby("date", as_index=False)
+            .agg(
+                global_activity_name=("activity_name", lambda values: next((value for value in values if value), "activity")),
+                global_is_activity=("is_activity", "max"),
+                global_is_payday=("is_payday", "max"),
+            )
+        )
+        panel = panel.merge(global_activity, on="date", how="left")
+        panel["activity_name"] = panel["activity_name"].fillna(panel["global_activity_name"])
+        panel["is_activity"] = panel["is_activity"].eq(True) | panel["global_is_activity"].eq(True)
+        panel["is_payday"] = panel["is_payday"].eq(True) | panel["global_is_payday"].eq(True)
+        panel = panel.drop(columns=["global_activity_name", "global_is_activity", "global_is_payday"])
+
+    panel["activity_name"] = panel["activity_name"].fillna("non_activity")
+    panel["is_activity"] = panel["is_activity"].eq(True)
+    panel["is_payday"] = panel["is_payday"].eq(True)
+    return panel
+
+
+def _date_bounds(*frames: pd.DataFrame) -> tuple[pd.Timestamp, pd.Timestamp]:
+    dates = [frame["date"].dropna() for frame in frames if "date" in frame.columns and not frame["date"].dropna().empty]
+    if not dates:
+        raise ValueError("No valid dates found in source data.")
+    combined = pd.concat(dates)
+    return combined.min(), combined.max()
+
+
+def _build_payday_phase(days_to_payday: int) -> str:
+    if days_to_payday == 0:
+        return "payday"
+    if -3 <= days_to_payday < 0:
+        return "pre_payday"
+    if 0 < days_to_payday <= 3:
+        return "post_payday"
+    return "normal"
+
+
+def _build_window_dates(activity_dates: pd.Series, before: int, after: int) -> set[pd.Timestamp]:
+    dates = parse_date_series(activity_dates.dropna().unique())
+    window_dates: set[pd.Timestamp] = set()
+    for current in dates:
+        for offset in range(-before, after + 1):
+            shifted = current + pd.Timedelta(days=offset)
+            if shifted != current:
+                window_dates.add(shifted)
+    return window_dates
+
+
+def _backfill_exposure_categories(exposure_df: pd.DataFrame, orders_df: pd.DataFrame) -> pd.DataFrame:
+    if "sku_id" not in exposure_df.columns or "sku_id" not in orders_df.columns:
+        return exposure_df
+    sku_map = (
+        orders_df[["sku_id", "category_key", "category_name"]]
+        .dropna(subset=["sku_id", "category_name"])
+        .drop_duplicates(subset=["sku_id"])
+        .rename(columns={"category_key": "orders_category_key", "category_name": "orders_category_name"})
+    )
+    if sku_map.empty:
+        return exposure_df
+    enriched = exposure_df.merge(sku_map, on="sku_id", how="left")
+    enriched["category_name"] = enriched["category_name"].fillna(enriched["orders_category_name"])
+    enriched["category_id"] = enriched["category_id"].fillna(enriched["orders_category_key"])
+    return enriched.drop(columns=["orders_category_key", "orders_category_name"], errors="ignore")
+
+
+def _to_bool(value: Any) -> bool:
+    if pd.isna(value):
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "payday"}

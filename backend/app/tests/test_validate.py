@@ -99,3 +99,34 @@ def test_validate_detects_missing_columns(test_db):
     finally:
         os.chdir("..")
         shutil.rmtree(tmp_dir)
+
+
+def test_validate_accepts_common_alias_columns(test_db):
+    tmp_dir = tempfile.mkdtemp()
+    os.chdir(tmp_dir)
+    try:
+        workspace_path = Path("./workspaces/test_alias_cols")
+        data_dir = workspace_path / "data" / "raw"
+        data_dir.mkdir(parents=True)
+
+        with open(data_dir / "orders.csv", "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=["pay_date", "cat_name", "pay_amount"])
+            writer.writeheader()
+            writer.writerow({"pay_date": "20250927", "cat_name": "Snacks", "pay_amount": "100"})
+
+        with open(data_dir / "exposure.csv", "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=["dt", "cat_name", "exposure"])
+            writer.writeheader()
+            writer.writerow({"dt": "20250927", "cat_name": "Snacks", "exposure": "1000"})
+
+        with open(data_dir / "activity_timeline.csv", "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=["start_date", "end_date", "activity"])
+            writer.writeheader()
+            writer.writerow({"start_date": "2025-09-27", "end_date": "2025-09-27", "activity": "Payday"})
+
+        val_result = validate_files(workspace_path)
+        assert val_result.ok is True
+        assert val_result.file_info["order_info"]["recommended_mappings"]["gmv"] == "pay_amount"
+    finally:
+        os.chdir("..")
+        shutil.rmtree(tmp_dir)

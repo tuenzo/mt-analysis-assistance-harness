@@ -81,6 +81,8 @@ def test_build_panel_generates_json(project_with_all_data):
 
     assert len(panel_data) > 0
     assert all(key in panel_data[0] for key in ["date", "category", "gmv", "discount", "exposure", "is_payday", "is_activity"])
+    assert (workspace_path / "data" / "processed" / "category_day_panel.csv").exists()
+    assert (workspace_path / ".analysis" / "panel_summary.json").exists()
 
 
 def test_build_panel_validates_data_first(project_with_all_data):
@@ -97,3 +99,53 @@ def test_build_panel_without_data(project_with_all_data):
 
     result = build_category_day_panel("nonexistent", str(empty_workspace))
     assert result.ok is False
+
+
+def test_build_panel_supports_aliases_and_balanced_rows(client):
+    r = client.post("/api/projects", json={"name": "AliasPanelTest"})
+    project = r.json()
+
+    workspace_path = Path(f"./workspaces/{project['id']}")
+    data_dir = workspace_path / "data" / "raw"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    order_csv = data_dir / "orders.csv"
+    with open(order_csv, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["pay_date", "cat_name", "pay_amount", "coupon_amount", "qty"])
+        writer.writeheader()
+        writer.writerows([
+            {"pay_date": "20250925", "cat_name": "Beverage", "pay_amount": "100", "coupon_amount": "10", "qty": "1"},
+            {"pay_date": "20250927", "cat_name": "Snacks", "pay_amount": "200", "coupon_amount": "20", "qty": "2"},
+        ])
+
+    exposure_csv = data_dir / "exposure.csv"
+    with open(exposure_csv, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["dt", "cat_name", "exposure", "buy_uv", "exposure_pv"])
+        writer.writeheader()
+        writer.writerows([
+            {"dt": "20250925", "cat_name": "Beverage", "exposure": "1000", "buy_uv": "100", "exposure_pv": "1500"},
+            {"dt": "20250927", "cat_name": "Snacks", "exposure": "1200", "buy_uv": "140", "exposure_pv": "1800"},
+        ])
+
+    activity_csv = data_dir / "activity_timeline.csv"
+    with open(activity_csv, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["start_date", "end_date", "activity"])
+        writer.writeheader()
+        writer.writerow({"start_date": "2025-09-26", "end_date": "2025-09-27", "activity": "Payday"})
+
+    result = build_category_day_panel(project["id"], str(workspace_path))
+    assert result.ok is True
+
+    panel_path = workspace_path / "data" / "processed" / "category_day_panel.json"
+    with open(panel_path, "r", encoding="utf-8") as f:
+        panel_data = json.load(f)
+
+    assert len(panel_data) == 6
+    payday_row = next(row for row in panel_data if row["category"] == "Snacks" and row["date"] == "2025-09-27")
+    assert payday_row["is_activity"] is True
+    assert payday_row["payday_phase"] == "payday"
+    assert round(float(payday_row["discount_rate"]), 4) == 0.1
+
+    filled_row = next(row for row in panel_data if row["category"] == "Beverage" and row["date"] == "2025-09-26")
+    assert filled_row["gmv"] == 0
+    assert filled_row["pre_activity_window"] == 1

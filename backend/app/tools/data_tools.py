@@ -124,7 +124,25 @@ def data_validate(project_id: str, payload: dict) -> ToolResult:
 
 
 def schema_infer(project_id: str, payload: dict) -> ToolResult:
-    return ToolResult(ok=True, action="schema.infer", summary="Schema inference completed (stub).")
+    service = ProjectService()
+    files = service.infer_schema(project_id)
+    if not files:
+        return ToolResult(
+            ok=False,
+            action="schema.infer",
+            summary="No project files found for schema inference.",
+            error={"code": "NO_FILES", "message": "Upload or ingest CSV files before schema inference.", "details": {}},
+            assistant_hint="Ask the user to upload or ingest order, exposure, and activity CSV files.",
+        )
+
+    mapped_count = sum(1 for item in files if item.get("recommended_mappings"))
+    return ToolResult(
+        ok=True,
+        action="schema.infer",
+        summary=f"Schema inference completed for {len(files)} file(s); {mapped_count} file(s) have recommended mappings.",
+        artifacts=[{"type": "schema_inference", "title": "Recommended schema mappings", "files": files}],
+        assistant_hint="Review recommended mappings, then run data.validate or schema.apply_mapping if overrides are needed.",
+    )
 
 
 def schema_apply_mapping(project_id: str, payload: dict) -> ToolResult:

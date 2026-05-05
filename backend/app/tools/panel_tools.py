@@ -1,4 +1,6 @@
+import json
 from pathlib import Path
+
 from app.tools.schemas import ToolResult
 from app.projects.service import ProjectService
 from app.analysis.pipelines.build_panel import build_category_day_panel
@@ -15,5 +17,14 @@ def panel_build_category_day(project_id: str, payload: dict) -> ToolResult:
             error={"code": "NOT_FOUND", "message": "Project not found"},
         )
 
+    schema_mappings: dict[str, dict[str, str]] = {}
+    for project_file in service.list_files(project_id):
+        if not project_file.schema_json:
+            continue
+        try:
+            schema_mappings[project_file.role] = json.loads(project_file.schema_json)
+        except json.JSONDecodeError:
+            continue
+
     workspace_path = Path(project.workspace_path)
-    return build_category_day_panel(project_id, str(workspace_path))
+    return build_category_day_panel(project_id, str(workspace_path), schema_mappings=schema_mappings)

@@ -262,75 +262,53 @@ class ProjectService:
     def infer_schema(self, project_id: str) -> list[dict]:
         db = get_session()
         try:
-            project = db.query(Project).filter(Project.id == project_id)
+            query = db.query(Project).filter(Project.id == project_id)
             if not self._can_read_hidden_project(project_id):
-                project = project.filter(Project.is_test == 0)
-            if not project.first():
+                query = query.filter(Project.is_test == 0)
+            project = query.first()
+            if not project:
                 return []
 
             files = db.query(ProjectFile).filter(ProjectFile.project_id == project_id).all()
             result = []
-
-            KNOWN_COLUMNS = {
-                "order_id": 0.98,
-                "pay_time": 0.95,
-                "date": 0.90,
-                "gmv": 0.95,
-                "discount": 0.90,
-                "discount_amount": 0.85,
-                "category": 0.95,
-                "category_name": 0.90,
-                "exposure": 0.90,
-                "exposure_count": 0.85,
-                "user_id": 0.90,
-                "activity_id": 0.90,
-                "activity_name": 0.85,
-                "payday": 0.90,
-            }
-
-            ROLE_GUESS_KEYWORDS = {
-                "order_info": ["order_id", "gmv", "pay_time", "discount"],
-                "exposure_info": ["exposure", "exposure_count"],
-                "activity_timeline": ["activity_id", "activity_name", "payday"],
-            }
+            from app.analysis.pipelines.build_panel import ROLE_ALIASES, infer_schema_from_columns
 
             for pf in files:
-                workspace_path = Path(db.query(Project).filter(Project.id == project_id).first().workspace_path)
+                workspace_path = Path(project.workspace_path)
                 file_path = workspace_path / pf.current_path
-
-                columns = []
-                role_guess = "unknown"
+                headers: list[str] = []
 
                 if file_path.suffix == ".csv":
                     try:
-                        with open(file_path, newline="", encoding="utf-8") as f:
+                        with open(file_path, newline="", encoding="utf-8-sig", errors="replace") as f:
                             reader = csv.DictReader(f)
                             headers = reader.fieldnames or []
-                            for h in headers:
-                                h_lower = h.lower().strip()
-                                mapped = h
-                                confidence = 0.5
-
-                                for known, conf in KNOWN_COLUMNS.items():
-                                    if known in h_lower:
-                                        mapped = known
-                                        confidence = conf
-                                        break
-
-                                columns.append({"name": h, "dtype": "string", "mapped_to": mapped, "confidence": confidence})
-
-                            for role, keywords in ROLE_GUESS_KEYWORDS.items():
-                                if all(any(k in h.lower() for h in headers) for k in keywords[:2]):
-                                    role_guess = role
-                                    break
-
                     except Exception:
-                        columns = [{"name": "error", "dtype": "unknown", "mapped_to": None, "confidence": 0.0}]
+                        headers = []
+
+                role_scores = {
+                    role: len(infer_schema_from_columns(headers, role))
+                    for role in ROLE_ALIASES
+                }
+                role_guess = pf.role if pf.role != "unknown" else max(role_scores, key=role_scores.get, default="unknown")
+                recommended_mappings = infer_schema_from_columns(headers, role_guess) if role_guess in ROLE_ALIASES else {}
+                mapped_sources = {source: standard for standard, source in recommended_mappings.items()}
+                columns = [
+                    {
+                        "name": header,
+                        "dtype": "string",
+                        "mapped_to": mapped_sources.get(header),
+                        "confidence": 0.95 if header in mapped_sources else 0.5,
+                    }
+                    for header in headers
+                ]
 
                 result.append({
                     "file_id": pf.id,
+                    "role": pf.role,
                     "role_guess": role_guess,
                     "columns": columns,
+                    "recommended_mappings": recommended_mappings,
                 })
 
             return result
