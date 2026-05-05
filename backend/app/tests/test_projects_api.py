@@ -57,6 +57,29 @@ def test_list_projects(client):
     assert len(data) >= 2
 
 
+def test_test_projects_only_load_in_test_mode(client, monkeypatch):
+    visible = client.post("/api/projects", json={"name": "Visible Project"}).json()
+    hidden = client.post("/api/projects", json={"name": "Hidden Test Project", "is_test": True}).json()
+
+    r = client.get("/api/projects")
+    assert r.status_code == 200
+    project_ids = {p["id"] for p in r.json()["data"]}
+    assert visible["id"] in project_ids
+    assert hidden["id"] not in project_ids
+
+    r_hidden = client.get(f"/api/projects/{hidden['id']}")
+    assert r_hidden.status_code == 404
+
+    monkeypatch.setenv("APP_TEST_MODE", "true")
+    r_test_mode = client.get("/api/projects")
+    assert r_test_mode.status_code == 200
+    test_mode_ids = {p["id"] for p in r_test_mode.json()["data"]}
+    assert hidden["id"] in test_mode_ids
+
+    r_hidden_test_mode = client.get(f"/api/projects/{hidden['id']}")
+    assert r_hidden_test_mode.status_code == 200
+
+
 def test_project_workspace_created(client):
     r = client.post("/api/projects", json={"name": "Workspace Test"})
     proj_id = r.json()["id"]
