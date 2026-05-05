@@ -1,5 +1,7 @@
 from pathlib import Path
-from app.projects.models import Project, ProjectFile
+import json
+
+from app.projects.models import Artifact, Job, Project, ProjectFile
 from app.core.database import get_session
 from app.workspace.context_summary import ContextSummaryWriter
 from app.core.config import settings
@@ -60,8 +62,35 @@ class ContextBuilder:
             latest_result = None
             result_path = workspace_path / ".analysis" / "latest_result.json"
             if result_path.exists():
-                import json
                 latest_result = json.loads(result_path.read_text(encoding="utf-8"))
+
+            latest_job = (
+                db.query(Job)
+                .filter(Job.project_id == project_id, Job.action == "analysis.run_full_pipeline")
+                .order_by(Job.created_at.desc(), Job.id.desc())
+                .first()
+            )
+            latest_pipeline = None
+            if latest_job:
+                try:
+                    output = json.loads(latest_job.output_json or "{}")
+                except json.JSONDecodeError:
+                    output = {}
+                latest_pipeline = {
+                    "job_id": latest_job.id,
+                    "status": latest_job.status,
+                    "progress": latest_job.progress,
+                    "steps": output.get("steps", []),
+                    "finished_at": latest_job.finished_at,
+                }
+
+            recent_artifacts = (
+                db.query(Artifact)
+                .filter(Artifact.project_id == project_id)
+                .order_by(Artifact.created_at.desc(), Artifact.id.desc())
+                .limit(12)
+                .all()
+            )
 
             return {
                 "project_id": project.id,
@@ -72,6 +101,12 @@ class ContextBuilder:
                 "data_quality": data_quality,
                 "schema_status": schema_status,
                 "latest_result": latest_result,
+                "latest_result_available": list(latest_result.keys()) if isinstance(latest_result, dict) else [],
+                "latest_pipeline": latest_pipeline,
+                "recent_artifacts": [
+                    {"type": a.type, "title": a.title, "path": a.path}
+                    for a in recent_artifacts
+                ],
                 "ui_view": ui_context.get("active_view") if ui_context else "agent_command_center",
                 "available_actions": AVAILABLE_ACTIONS,
                 "context_summary": ctx_content,

@@ -644,12 +644,21 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
         project_name = context.get("project_name", "unknown project")
         current_stage = context.get("current_stage", "unknown")
         data_quality = context.get("data_quality", "unknown")
+        latest_result_available = context.get("latest_result_available") or []
+        latest_pipeline = context.get("latest_pipeline") or {}
+        recent_artifacts = context.get("recent_artifacts") or []
+        project_facts = {
+            "latest_result_available": latest_result_available,
+            "latest_pipeline": latest_pipeline,
+            "recent_artifacts": recent_artifacts,
+        }
 
         return f"""You are a business analysis assistant working in project "{project_name}".
 
 Project state:
 - current_stage: {current_stage}
 - data_quality: {data_quality}
+- project_facts: {json.dumps(project_facts, ensure_ascii=False)}
 
 You may answer directly for discussion or clarification. When project state, data, analysis pipelines,
 artifacts, reports, or memory candidates are needed, use exactly this tool:
@@ -659,6 +668,9 @@ Only use project facts from the backend workspace context and tool results. Do n
 data files directly. For CSV directory ingest, first call business_analysis with action
 "data.discover_source_files". Inspect filenames, headers, and previews, then call "data.ingest"
 with selected_files: [{{"source_path": "...", "role": "order_info|exposure_info|activity_timeline|unknown", "reason": "..."}}].
+If latest_pipeline.steps contains analysis.run_gps_uplift with ok=true, say the GPS-Uplift step has run.
+If latest_result_available contains "uplift", say uplift_result.json is available. Do not claim uplift has not run
+when either of those facts is true.
 
 User message:
 {message}"""

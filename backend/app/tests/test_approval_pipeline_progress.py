@@ -10,6 +10,7 @@ from app.api.approvals import approve_tool_call
 from app.core.database import get_session, init_db, reset_engine
 from app.main import app
 from app.projects.models import AgentEvent, ApprovalRequest, Artifact, Job, Project, Report, ToolCall
+from app.tools.result_tools import result_get_latest
 
 
 def test_full_pipeline_approval_emits_progress_and_persists_outputs():
@@ -40,11 +41,23 @@ def test_full_pipeline_approval_emits_progress_and_persists_outputs():
             job = db.query(Job).filter(Job.project_id == project["id"]).one()
             assert job.status == "succeeded"
             assert job.progress == 1
+            steps = json.loads(job.output_json)["steps"]
+            assert any(step["action"] == "analysis.run_gps_uplift" and step["ok"] for step in steps)
             assert db.query(Artifact).filter(Artifact.project_id == project["id"]).count() >= 1
+            assert (
+                db.query(Artifact)
+                .filter(Artifact.project_id == project["id"], Artifact.title == "uplift_result.json")
+                .count()
+                == 1
+            )
             assert db.query(Report).filter(Report.project_id == project["id"], Report.status == "ready").count() == 1
             assert db.query(AgentEvent).filter(AgentEvent.turn_id == "turn_pipeline_test", AgentEvent.type == "job_progress").count() >= 1
         finally:
             db.close()
+
+        latest = result_get_latest(project["id"], {})
+        assert latest.ok
+        assert latest.artifacts[0]["available"] == ["diagnostics", "localgap", "psm_did", "uplift"]
     finally:
         os.chdir(original_cwd)
         reset_engine()
