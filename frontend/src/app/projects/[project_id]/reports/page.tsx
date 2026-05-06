@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { FileText, RefreshCw } from 'lucide-react'
 import { api } from '@/lib/api-client'
 import type { LatestReport } from '@/lib/api-types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { MarkdownView } from '@/components/markdown-view'
 
 export default function ReportsPage() {
   const params = useParams<{ project_id: string }>()
@@ -15,7 +16,7 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  async function loadReport() {
+  const loadReport = useCallback(async () => {
     setLoading(true)
     setError(null)
     const response = await api.getLatestReport(projectId)
@@ -26,11 +27,14 @@ export default function ReportsPage() {
       return
     }
     setReport(response.data)
-  }
+  }, [projectId])
 
   useEffect(() => {
-    void loadReport()
-  }, [projectId])
+    const timeout = setTimeout(() => {
+      void loadReport()
+    }, 0)
+    return () => clearTimeout(timeout)
+  }, [loadReport])
 
   return (
     <div className="container mx-auto max-w-5xl py-8 px-4 space-y-6">
@@ -59,9 +63,9 @@ export default function ReportsPage() {
           {loading && <p className="text-sm text-muted-foreground">Loading report...</p>}
           {!loading && error && <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>}
           {!loading && report && (
-            <pre className="max-h-[70vh] overflow-auto whitespace-pre-wrap rounded-md bg-secondary/40 p-4 text-sm leading-6">
-              {report.content}
-            </pre>
+            <div className="max-h-[70vh] overflow-auto rounded-md bg-secondary/30 p-4">
+              <MarkdownView content={report.content} />
+            </div>
           )}
         </CardContent>
       </Card>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Activity, CheckCircle2, Clock, RefreshCw, ShieldCheck, XCircle } from 'lucide-react'
 import { api } from '@/lib/api-client'
@@ -17,7 +17,7 @@ export default function TimelinePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  async function loadTimeline() {
+  const loadTimeline = useCallback(async () => {
     setLoading(true)
     setError(null)
     const response = await api.getProjectTimeline(projectId)
@@ -27,11 +27,14 @@ export default function TimelinePage() {
       return
     }
     setTimeline(response.data)
-  }
+  }, [projectId])
 
   useEffect(() => {
-    void loadTimeline()
-  }, [projectId])
+    const timeout = setTimeout(() => {
+      void loadTimeline()
+    }, 0)
+    return () => clearTimeout(timeout)
+  }, [loadTimeline])
 
   const items = useMemo(() => flattenTimeline(timeline), [timeline])
 
