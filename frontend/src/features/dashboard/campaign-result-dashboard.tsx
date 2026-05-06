@@ -1,7 +1,6 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import Image from 'next/image'
 import {
   Activity,
   CheckCircle2,
@@ -46,7 +45,7 @@ export function CampaignResultDashboard({
   const summary = snapshot.artifactSummary
 
   return (
-    <div className="mx-auto max-w-none space-y-2 px-4 py-3">
+    <div className="mx-auto max-w-none space-y-2 px-4 py-2">
       <div className="flex flex-col gap-2 min-[760px]:flex-row min-[760px]:items-start min-[760px]:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -73,7 +72,7 @@ export function CampaignResultDashboard({
       )}
 
       <Card className="border-amber-200">
-        <CardContent className="grid grid-cols-2 gap-2 p-3">
+        <CardContent className="grid grid-cols-1 gap-2 p-2 min-[560px]:grid-cols-2">
           <DecisionSection snapshot={snapshot} loading={loading} />
           <DidSection did={snapshot.did} latestReport={latestReport} totalArtifacts={summary.total} />
           <PeriodSection periods={snapshot.periods} points={snapshot.trend.points} metricLabel={snapshot.trend.metricLabel} />
@@ -92,7 +91,7 @@ function DecisionSection({
   loading: boolean
 }) {
   return (
-    <section className="min-h-36 rounded-md border bg-white p-2.5">
+    <section className="h-40 overflow-hidden rounded-md border bg-white p-2">
       <SectionTitle
         icon={<Target className="h-4 w-4" />}
         tone="good"
@@ -100,24 +99,20 @@ function DecisionSection({
         subtitle={snapshot.decisionLabel}
         badge={loading ? '刷新中' : '一屏决策'}
       />
-      <div className="mt-2 space-y-1.5">
-        {snapshot.recommendations.slice(0, 2).map((recommendation, index) => (
-          <div key={`${recommendation}-${index}`} className="flex gap-1.5 rounded border bg-amber-50/45 px-2 py-1.5">
-            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
-            <p className="max-h-9 overflow-hidden text-xs leading-[18px]">{recommendation}</p>
+      <div className="mt-1.5 grid grid-cols-[minmax(0,1fr)_96px] gap-1.5">
+        <div className="space-y-1.5">
+          {snapshot.recommendations.slice(0, 2).map((recommendation, index) => (
+            <div key={`${recommendation}-${index}`} className="flex gap-1.5 rounded border bg-amber-50/45 px-2 py-1.5">
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
+              <p className="max-h-7 overflow-hidden text-xs leading-[14px]">{recommendation}</p>
+            </div>
+          ))}
+          <div className="flex items-center gap-2 rounded border bg-secondary/25 px-2 py-1.5">
+            <TrendingUp className="h-3.5 w-3.5 shrink-0 text-emerald-700" />
+            <p className="max-h-4 overflow-hidden text-xs leading-4 text-muted-foreground">{snapshot.conclusions[0]}</p>
           </div>
-        ))}
-        <div className="flex items-center gap-2 rounded border bg-secondary/25 px-2 py-1.5">
-          <TrendingUp className="h-3.5 w-3.5 shrink-0 text-emerald-700" />
-          <p className="max-h-5 overflow-hidden text-xs leading-5 text-muted-foreground">{snapshot.conclusions[0]}</p>
-          <Image
-            src="/illustrations/promo-strategy-map.svg"
-            alt="促销分析策略示意图"
-            width={420}
-            height={176}
-            className="ml-auto hidden h-10 w-24 shrink-0 rounded object-cover min-[980px]:block"
-          />
         </div>
+        <ParetoMiniChart />
       </div>
     </section>
   )
@@ -133,7 +128,7 @@ function DidSection({
   totalArtifacts: number
 }) {
   return (
-    <section className="min-h-36 rounded-md border bg-white p-2.5">
+    <section className="h-40 overflow-hidden rounded-md border bg-white p-2">
       <SectionTitle
         icon={<Scale className="h-4 w-4" />}
         tone={did.tone}
@@ -141,16 +136,19 @@ function DidSection({
         subtitle={did.verdict}
         badge={did.confidence}
       />
-      <div className="mt-2 grid grid-cols-3 gap-1.5">
+      <div className="mt-1.5 grid grid-cols-3 gap-1.5">
         <MiniMetric label="净效应" value={did.effect} tone={did.tone} />
         <MiniMetric label="增量规模" value={did.incrementalValue} tone="neutral" />
         <MiniMetric label="对照比较" value={did.baselineComparison} tone="neutral" />
       </div>
-      <div className="mt-2 rounded border bg-secondary/25 px-2 py-1.5">
-        <p className="max-h-9 overflow-hidden text-xs leading-[18px]">{did.interpretation}</p>
-        <p className="mt-1 truncate text-[11px] text-muted-foreground">
-          {did.significance} / {latestReport ? '报告证据已接入' : 'MVP 快照'} / {totalArtifacts} 个产物
-        </p>
+      <div className="mt-1.5 grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-1.5">
+        <div className="rounded border bg-secondary/25 px-2 py-1.5">
+          <p className="max-h-8 overflow-hidden text-xs leading-4">{did.interpretation}</p>
+          <p className="mt-1 truncate text-[11px] text-muted-foreground">
+            {did.significance} / {latestReport ? '报告已接入' : '快照'} / {totalArtifacts} 产物
+          </p>
+        </div>
+        <LocalGapMiniChart />
       </div>
     </section>
   )
@@ -168,14 +166,18 @@ function PeriodSection({
   const max = Math.max(...points.map((point) => point.value), 1)
 
   return (
-    <section className="min-h-36 rounded-md border bg-white p-2.5">
+    <section className="h-40 overflow-hidden rounded-md border bg-white p-2">
       <SectionTitle
         icon={<LineChart className="h-4 w-4" />}
         tone="neutral"
         title="活动前中后"
         subtitle={metricLabel}
       />
-      <div className="mt-2 grid grid-cols-3 gap-1.5">
+      <div className="mt-1.5 grid grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] gap-1.5">
+        <GmvTrendMiniChart />
+        <ActivityLiftMiniBars />
+      </div>
+      <div className="mt-1.5 grid grid-cols-3 gap-1.5">
         {periods.map((period, index) => {
           const point = points[index]
           const Icon = period.id === 'before' ? Database : period.id === 'during' ? Activity : TrendingUp
@@ -186,11 +188,11 @@ function PeriodSection({
                 <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <p className="truncate text-xs font-semibold">{period.label}</p>
               </div>
-              <p className="mt-1 break-words text-base font-semibold leading-tight">{period.primary.value}</p>
+              <p className="mt-1 break-words text-xs font-semibold leading-tight">{period.primary.value}</p>
               <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
                 {period.primary.delta ?? period.windowLabel}
               </p>
-              <div className="mt-1.5 h-1.5 rounded-full bg-secondary">
+              <div className="mt-1 h-1.5 rounded-full bg-secondary">
                 <div
                   className={`h-1.5 rounded-full ${trendBarClass(point?.tone ?? period.primary.tone ?? 'neutral')}`}
                   style={{ width: `${Math.max(((point?.value ?? 1) / max) * 100, 8)}%` }}
@@ -206,32 +208,159 @@ function PeriodSection({
 
 function UpliftSection({ quadrants }: { quadrants: UpliftQuadrantSnapshot[] }) {
   return (
-    <section className="min-h-36 rounded-md border bg-white p-2.5">
+    <section className="h-40 overflow-hidden rounded-md border bg-white p-2">
       <SectionTitle
         icon={<Users className="h-4 w-4" />}
         tone="good"
         title="Uplift 四象限"
         subtitle="分群含义与下一步动作"
       />
-      <div className="mt-2 grid grid-cols-2 gap-1.5">
-        {quadrants.map((quadrant) => (
-          <div
-            key={quadrant.id}
-            className={`rounded border px-2 py-1.5 ${
-              quadrant.emphasis ? 'border-amber-300 bg-amber-50/60' : 'bg-background'
-            }`}
-            title={`${quadrant.meaning} ${quadrant.action}`}
-          >
-            <div className="flex items-start justify-between gap-1">
-              <p className="truncate text-xs font-semibold">{quadrant.label}</p>
-              <TonePill tone={quadrant.tone}>{quadrant.countLabel}</TonePill>
+      <div className="mt-1.5 grid grid-cols-[minmax(0,1fr)_108px] gap-1.5">
+        <UpliftBubbleMiniChart />
+        <div className="grid grid-cols-1 gap-1.5">
+          {quadrants.slice(0, 4).map((quadrant) => (
+            <div
+              key={quadrant.id}
+              className={`rounded border px-2 py-1 ${
+                quadrant.emphasis ? 'border-amber-300 bg-amber-50/60' : 'bg-background'
+              }`}
+              title={`${quadrant.meaning} ${quadrant.action}`}
+            >
+              <div className="flex items-center justify-between gap-1">
+                <p className="truncate text-[11px] font-semibold">{quadrant.label}</p>
+                <TonePill tone={quadrant.tone}>{quadrant.countLabel}</TonePill>
+              </div>
             </div>
-            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{quadrant.shareLabel}</p>
-            <p className="mt-1 max-h-8 overflow-hidden text-xs font-medium leading-4">{quadrant.action}</p>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </section>
+  )
+}
+
+function ParetoMiniChart() {
+  return (
+    <div className="rounded border bg-background px-2 py-1.5" aria-label="品类GMV Pareto 小图">
+      <p className="truncate text-[11px] font-semibold">品类 GMV Pareto</p>
+      <svg className="mt-1 h-[70px] w-full" viewBox="0 0 108 86" role="img" aria-label="饮料、零食、生鲜、母婴、家清的 GMV 累计占比">
+        <line x1="8" y1="70" x2="104" y2="70" stroke="#d9dde3" />
+        <rect x="14" y="18" width="12" height="52" rx="2" fill="#3b82f6" />
+        <rect x="34" y="34" width="12" height="36" rx="2" fill="#3b82f6" opacity="0.9" />
+        <rect x="54" y="48" width="12" height="22" rx="2" fill="#3b82f6" opacity="0.82" />
+        <rect x="74" y="58" width="12" height="12" rx="2" fill="#3b82f6" opacity="0.72" />
+        <rect x="94" y="64" width="8" height="6" rx="2" fill="#3b82f6" opacity="0.62" />
+        <polyline points="20,46 40,32 60,23 80,17 98,13" fill="none" stroke="#1d4ed8" strokeWidth="2" />
+        <circle cx="20" cy="46" r="2.5" fill="#1d4ed8" />
+        <circle cx="40" cy="32" r="2.5" fill="#1d4ed8" />
+        <circle cx="60" cy="23" r="2.5" fill="#1d4ed8" />
+        <circle cx="80" cy="17" r="2.5" fill="#1d4ed8" />
+        <circle cx="98" cy="13" r="2.5" fill="#1d4ed8" />
+        <text x="8" y="82" fontSize="8" fill="#646a73">饮料</text>
+        <text x="34" y="82" fontSize="8" fill="#646a73">零食</text>
+        <text x="58" y="82" fontSize="8" fill="#646a73">生鲜</text>
+      </svg>
+    </div>
+  )
+}
+
+function LocalGapMiniChart() {
+  return (
+    <div className="rounded border bg-background px-2 py-1.5" aria-label="LocalGap 增量瀑布小图">
+      <p className="truncate text-[11px] font-semibold">LocalGap 增量拆解</p>
+      <svg className="mt-1 h-[42px] w-full" viewBox="0 0 168 58" role="img" aria-label="基线 GMV 到实际 GMV 的增量瀑布">
+        <line x1="7" y1="47" x2="161" y2="47" stroke="#d9dde3" />
+        <rect x="8" y="30" width="22" height="17" rx="1.5" fill="#a8adb5" />
+        <rect x="44" y="19" width="22" height="28" rx="1.5" fill="#55b95b" />
+        <rect x="78" y="14" width="22" height="19" rx="1.5" fill="#55b95b" />
+        <rect x="112" y="9" width="22" height="13" rx="1.5" fill="#55b95b" />
+        <rect x="138" y="9" width="22" height="12" rx="1.5" fill="#d92929" />
+        <polyline points="30,30 44,30 66,19 78,19 100,14 112,14 134,9 138,9" fill="none" stroke="#1f2329" strokeDasharray="4 3" />
+        <text x="5" y="56" fontSize="8" fill="#646a73">基线</text>
+        <text x="43" y="14" fontSize="8" fill="#1f2329">+300</text>
+        <text x="78" y="10" fontSize="8" fill="#1f2329">+180</text>
+        <text x="111" y="8" fontSize="8" fill="#1f2329">+120</text>
+        <text x="138" y="8" fontSize="8" fill="#1f2329">-110</text>
+      </svg>
+    </div>
+  )
+}
+
+function GmvTrendMiniChart() {
+  return (
+    <div className="rounded border bg-background px-2 py-1.5" aria-label="GMV 趋势与活动发薪日小图">
+      <p className="truncate text-[11px] font-semibold">GMV 趋势 + 活动/发薪日</p>
+      <svg className="mt-1 h-10 w-full" viewBox="0 0 190 54" role="img" aria-label="GMV 趋势线，含活动期和发薪日标记">
+        <line x1="8" y1="42" x2="182" y2="42" stroke="#d9dde3" />
+        <line x1="8" y1="30" x2="182" y2="30" stroke="#eef0f3" strokeDasharray="4 3" />
+        <line x1="8" y1="18" x2="182" y2="18" stroke="#eef0f3" strokeDasharray="4 3" />
+        {[28, 72, 116, 160].map((x) => (
+          <rect key={x} x={x} y="8" width="10" height="34" fill="#fde7cf" opacity="0.9" />
+        ))}
+        <polyline
+          points="8,39 20,37 31,29 42,31 54,25 66,32 78,17 90,22 102,35 114,28 126,21 138,33 150,18 162,25 174,36 182,31"
+          fill="none"
+          stroke="#1d6ff2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+        />
+        {[52, 96, 144].map((x) => (
+          <circle key={x} cx={x} cy="41" r="2.5" fill="#d92929" />
+        ))}
+      </svg>
+    </div>
+  )
+}
+
+function ActivityLiftMiniBars() {
+  return (
+    <div className="rounded border bg-background px-2 py-1.5" aria-label="活动期与非活动期对比小图">
+      <p className="truncate text-[11px] font-semibold">活动期 vs 非活动期</p>
+      <svg className="mt-1 h-10 w-full" viewBox="0 0 142 54" role="img" aria-label="活动期 GMV、订单、转化、曝光高于非活动期">
+        <line x1="8" y1="42" x2="134" y2="42" stroke="#d9dde3" />
+        {[
+          [16, 15, 29],
+          [47, 22, 35],
+          [78, 26, 33],
+          [109, 8, 21],
+        ].map(([x, blueTop, grayTop]) => (
+          <g key={x}>
+            <rect x={x} y={blueTop} width="10" height={42 - blueTop} rx="1.5" fill="#3b82f6" />
+            <rect x={x + 12} y={grayTop} width="10" height={42 - grayTop} rx="1.5" fill="#c8ccd3" />
+          </g>
+        ))}
+        <text x="13" y="52" fontSize="8" fill="#646a73">GMV</text>
+        <text x="46" y="52" fontSize="8" fill="#646a73">订单</text>
+        <text x="76" y="52" fontSize="8" fill="#646a73">转化</text>
+        <text x="108" y="52" fontSize="8" fill="#646a73">曝光</text>
+      </svg>
+    </div>
+  )
+}
+
+function UpliftBubbleMiniChart() {
+  return (
+    <div className="rounded border bg-background px-2 py-1.5" aria-label="品类策略四象限气泡图">
+      <p className="truncate text-[11px] font-semibold">品类策略四象限</p>
+      <svg className="mt-1 h-[102px] w-full" viewBox="0 0 210 124" role="img" aria-label="增量贡献和效果改善四象限">
+        <line x1="18" y1="104" x2="198" y2="104" stroke="#8a8f99" />
+        <line x1="18" y1="104" x2="18" y2="14" stroke="#8a8f99" />
+        <line x1="102" y1="14" x2="102" y2="104" stroke="#8a8f99" strokeDasharray="5 4" />
+        <line x1="18" y1="58" x2="198" y2="58" stroke="#8a8f99" strokeDasharray="5 4" />
+        <text x="36" y="32" fontSize="10" fill="#1d6ff2">小规模试验</text>
+        <text x="36" y="86" fontSize="10" fill="#1d6ff2">减少投入</text>
+        <text x="164" y="32" fontSize="10" fill="#1d6ff2">优先加码</text>
+        <text x="164" y="86" fontSize="10" fill="#1d6ff2">保护盘</text>
+        <circle cx="158" cy="36" r="22" fill="#60a5fa" opacity="0.82" stroke="#2563eb" />
+        <circle cx="124" cy="44" r="13" fill="#bde27b" opacity="0.9" />
+        <circle cx="140" cy="75" r="14" fill="#f6b75e" opacity="0.88" />
+        <circle cx="62" cy="39" r="12" fill="#b7d5fb" opacity="0.9" />
+        <text x="148" y="40" fontSize="11" fill="#0f172a">饮料</text>
+        <text x="116" y="48" fontSize="10" fill="#0f172a">零食</text>
+        <text x="132" y="79" fontSize="10" fill="#0f172a">生鲜</text>
+        <text x="54" y="43" fontSize="10" fill="#0f172a">母婴</text>
+      </svg>
+    </div>
   )
 }
 
@@ -264,20 +393,20 @@ function SectionTitle({
 
 function MiniMetric({ label, value, tone }: { label: string; value: string; tone: MetricTone }) {
   return (
-    <div className="rounded border bg-background px-2 py-1.5">
+    <div className="rounded border bg-background px-2 py-1">
       <p className="truncate text-[11px] text-muted-foreground">{label}</p>
-      <p className={`mt-1 max-h-8 overflow-hidden text-xs font-semibold leading-4 ${toneTextClass(tone)}`}>{value}</p>
+      <p className={`mt-0.5 max-h-7 overflow-hidden text-xs font-semibold leading-[14px] ${toneTextClass(tone)}`}>{value}</p>
     </div>
   )
 }
 
 function IconTile({ tone, children }: { tone: MetricTone; children: ReactNode }) {
-  return <div className={`rounded-md p-2 ${toneTileClass(tone)}`}>{children}</div>
+  return <div className={`rounded-md p-1.5 ${toneTileClass(tone)}`}>{children}</div>
 }
 
 function TonePill({ tone, children }: { tone: MetricTone; children: ReactNode }) {
   return (
-    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${tonePillClass(tone)}`}>
+    <span className={`inline-flex max-w-[84px] shrink-0 truncate rounded-full px-2 py-0.5 text-[11px] font-semibold ${tonePillClass(tone)}`}>
       {children}
     </span>
   )
