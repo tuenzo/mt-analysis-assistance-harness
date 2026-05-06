@@ -97,6 +97,19 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
                 "\u62a5\u544a\u8349\u7a3f",
             ]
         )
+        is_strategy_design = any(
+            kw in msg_lower
+            for kw in [
+                "strategy design",
+                "analysis strategy",
+                "design flow",
+                "pipeline design",
+                "\u7b56\u7565\u8bbe\u8ba1",
+                "\u5206\u6790\u7b56\u7565",
+                "\u6d41\u7a0b\u8bbe\u8ba1",
+                "\u4e3b\u5bfc\u5206\u6790",
+            ]
+        )
         is_analysis = any(
             kw in msg_lower
             for kw in [
@@ -201,6 +214,25 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
             }
             return
 
+        if is_strategy_design:
+            yield {
+                "type": "assistant_message_delta",
+                "turn_id": turn_id,
+                "delta": "I will create an isolated strategy blueprint and analysis flow draft. ",
+            }
+            yield self._tool_started(turn_id, "project.get_state", {})
+            yield self._tool_started(turn_id, "strategy.design_blueprint", self._build_mock_strategy_blueprint_payload())
+            yield self._tool_started(turn_id, "strategy.design_flow", self._build_mock_strategy_flow_payload())
+            yield {
+                "type": "final_answer",
+                "turn_id": turn_id,
+                "message": (
+                    "Strategy design artifacts have been requested under the isolated strategy lab. "
+                    "They are review artifacts and do not modify backend source code."
+                ),
+            }
+            return
+
         if is_analysis:
             yield {
                 "type": "assistant_message_delta",
@@ -276,6 +308,9 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
             "analysis.run_full_pipeline": "Run the approved end-to-end promotion analysis pipeline and generate outputs.",
             "result.get_latest": "Read latest analysis outputs before report generation.",
             "report.generate": "Generate a report draft from the latest analysis artifacts.",
+            "strategy.design_blueprint": "Create an isolated strategy blueprint artifact for review.",
+            "strategy.design_flow": "Create an isolated analysis flow artifact for review.",
+            "strategy.propose_backend_change": "Create a backend change proposal artifact without editing source code.",
         }
         return reasons.get(action, f"Run {action}.")
 
@@ -313,3 +348,51 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
                 }
             )
         return selected
+
+    @staticmethod
+    def _build_mock_strategy_blueprint_payload() -> dict:
+        return {
+            "title": "Promotion strategy analysis blueprint",
+            "objective": "Design an evidence-backed promotion analysis strategy before running or changing pipelines.",
+            "decision_questions": [
+                "Which categories show reliable incremental impact?",
+                "Which analysis stages are needed before business recommendations?",
+            ],
+            "assumptions": [
+                "Uploaded order, exposure, and activity files remain the project fact source.",
+                "Causal claims must cite available evidence and limitations.",
+            ],
+            "success_criteria": [
+                "Each recommendation maps to a measurable artifact.",
+                "Every proposed new stage is isolated as a backend change proposal.",
+            ],
+            "candidate_methods": ["diagnostics", "PSM-DID", "LocalGap", "GPS-Uplift"],
+        }
+
+    @staticmethod
+    def _build_mock_strategy_flow_payload() -> dict:
+        return {
+            "title": "Promotion analysis strategy flow",
+            "objective": "Draft an ordered flow for strategy-led analysis.",
+            "stages": [
+                {
+                    "name": "Project state review",
+                    "purpose": "Inspect current data and artifact availability.",
+                    "action": "project.get_state",
+                    "outputs": ["project status", "data readiness"],
+                },
+                {
+                    "name": "Evidence pipeline",
+                    "purpose": "Run the approved end-to-end analysis when data is ready.",
+                    "action": "analysis.run_full_pipeline",
+                    "inputs": ["validated CSV files"],
+                    "outputs": ["diagnostics", "causal evidence", "report draft"],
+                },
+                {
+                    "name": "Strategy profile promotion",
+                    "purpose": "Convert approved strategy designs into selectable backend pipeline profiles.",
+                    "proposed_backend_change": "Add reviewed strategy profiles as executable pipeline configurations.",
+                    "outputs": ["backend change proposal"],
+                },
+            ],
+        }

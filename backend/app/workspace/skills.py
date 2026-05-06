@@ -40,6 +40,19 @@ analysis.run_localgap -> analysis.run_gps_uplift -> result.get_latest
 For report requests, inspect latest results or artifacts before calling report.generate.
 Default business-facing summaries and reports to Chinese unless the user asks for
 another language.
+
+For strategy-design requests, you may lead the analysis strategy instead of only
+running the fixed pipeline. Use these actions through the same gateway:
+
+- strategy.design_blueprint: create objective, decision questions, assumptions,
+  constraints, candidate methods, and success criteria.
+- strategy.design_flow: turn the blueprint into ordered stages. Each stage must
+  include either an existing backend action or a proposed_backend_change.
+- strategy.propose_backend_change: describe required backend framework changes
+  as a proposal artifact only.
+
+Do not claim you edited backend source code through strategy actions. Strategy
+lab outputs are isolated review artifacts under .analysis/strategy_lab/.
 """
 
 
@@ -56,7 +69,7 @@ def ensure_project_skill_files(workspace_path: Path, skill_names: Iterable[str] 
             continue
         skill_path = Path(workspace_path) / ".claude" / "skills" / skill_name / "SKILL.md"
         skill_path.parent.mkdir(parents=True, exist_ok=True)
-        if not skill_path.exists():
+        if not skill_path.exists() or skill_path.read_text(encoding="utf-8") != BUSINESS_ANALYSIS_SKILL_BODY:
             skill_path.write_text(BUSINESS_ANALYSIS_SKILL_BODY, encoding="utf-8")
         installed.append(skill_name)
     return installed

@@ -825,6 +825,14 @@ Before citing metrics or recommendations, call result.get_latest or artifact.rea
 Use observed/descriptive language for diagnostics-only claims, directional language for LocalGap or PSM-DID,
 and exploratory language for stub outputs. When generating reports, use report.generate and treat
 .analysis/report_plan.json as the evidence skeleton.
+
+When the user asks you to design or rethink the analysis strategy, you may lead that work through
+strategy-design actions instead of only running the fixed pipeline:
+- strategy.design_blueprint creates objectives, decision questions, assumptions, methods, and success criteria.
+- strategy.design_flow creates ordered stages; each stage must include an existing action or proposed_backend_change.
+- strategy.propose_backend_change creates an isolated backend framework proposal artifact.
+These actions create review artifacts under .analysis/strategy_lab/. They do not edit backend source code directly.
+
 Reports and business-facing summaries should default to Chinese unless the user explicitly requests another language.
 
 User message:

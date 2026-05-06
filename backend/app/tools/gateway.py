@@ -101,7 +101,17 @@ class AnalysisToolGateway:
                     assistant_hint="This action requires user approval in the UI before execution.",
                 )
 
-            result = tool_func(project_id, payload)
+            execution_payload = payload
+            if action_str.startswith("strategy."):
+                execution_payload = dict(payload or {})
+                execution_payload["_tool_context"] = {
+                    "tool_call_id": tool_call_id,
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "reason": reason,
+                }
+
+            result = tool_func(project_id, execution_payload)
 
             if tc:
                 tc.status = "succeeded"

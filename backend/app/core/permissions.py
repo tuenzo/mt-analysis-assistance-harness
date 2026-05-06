@@ -28,6 +28,9 @@ ACTION_PERMISSION_MAP: dict[BusinessAnalysisAction, PermissionLevel] = {
     BusinessAnalysisAction.CHART_RENDER: PermissionLevel.WRITE_ARTIFACT,
     BusinessAnalysisAction.REPORT_GENERATE: PermissionLevel.WRITE_ARTIFACT,
     BusinessAnalysisAction.MEMORY_PROPOSE_UPDATE: PermissionLevel.EXTERNAL_SYNC,
+    BusinessAnalysisAction.STRATEGY_DESIGN_BLUEPRINT: PermissionLevel.WRITE_ARTIFACT,
+    BusinessAnalysisAction.STRATEGY_DESIGN_FLOW: PermissionLevel.WRITE_ARTIFACT,
+    BusinessAnalysisAction.STRATEGY_PROPOSE_BACKEND_CHANGE: PermissionLevel.WRITE_ARTIFACT,
 }
 
 
@@ -51,6 +54,9 @@ RISK_LEVEL_MAP: dict[BusinessAnalysisAction, str] = {
     BusinessAnalysisAction.ANALYSIS_RUN_PSM_DID: "low",
     BusinessAnalysisAction.ANALYSIS_RUN_LOCALGAP: "low",
     BusinessAnalysisAction.ANALYSIS_RUN_GPS_UPLIFT: "low",
+    BusinessAnalysisAction.STRATEGY_DESIGN_BLUEPRINT: "low",
+    BusinessAnalysisAction.STRATEGY_DESIGN_FLOW: "low",
+    BusinessAnalysisAction.STRATEGY_PROPOSE_BACKEND_CHANGE: "medium",
 }
 
 
