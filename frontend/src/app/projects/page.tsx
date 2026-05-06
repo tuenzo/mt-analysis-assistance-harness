@@ -2,11 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import { useProjectStore } from '@/store/project-store'
 import { api } from '@/lib/api-client'
 import type { DemoStatus } from '@/lib/api-types'
-import { preserveApiBaseParam, readApiBaseQueryFromLocation } from '@/lib/navigation'
+import { useApiBaseHref } from '@/lib/use-api-base-href'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -24,17 +23,11 @@ import { Plus, FolderOpen, Clock, ChevronRight, Sparkles } from 'lucide-react'
 
 export default function ProjectsPage() {
   const { projects, loading, error, loadProjects, createProject } = useProjectStore()
-  const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [creating, setCreating] = useState(false)
   const [demoStatus, setDemoStatus] = useState<DemoStatus | null>(null)
-  const [apiBaseQuery, setApiBaseQuery] = useState('')
-  const hrefFor = (href: string) => preserveApiBaseParam(href, apiBaseQuery)
-
-  useEffect(() => {
-    setApiBaseQuery(readApiBaseQueryFromLocation())
-  }, [pathname])
+  const hrefFor = useApiBaseHref()
 
   useEffect(() => {
     loadProjects()

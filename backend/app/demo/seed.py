@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core.config import demo_reset_on_start, get_demo_project_id, is_demo_mode, settings
+from app.analysis.dashboard_chart_renderer import DEFAULT_DASHBOARD_CHART_IDS, render_dashboard_chart
 from app.core.database import get_session
 from app.projects.models import (
     AgentEvent,
@@ -137,7 +138,15 @@ class DemoSeedService:
         now = datetime.now().isoformat()
         files = self._ensure_demo_files(db, project, workspace_path, now)
         artifacts = db.query(Artifact).filter(Artifact.project_id == project_id).all()
-        artifact_missing = any(not (workspace_path / artifact.path).exists() for artifact in artifacts)
+        registered_paths = {artifact.path for artifact in artifacts}
+        expected_dashboard_paths = {
+            f"artifacts/charts/dashboard/{chart_id}.png"
+            for chart_id in DEFAULT_DASHBOARD_CHART_IDS
+        }
+        artifact_missing = (
+            any(not (workspace_path / artifact.path).exists() for artifact in artifacts)
+            or not expected_dashboard_paths.issubset(registered_paths)
+        )
         if workspace_missing or not artifacts or artifact_missing:
             db.query(Artifact).filter(Artifact.project_id == project_id).delete()
             artifacts = self._create_artifacts(db, project_id, workspace_path, now)
@@ -275,6 +284,11 @@ class DemoSeedService:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
             artifacts.append(self._add_artifact(db, project_id, artifact_type, title, target_rel, mime_type, target, now))
+
+        for chart_id in DEFAULT_DASHBOARD_CHART_IDS:
+            target = render_dashboard_chart(workspace_path, chart_id)
+            target_rel = target.relative_to(workspace_path).as_posix()
+            artifacts.append(self._add_artifact(db, project_id, "dashboard_chart", f"{chart_id}.png", target_rel, "image/png", target, now))
 
         report_target = workspace_path / "reports" / "report.md"
         artifacts.append(self._add_artifact(db, project_id, "report", "report.md", "reports/report.md", "text/markdown", report_target, now))

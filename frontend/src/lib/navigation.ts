@@ -1,4 +1,4 @@
-const API_BASE_QUERY_KEYS = ['api_base', 'apiBase'] as const
+export const API_BASE_QUERY_KEYS = ['api_base', 'apiBase'] as const
 export const API_BASE_STORAGE_KEY = 'business-analysis-api-base'
 
 export function getApiBaseQueryFromSearch(search: string): string {

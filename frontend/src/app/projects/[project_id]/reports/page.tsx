@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import Link from 'next/link'
-import { useParams, usePathname } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import {
   ArrowRight,
   CheckCircle2,
@@ -25,7 +25,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkdownView } from '@/components/markdown-view'
-import { preserveApiBaseParam, readApiBaseQueryFromLocation } from '@/lib/navigation'
+import { useApiBaseHref } from '@/lib/use-api-base-href'
 
 type ReportSection = {
   heading: string
@@ -42,10 +42,8 @@ type ExportState = {
 
 export default function ReportsPage() {
   const params = useParams<{ project_id: string }>()
-  const pathname = usePathname()
   const projectId = params.project_id
-  const [apiBaseQuery, setApiBaseQuery] = useState('')
-  const hrefFor = (href: string) => preserveApiBaseParam(href, apiBaseQuery)
+  const hrefFor = useApiBaseHref()
   const [report, setReport] = useState<LatestReport | null>(null)
   const [state, setState] = useState<ProjectState | null>(null)
   const [artifacts, setArtifacts] = useState<Artifact[]>([])
@@ -57,10 +55,6 @@ export default function ReportsPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [exportState, setExportState] = useState<ExportState>(null)
   const [copiedValue, setCopiedValue] = useState<string | null>(null)
-
-  useEffect(() => {
-    setApiBaseQuery(readApiBaseQueryFromLocation())
-  }, [pathname])
 
   const loadReport = useCallback(async () => {
     setLoading(true)

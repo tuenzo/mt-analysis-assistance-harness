@@ -4,20 +4,15 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useProjectStore } from '@/store/project-store'
 import { useUIStore } from '@/store/ui-store'
-import { preserveApiBaseParam, readApiBaseQueryFromLocation } from '@/lib/navigation'
+import { useApiBaseHref } from '@/lib/use-api-base-href'
 import { ChevronLeft, ChevronRight, FolderOpen, Plus, Settings } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 
 export function Sidebar() {
   const pathname = usePathname()
   const { projects, loadProjects } = useProjectStore()
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
-  const [apiBaseQuery, setApiBaseQuery] = useState('')
-  const hrefFor = (href: string) => preserveApiBaseParam(href, apiBaseQuery)
-
-  useEffect(() => {
-    setApiBaseQuery(readApiBaseQueryFromLocation())
-  }, [pathname])
+  const hrefFor = useApiBaseHref()
 
   useEffect(() => {
     loadProjects()

@@ -1,22 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { useProjectStore } from '@/store/project-store'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Database, Bot, FileText, Brain, Clock, FolderOpen } from 'lucide-react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { preserveApiBaseParam, readApiBaseQueryFromLocation } from '@/lib/navigation'
+import { useApiBaseHref } from '@/lib/use-api-base-href'
 
 export default function ProjectHomePage() {
   const { currentProject, projectState, files } = useProjectStore()
-  const pathname = usePathname()
-  const [apiBaseQuery, setApiBaseQuery] = useState('')
-  const hrefFor = (href: string) => preserveApiBaseParam(href, apiBaseQuery)
-
-  useEffect(() => {
-    setApiBaseQuery(readApiBaseQueryFromLocation())
-  }, [pathname])
+  const hrefFor = useApiBaseHref()
 
   if (!currentProject) {
     return (

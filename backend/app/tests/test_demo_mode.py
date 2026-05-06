@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app.analysis.dashboard_chart_renderer import DEFAULT_DASHBOARD_CHART_IDS
 from app.core import config
 from app.core.database import get_session, init_db, reset_engine
 from app.demo.seed import DemoSeedService, seed_demo_if_enabled
@@ -174,6 +175,36 @@ def test_demo_seed_repairs_existing_demo_id_even_if_legacy_record_is_not_test(is
     result = DemoSeedService().seed(reset=False)
 
     assert result["project_id"] == "proj_demo_test"
+
+
+def test_demo_seed_repairs_legacy_artifacts_without_dashboard_pngs(isolated_demo_env, monkeypatch):
+    monkeypatch.setenv("APP_DEMO_MODE", "true")
+    DemoSeedService().seed(reset=True)
+
+    db = get_session()
+    try:
+        db.query(Artifact).filter(
+            Artifact.project_id == "proj_demo_test",
+            Artifact.type == "dashboard_chart",
+        ).delete()
+        db.commit()
+    finally:
+        db.close()
+
+    DemoSeedService().seed(reset=False)
+
+    db = get_session()
+    try:
+        dashboard_artifacts = (
+            db.query(Artifact)
+            .filter(Artifact.project_id == "proj_demo_test", Artifact.type == "dashboard_chart")
+            .all()
+        )
+        assert len(dashboard_artifacts) == len(DEFAULT_DASHBOARD_CHART_IDS)
+        for artifact in dashboard_artifacts:
+            assert (Path(isolated_demo_env) / "projects" / "proj_demo_test" / artifact.path).exists()
+    finally:
+        db.close()
 
 
 def test_demo_session_messages_returns_seeded_history(isolated_demo_env, monkeypatch, client):

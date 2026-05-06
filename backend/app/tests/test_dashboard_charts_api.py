@@ -30,6 +30,7 @@ def isolated_backend(tmp_path, monkeypatch):
 def test_dashboard_chart_endpoint_renders_png(isolated_backend):
     client = TestClient(app)
     project = ProjectService().create_project("Dashboard Chart Test", is_test=True)
+    chart_render_dashboard(project.id, {"chart_ids": ["pareto"]})
 
     response = client.get(f"/api/projects/{project.id}/dashboard-charts/pareto.png")
 
@@ -42,6 +43,7 @@ def test_dashboard_chart_endpoint_renders_png(isolated_backend):
 def test_dashboard_period_overview_chart_endpoint_renders_png(isolated_backend):
     client = TestClient(app)
     project = ProjectService().create_project("Dashboard Chart Test", is_test=True)
+    chart_render_dashboard(project.id, {"chart_ids": ["period_overview"]})
 
     response = client.get(f"/api/projects/{project.id}/dashboard-charts/period_overview.png")
 
@@ -58,6 +60,16 @@ def test_dashboard_chart_endpoint_rejects_unknown_chart(isolated_backend):
     response = client.get(f"/api/projects/{project.id}/dashboard-charts/not_real.png")
 
     assert response.status_code == 404
+
+
+def test_dashboard_chart_endpoint_requires_pre_generated_png(isolated_backend):
+    client = TestClient(app)
+    project = ProjectService().create_project("Dashboard Chart Missing Test", is_test=True)
+
+    response = client.get(f"/api/projects/{project.id}/dashboard-charts/pareto.png")
+
+    assert response.status_code == 404
+    assert "chart.render_dashboard" in response.json()["detail"]
 
 
 def test_dashboard_chart_tool_renders_all_png_artifacts(isolated_backend):
@@ -99,5 +111,33 @@ def test_dashboard_chart_tool_is_exposed_through_gateway_and_persists_artifact(i
         )
         assert artifact.path == "artifacts/charts/dashboard/pareto.png"
         assert artifact.mime_type == "image/png"
+    finally:
+        db.close()
+
+
+def test_dashboard_chart_gateway_upserts_deterministic_artifact_path(isolated_backend):
+    project = ProjectService().create_project("Dashboard Chart Upsert Test", is_test=True)
+    gateway = AnalysisToolGateway()
+
+    for _ in range(2):
+        result = gateway.execute(
+            tool_call_id=f"tc_dashboard_chart_test_{_}",
+            project_id=project.id,
+            action_str="chart.render_dashboard",
+            payload={"chart_ids": ["pareto"]},
+            reason="regenerate dashboard images",
+            user_permission_level=PermissionLevel.WRITE_ARTIFACT,
+        )
+        assert result.ok is True
+
+    db = get_session()
+    try:
+        artifacts = (
+            db.query(Artifact)
+            .filter(Artifact.project_id == project.id, Artifact.path == "artifacts/charts/dashboard/pareto.png")
+            .all()
+        )
+        assert len(artifacts) == 1
+        assert artifacts[0].checksum
     finally:
         db.close()

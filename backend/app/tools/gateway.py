@@ -1,14 +1,13 @@
 import json
-import hashlib
 import uuid
-from pathlib import Path
 from datetime import datetime
 from typing import Optional
+from app.artifacts.service import persist_tool_result_artifacts
 from app.core.database import get_session
-from app.projects.models import Artifact, Report, ToolCall, ApprovalRequest, Job
+from app.projects.models import ToolCall, ApprovalRequest
 from app.tools.registry import get_registry
-from app.tools.schemas import BusinessAnalysisAction, ToolResult, ToolError
-from app.core.permissions import action_to_permission_level, HIGH_RISK_ACTIONS, RISK_LEVEL_MAP, PermissionLevel
+from app.tools.schemas import BusinessAnalysisAction, ToolResult
+from app.core.permissions import HIGH_RISK_ACTIONS, RISK_LEVEL_MAP, PermissionLevel
 from app.core.config import settings
 
 
@@ -113,7 +112,13 @@ class AnalysisToolGateway:
 
             result = tool_func(project_id, execution_payload)
             if result.ok and result.artifacts and required_level >= PermissionLevel.WRITE_ARTIFACT:
-                self._persist_tool_artifacts(db, project_id, tc.id if tc else None, result)
+                persist_tool_result_artifacts(
+                    db,
+                    project_id=project_id,
+                    tool_call_id=tc.id if tc else None,
+                    result=result,
+                    commit=False,
+                )
 
             if tc:
                 tc.status = "succeeded"
@@ -163,45 +168,6 @@ class AnalysisToolGateway:
         except Exception:
             pass
 
-    def _persist_tool_artifacts(
-        self,
-        db,
-        project_id: str,
-        tool_call_id: str | None,
-        result: ToolResult,
-    ) -> None:
-        for item in result.artifacts or []:
-            path = item.get("path")
-            if not path:
-                continue
-            artifact = Artifact(
-                id=f"art_{uuid.uuid4().hex[:12]}",
-                project_id=project_id,
-                tool_call_id=tool_call_id,
-                type=str(item.get("type") or "artifact"),
-                title=str(item.get("title") or path),
-                path=str(path),
-                mime_type=str(item.get("mime_type") or _mime_type_for_path(str(path)) or ""),
-                metadata_json=json.dumps(
-                    {key: value for key, value in item.items() if key not in {"type", "title", "path", "mime_type"}},
-                    ensure_ascii=False,
-                ),
-                created_at=datetime.now().isoformat(),
-            )
-            db.add(artifact)
-
-            if artifact.type == "report":
-                db.add(Report(
-                    id=f"rep_{uuid.uuid4().hex[:12]}",
-                    project_id=project_id,
-                    status="ready",
-                    title=artifact.title,
-                    source_md_path=artifact.path,
-                    metadata_json=json.dumps({"artifact_id": artifact.id}, ensure_ascii=False),
-                    created_at=datetime.now().isoformat(),
-                    updated_at=datetime.now().isoformat(),
-                ))
-
     def resume_from_approval(self, approval_id: str, approved: bool) -> ToolResult:
         db = get_session()
         try:
@@ -241,18 +207,6 @@ class AnalysisToolGateway:
             return ToolResult(ok=True, action=approval.action, summary="审批通过，已执行")
         finally:
             db.close()
-
-
-def _mime_type_for_path(path: str) -> str | None:
-    if path.endswith(".json"):
-        return "application/json"
-    if path.endswith(".md"):
-        return "text/markdown"
-    if path.endswith(".csv"):
-        return "text/csv"
-    if path.endswith(".png"):
-        return "image/png"
-    return None
 
 
 _gateway: Optional[AnalysisToolGateway] = None

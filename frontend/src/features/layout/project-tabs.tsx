@@ -1,10 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { Home, Database, Bot, Clock, LayoutDashboard, FileText, Brain } from 'lucide-react'
-import { preserveApiBaseParam, readApiBaseQueryFromLocation } from '@/lib/navigation'
+import { useApiBaseHref } from '@/lib/use-api-base-href'
 
 const overviewTab = { id: 'home', label: '概览', href: (projectId: string) => `/projects/${projectId}`, icon: Home }
 
@@ -26,12 +25,7 @@ interface ProjectTabsProps {
 
 export function ProjectTabs({ projectId }: ProjectTabsProps) {
   const pathname = usePathname()
-  const [apiBaseQuery, setApiBaseQuery] = useState('')
-  const hrefFor = (href: string) => preserveApiBaseParam(href, apiBaseQuery)
-
-  useEffect(() => {
-    setApiBaseQuery(readApiBaseQueryFromLocation())
-  }, [pathname])
+  const hrefFor = useApiBaseHref()
 
   const isActive = (tabId: string) => {
     if (tabId === 'home') {

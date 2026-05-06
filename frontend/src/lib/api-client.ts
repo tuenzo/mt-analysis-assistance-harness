@@ -28,10 +28,9 @@ import type {
   MemorySummaryResponse,
   ProjectTimeline,
 } from './api-types'
-import { API_BASE_STORAGE_KEY } from './navigation'
+import { API_BASE_QUERY_KEYS, API_BASE_STORAGE_KEY } from './navigation'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:18081'
-const API_BASE_QUERY_PARAMS = ['api_base', 'apiBase']
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.trim().replace(/\/+$/, '')
@@ -50,7 +49,7 @@ class ApiClient {
     }
 
     const params = new URLSearchParams(window.location.search)
-    for (const key of API_BASE_QUERY_PARAMS) {
+    for (const key of API_BASE_QUERY_KEYS) {
       const override = params.get(key)
       if (override?.trim()) {
         const normalized = normalizeBaseUrl(override)
