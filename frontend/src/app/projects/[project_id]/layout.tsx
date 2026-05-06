@@ -21,9 +21,9 @@ export default function ProjectLayout({
   }, [projectId, currentProject, selectProject])
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-w-0 flex-col">
       <ProjectTabs projectId={projectId} />
-      <div className="flex-1 overflow-auto">
+      <div className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
         {children}
       </div>
     </div>

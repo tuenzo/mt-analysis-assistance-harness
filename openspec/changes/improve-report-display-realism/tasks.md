@@ -7,4 +7,4 @@
 - [x] 5. Refresh Dashboard and Report Studio around evidence, limitations, and next actions.
 - [x] 6. Add focused pytest coverage for reports, charts, and latest-result artifacts.
 - [x] 7. Run backend pytest and frontend production build.
-- [ ] 8. Browser-review the demo project and fix presentation bugs.
+- [x] 8. Browser-review the demo project and fix presentation bugs.

@@ -227,7 +227,7 @@ export default function ReportsPage() {
                     <button
                       type="button"
                       onClick={() => void copyValue(item.copyValue ?? '', `metadata-${item.label}`)}
-                      className="shrink-0 rounded-md border p-1.5 transition-colors hover:bg-secondary"
+                      className="hidden shrink-0 rounded-md border p-1.5 transition-colors hover:bg-secondary sm:block"
                       title={`Copy ${item.label}`}
                     >
                       <Clipboard className="h-3.5 w-3.5" />
@@ -387,15 +387,12 @@ function QualityCue({
     review: <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />,
     missing: <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />,
   }
-  const badgeVariant = status === 'ready' ? 'default' : status === 'review' ? 'outline' : 'secondary'
-
   return (
-    <div className="flex gap-3 rounded-md border px-3 py-3">
+    <div className="flex min-w-0 gap-3 overflow-hidden rounded-md border px-3 py-3">
       {iconByStatus[status]}
       <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center">
           <p className="truncate text-sm font-medium">{label}</p>
-          <Badge variant={badgeVariant}>{status}</Badge>
         </div>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p>
       </div>

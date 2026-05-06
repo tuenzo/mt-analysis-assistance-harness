@@ -16,11 +16,11 @@ export default function RootLayout({
   return (
     <html lang="zh">
       <body>
-        <div className="flex h-screen">
+        <div className="flex h-screen overflow-hidden">
           <Sidebar />
-          <div className="flex flex-1 flex-col overflow-hidden">
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
             <Header />
-            <main className="flex-1 overflow-auto bg-background">
+            <main className="flex-1 overflow-x-hidden overflow-y-auto bg-background">
               {children}
             </main>
           </div>

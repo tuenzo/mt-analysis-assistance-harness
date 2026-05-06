@@ -7,18 +7,18 @@ export function Header() {
   const { currentProject } = useProjectStore()
 
   return (
-    <header className="flex items-center justify-between border-b bg-card px-6 py-3">
-      <div className="flex items-center gap-4">
+    <header className="flex min-w-0 items-center justify-between gap-4 border-b bg-card px-6 py-3">
+      <div className="flex min-w-0 items-center gap-4">
         {currentProject ? (
-          <div>
-            <h1 className="text-lg font-semibold">{currentProject.name}</h1>
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-semibold">{currentProject.name}</h1>
             <p className="text-xs text-muted-foreground">
               {currentProject.status} {currentProject.current_stage && `• ${currentProject.current_stage}`}
             </p>
           </div>
         ) : (
-          <div>
-            <h1 className="text-lg font-semibold">Business Analysis Companion</h1>
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-semibold">Business Analysis Companion</h1>
             <p className="text-xs text-muted-foreground">
               Workspace
             </p>
@@ -26,7 +26,7 @@ export function Header() {
         )}
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex shrink-0 items-center gap-4">
         <button
           className="p-2 hover:bg-accent rounded-md transition-colors"
           aria-label="Notifications"
