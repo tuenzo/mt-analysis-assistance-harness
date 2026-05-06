@@ -55,6 +55,8 @@ def result_get_latest(project_id: str, payload: dict) -> ToolResult:
     latest_path = workspace_path / ".analysis" / "latest_result.json"
     index_path = workspace_path / ".analysis" / "latest_result_index.json"
     latest_path.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(latest_data.get("uplift", {}).get("recommended_actions"), list):
+        latest_data["recommended_actions"] = latest_data["uplift"]["recommended_actions"]
     latest_path.write_text(json.dumps(latest_data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     result_index = _build_result_index(latest_data, available_results)
@@ -196,9 +198,11 @@ def _key_metrics(name: str, payload: dict[str, Any]) -> dict[str, Any]:
         }
     if name == "uplift":
         segments = payload.get("segments", [])
+        recommendations = payload.get("recommended_actions", [])
         return {
             "segment_count": len(segments) if isinstance(segments, list) else 0,
             "method_status": payload.get("method_status"),
+            "recommendation_count": len(recommendations) if isinstance(recommendations, list) else 0,
         }
     return {}
 

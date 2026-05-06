@@ -1,7 +1,7 @@
 from pathlib import Path
-import json
 
 from app.analysis.pipelines.diagnostics import run_diagnostics
+from app.analysis.pipelines.gps_uplift import run_gps_uplift
 from app.analysis.pipelines.localgap import run_localgap
 from app.analysis.pipelines.psm_did import run_psm_did
 from app.projects.service import ProjectService
@@ -65,39 +65,7 @@ def analysis_run_gps_uplift(project_id: str, payload: dict) -> ToolResult:
         )
 
     workspace_path = Path(project.workspace_path)
-    analysis_dir = workspace_path / ".analysis"
-    analysis_dir.mkdir(parents=True, exist_ok=True)
-
-    result = {
-        "method": "gps_uplift",
-        "method_status": "stub",
-        "status": "completed",
-        "summary": "GPS-Uplift dose-response step completed with demo stub outputs.",
-        "segments": [
-            {"segment": "Persuadables", "recommendation": "Increase exposure for high-response categories."},
-            {"segment": "Sure Things", "recommendation": "Protect baseline demand and avoid excess discount."},
-            {"segment": "Lost Causes", "recommendation": "Reduce inefficient subsidy depth."},
-            {"segment": "Do Not Disturb", "recommendation": "Avoid incremental discount pressure."},
-        ],
-    }
-    output_path = analysis_dir / "uplift_result.json"
-    output_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    return ToolResult(
-        ok=True,
-        action="analysis.run_gps_uplift",
-        summary="GPS-Uplift analysis completed and uplift_result.json was saved.",
-        artifacts=[
-            {
-                "type": "model_output",
-                "title": "uplift_result.json",
-                "path": str(output_path.relative_to(workspace_path)),
-                "method_status": "stub",
-                "status": "completed",
-            },
-        ],
-        assistant_hint="GPS-Uplift has completed. Read .analysis/uplift_result.json for the dose-response and strategy stub output.",
-    )
+    return run_gps_uplift(project_id, str(workspace_path), payload)
 
 
 def analysis_run_full_pipeline(project_id: str, payload: dict) -> ToolResult:
