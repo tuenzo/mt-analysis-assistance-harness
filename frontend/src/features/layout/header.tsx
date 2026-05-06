@@ -10,7 +10,7 @@ export function Header() {
     : '工作区'
 
   return (
-    <header className="flex min-w-0 items-center justify-between gap-4 border-b border-t-2 border-t-primary bg-card px-4 py-3 shadow-sm shadow-black/[0.02] md:px-6">
+    <header className="flex min-w-0 items-center justify-between gap-4 border-b border-[#f2cf4a]/60 border-t-2 border-t-primary bg-[#ffd100]/20 px-4 py-3 shadow-sm shadow-[#d6a500]/10 backdrop-blur md:px-6">
       <div className="flex min-w-0 items-center gap-4">
         {currentProject ? (
           <div className="min-w-0">

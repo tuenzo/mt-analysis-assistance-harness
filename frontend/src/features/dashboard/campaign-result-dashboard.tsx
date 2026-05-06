@@ -91,7 +91,7 @@ function DecisionSection({
   loading: boolean
 }) {
   return (
-    <section className="min-h-48 rounded-md border bg-white p-2.5">
+    <section className="min-h-52 rounded-md border bg-white p-2.5">
       <SectionTitle
         icon={<Target className="h-4 w-4" />}
         tone="good"
@@ -99,7 +99,7 @@ function DecisionSection({
         subtitle={snapshot.decisionLabel}
         badge={loading ? '刷新中' : '一屏决策'}
       />
-      <div className="mt-2 grid grid-cols-[minmax(0,1fr)_112px] gap-2">
+      <div className="mt-2 grid grid-cols-[minmax(0,0.86fr)_minmax(140px,0.42fr)] gap-2">
         <div className="space-y-1.5">
           {snapshot.recommendations.slice(0, 2).map((recommendation, index) => (
             <div key={`${recommendation}-${index}`} className="flex gap-1.5 rounded border bg-amber-50/45 px-2 py-1.5">
@@ -128,7 +128,7 @@ function DidSection({
   totalArtifacts: number
 }) {
   return (
-    <section className="min-h-48 rounded-md border bg-white p-2.5">
+    <section className="min-h-52 rounded-md border bg-white p-2.5">
       <SectionTitle
         icon={<Scale className="h-4 w-4" />}
         tone={did.tone}
@@ -141,13 +141,11 @@ function DidSection({
         <MiniMetric label="增量规模" value={did.incrementalValue} tone="neutral" />
         <MiniMetric label="对照比较" value={did.baselineComparison} tone="neutral" />
       </div>
-      <div className="mt-2 grid grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)] gap-2">
-        <div className="rounded border bg-secondary/25 px-2 py-1.5">
-          <p className="max-h-12 overflow-hidden text-xs leading-6">{did.interpretation}</p>
-          <p className="mt-1 truncate text-[11px] text-muted-foreground">
-            {did.significance} / {latestReport ? '报告已接入' : '快照'} / {totalArtifacts} 产物
-          </p>
-        </div>
+      <div className="mt-2 grid grid-cols-[minmax(0,0.54fr)_minmax(0,1.46fr)] gap-2">
+        <MiniInsight
+          primary={did.interpretation}
+          secondary={`${did.significance} / ${latestReport ? '报告已接入' : '快照'} / ${totalArtifacts} 产物`}
+        />
         <LocalGapMiniChart />
       </div>
     </section>
@@ -166,14 +164,14 @@ function PeriodSection({
   const max = Math.max(...points.map((point) => point.value), 1)
 
   return (
-    <section className="min-h-48 rounded-md border bg-white p-2.5">
+    <section className="min-h-52 rounded-md border bg-white p-2.5">
       <SectionTitle
         icon={<LineChart className="h-4 w-4" />}
         tone="neutral"
         title="活动前中后"
         subtitle={metricLabel}
       />
-      <div className="mt-2 grid grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] gap-2">
+      <div className="mt-2 grid grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] gap-2">
         <GmvTrendMiniChart />
         <ActivityLiftMiniBars />
       </div>
@@ -208,14 +206,14 @@ function PeriodSection({
 
 function UpliftSection({ quadrants }: { quadrants: UpliftQuadrantSnapshot[] }) {
   return (
-    <section className="min-h-48 rounded-md border bg-white p-2.5">
+    <section className="min-h-52 rounded-md border bg-white p-2.5">
       <SectionTitle
         icon={<Users className="h-4 w-4" />}
         tone="good"
         title="Uplift 四象限"
         subtitle="分群含义与下一步动作"
       />
-      <div className="mt-2 grid grid-cols-[minmax(0,1fr)_122px] gap-2">
+      <div className="mt-2 grid grid-cols-[minmax(0,1fr)_96px] gap-2">
         <UpliftBubbleMiniChart />
         <div className="grid grid-cols-1 gap-1.5">
           {quadrants.slice(0, 4).map((quadrant) => (
@@ -227,10 +225,9 @@ function UpliftSection({ quadrants }: { quadrants: UpliftQuadrantSnapshot[] }) {
               title={`${quadrant.meaning} ${quadrant.action}`}
             >
               <div className="flex items-center justify-between gap-1">
-                <p className="text-[11px] font-semibold leading-4">{quadrantShortLabel(quadrant.id)}</p>
+                <p className="text-[11px] font-semibold leading-4">{quadrantActionLabel(quadrant.id)}</p>
                 <TonePill tone={quadrant.tone}>{quadrant.countLabel}</TonePill>
               </div>
-              <p className="mt-0.5 text-[10px] leading-3 text-muted-foreground">{quadrant.shareLabel}</p>
             </div>
           ))}
         </div>
@@ -243,7 +240,7 @@ function ParetoMiniChart() {
   return (
     <div className="rounded border bg-background px-2 py-1.5" aria-label="品类GMV Pareto 小图">
       <p className="truncate text-[11px] font-semibold">品类 GMV Pareto</p>
-      <svg className="mt-1 h-[82px] w-full" viewBox="0 0 108 86" role="img" aria-label="饮料、零食、生鲜、母婴、家清的 GMV 累计占比">
+      <svg className="mt-1 h-28 w-full" viewBox="0 0 108 86" role="img" aria-label="饮料、零食、生鲜、母婴、家清的 GMV 累计占比">
         <line x1="8" y1="70" x2="104" y2="70" stroke="#d9dde3" />
         <rect x="14" y="18" width="12" height="52" rx="2" fill="#3b82f6" />
         <rect x="34" y="34" width="12" height="36" rx="2" fill="#3b82f6" opacity="0.9" />
@@ -268,19 +265,27 @@ function LocalGapMiniChart() {
   return (
     <div className="rounded border bg-background px-2 py-1.5" aria-label="LocalGap 增量瀑布小图">
       <p className="truncate text-[11px] font-semibold">LocalGap 增量拆解</p>
-      <svg className="mt-1 h-14 w-full" viewBox="0 0 168 58" role="img" aria-label="基线 GMV 到实际 GMV 的增量瀑布">
-        <line x1="7" y1="47" x2="161" y2="47" stroke="#d9dde3" />
-        <rect x="8" y="30" width="22" height="17" rx="1.5" fill="#a8adb5" />
-        <rect x="44" y="19" width="22" height="28" rx="1.5" fill="#55b95b" />
-        <rect x="78" y="14" width="22" height="19" rx="1.5" fill="#55b95b" />
-        <rect x="112" y="9" width="22" height="13" rx="1.5" fill="#55b95b" />
-        <rect x="138" y="9" width="22" height="12" rx="1.5" fill="#d92929" />
-        <polyline points="30,30 44,30 66,19 78,19 100,14 112,14 134,9 138,9" fill="none" stroke="#1f2329" strokeDasharray="4 3" />
-        <text x="5" y="56" fontSize="8" fill="#646a73">基线</text>
-        <text x="43" y="14" fontSize="8" fill="#1f2329">+300</text>
-        <text x="78" y="10" fontSize="8" fill="#1f2329">+180</text>
-        <text x="111" y="8" fontSize="8" fill="#1f2329">+120</text>
-        <text x="138" y="8" fontSize="8" fill="#1f2329">-110</text>
+      <svg className="mt-1 h-20 w-full" viewBox="0 0 206 64" role="img" aria-label="基线 GMV 到实际 GMV 的增量瀑布">
+        <line x1="7" y1="50" x2="198" y2="50" stroke="#d9dde3" />
+        <rect x="8" y="32" width="22" height="18" rx="1.5" fill="#a8adb5" />
+        <rect x="44" y="22" width="22" height="28" rx="1.5" fill="#55b95b" />
+        <rect x="78" y="16" width="22" height="22" rx="1.5" fill="#55b95b" />
+        <rect x="112" y="12" width="22" height="15" rx="1.5" fill="#55b95b" />
+        <rect x="146" y="14" width="22" height="13" rx="1.5" fill="#d92929" />
+        <rect x="180" y="10" width="18" height="40" rx="1.5" fill="#9aa1aa" />
+        <polyline
+          points="30,32 44,32 66,22 78,22 100,16 112,16 134,12 146,12 168,14 180,14"
+          fill="none"
+          stroke="#1f2329"
+          strokeDasharray="4 3"
+        />
+        <text x="5" y="61" fontSize="8" fill="#646a73">基线</text>
+        <text x="42" y="17" fontSize="8" fill="#1f2329">+300</text>
+        <text x="77" y="12" fontSize="8" fill="#1f2329">+180</text>
+        <text x="111" y="9" fontSize="8" fill="#1f2329">+120</text>
+        <text x="146" y="10" fontSize="8" fill="#1f2329">-110</text>
+        <text x="177" y="8" fontSize="8" fill="#1f2329">1,290</text>
+        <text x="178" y="61" fontSize="8" fill="#646a73">实际</text>
       </svg>
     </div>
   )
@@ -290,7 +295,7 @@ function GmvTrendMiniChart() {
   return (
     <div className="rounded border bg-background px-2 py-1.5" aria-label="GMV 趋势与活动发薪日小图">
       <p className="truncate text-[11px] font-semibold">GMV 趋势 + 活动/发薪日</p>
-      <svg className="mt-1 h-14 w-full" viewBox="0 0 190 54" role="img" aria-label="GMV 趋势线，含活动期和发薪日标记">
+      <svg className="mt-1 h-[72px] w-full" viewBox="0 0 190 54" role="img" aria-label="GMV 趋势线，含活动期和发薪日标记">
         <line x1="8" y1="42" x2="182" y2="42" stroke="#d9dde3" />
         <line x1="8" y1="30" x2="182" y2="30" stroke="#eef0f3" strokeDasharray="4 3" />
         <line x1="8" y1="18" x2="182" y2="18" stroke="#eef0f3" strokeDasharray="4 3" />
@@ -317,7 +322,7 @@ function ActivityLiftMiniBars() {
   return (
     <div className="rounded border bg-background px-2 py-1.5" aria-label="活动期与非活动期对比小图">
       <p className="truncate text-[11px] font-semibold">活动期 vs 非活动期</p>
-      <svg className="mt-1 h-14 w-full" viewBox="0 0 142 54" role="img" aria-label="活动期 GMV、订单、转化、曝光高于非活动期">
+      <svg className="mt-1 h-[72px] w-full" viewBox="0 0 142 54" role="img" aria-label="活动期 GMV、订单、转化、曝光高于非活动期">
         <line x1="8" y1="42" x2="134" y2="42" stroke="#d9dde3" />
         {[
           [16, 15, 29],
@@ -342,8 +347,7 @@ function ActivityLiftMiniBars() {
 function UpliftBubbleMiniChart() {
   return (
     <div className="rounded border bg-background px-2 py-1.5" aria-label="品类策略四象限气泡图">
-      <p className="truncate text-[11px] font-semibold">品类策略四象限</p>
-      <svg className="mt-1 h-[118px] w-full" viewBox="0 0 210 124" role="img" aria-label="增量贡献和效果改善四象限">
+      <svg className="h-[156px] w-full" viewBox="0 0 210 124" role="img" aria-label="增量贡献和效果改善四象限">
         <line x1="18" y1="104" x2="198" y2="104" stroke="#8a8f99" />
         <line x1="18" y1="104" x2="18" y2="14" stroke="#8a8f99" />
         <line x1="102" y1="14" x2="102" y2="104" stroke="#8a8f99" strokeDasharray="5 4" />
@@ -401,6 +405,15 @@ function MiniMetric({ label, value, tone }: { label: string; value: string; tone
   )
 }
 
+function MiniInsight({ primary, secondary }: { primary: string; secondary: string }) {
+  return (
+    <div className="rounded border bg-secondary/25 px-2 py-1.5">
+      <p className="max-h-14 overflow-hidden text-xs leading-[18px]">{primary}</p>
+      <p className="mt-1 truncate text-[11px] text-muted-foreground">{secondary}</p>
+    </div>
+  )
+}
+
 function IconTile({ tone, children }: { tone: MetricTone; children: ReactNode }) {
   return <div className={`rounded-md p-1.5 ${toneTileClass(tone)}`}>{children}</div>
 }
@@ -453,12 +466,12 @@ function trendBarClass(tone: MetricTone) {
   return classes[tone]
 }
 
-function quadrantShortLabel(id: UpliftQuadrantSnapshot['id']) {
+function quadrantActionLabel(id: UpliftQuadrantSnapshot['id']) {
   const labels: Record<UpliftQuadrantSnapshot['id'], string> = {
-    persuadables: '可撬动',
-    sure_things: '自然买',
-    lost_causes: '低响应',
-    do_not_disturb: '避免打扰',
+    persuadables: '优先加码',
+    sure_things: '控折护盘',
+    lost_causes: '先诊断',
+    do_not_disturb: '减曝光',
   }
   return labels[id]
 }
