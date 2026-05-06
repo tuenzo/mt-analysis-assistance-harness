@@ -4,6 +4,7 @@ import mimetypes
 from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi.responses import FileResponse
 from typing import Any, Optional
 from app.projects.schemas import (
     ProjectCreate, ProjectResponse,
@@ -14,6 +15,7 @@ from app.projects.schemas import (
 from app.projects.service import ProjectService
 from app.core.database import get_session
 from app.projects.models import AgentEvent, ApprovalRequest, Artifact, Job, ToolCall
+from app.analysis.dashboard_chart_renderer import CHART_IDS, render_dashboard_chart
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 service = ProjectService()
@@ -148,6 +150,26 @@ def read_project_artifact_content(project_id: str, artifact_id: str):
         return {"ok": True, "data": _read_artifact_file(artifact_path, _serialize_artifact(artifact))}
     finally:
         db.close()
+
+
+@router.get("/{project_id}/dashboard-charts/{chart_id}.png")
+def read_dashboard_chart(project_id: str, chart_id: str):
+    project = service.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if chart_id not in CHART_IDS:
+        raise HTTPException(status_code=404, detail="Dashboard chart not found")
+
+    try:
+        chart_path = render_dashboard_chart(project.workspace_path, chart_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return FileResponse(
+        chart_path,
+        media_type="image/png",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.get("/{project_id}/timeline")

@@ -22,6 +22,7 @@
 - [x] 4.5 Render executive recommendations, conclusions, and caveats above supporting detail
 - [x] 4.6 Reorganize the result dashboard into a stable responsive 2×2 quadrant layout with unified chart-left and summary-right card structure
 - [x] 4.7 Add business chart essentials: axis names, units, ticks, legends, category/date labels, and key values
+- [x] 4.8 Move the five core dashboard charts to backend-rendered PNGs and load them in the frontend as stable images
 
 ## 5. Quality Checks
 
