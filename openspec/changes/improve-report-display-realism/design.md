@@ -1,47 +1,48 @@
-## Context
+## Overview
 
-The harness now has real panel generation and a runnable demo flow. Report generation still mostly stitches available JSON into fixed prose, while the frontend reads Markdown sections through fragile title matching. The reference project's best ideas are not its exact prose, but its report discipline: summary first, evidence tables and figures, method notes, robustness caveats, and strategy implications.
+The implementation keeps report generation local and deterministic. Instead of introducing a new report service or API shape, the renderer builds a small `ReportContext`, applies an ordered section plan, writes Markdown plus metadata sidecars, and returns normal `ToolResult` artifacts.
 
-## Goals / Non-Goals
+## Report Plan
 
-**Goals:**
+Each planned section contains:
 
-- Build a repeatable report skeleton that can be populated from tool results.
-- Make report content explicit about confidence, assumptions, and limitations.
-- Let the UI show evidence provenance instead of just a raw Markdown blob.
-- Keep the single `business_analysis` gateway and current REST APIs compatible.
+- `section_id`
+- `title`
+- `purpose`
+- `prompt`
+- `tool_calls`
+- `evidence_artifacts`
+- `assumptions`
+- `limitations`
+- `recommended_follow_up`
 
-**Non-Goals:**
+The plan is data-informed but not LLM-generated. It gives Codex and the frontend a clear contract for why a section exists and which artifacts support it.
 
-- Do not implement a full causal modeling suite in this change.
-- Do not copy reference report wording, data values, or chart images.
-- Do not add a rich text editor or export formats beyond current Markdown flow.
+## Evidence Strategy
 
-## Decisions
+The renderer reads:
 
-- Use a deterministic report plan object in backend code.
-  - Rationale: reliable MVP behavior beats free-form LLM prose for generated reports.
-  - Alternative: call an LLM directly for report text; rejected because demo/test outputs need deterministic verification.
+- `.analysis/latest_result.json`
+- `.analysis/panel_summary.json`
+- known result files under `.analysis/`
+- chart JSON files under `artifacts/charts/`
+- `.analysis/project_manifest.json` when present
 
-- Treat prompts as design artifacts, not runtime dependency.
-  - Rationale: the agent can use prompt/tool guidance to decide actions, while backend still owns facts and artifacts.
+Missing evidence is not hidden. The report includes limitations and follow-up tool calls for absent outputs such as `chart.render` or `analysis.run_gps_uplift`.
 
-- Keep frontend resilient to partial data.
-  - Rationale: users may open Dashboard before full pipeline completion.
+## Compatibility
 
-- Use ASCII display text in edited UI/report templates.
-  - Rationale: existing files show local encoding damage; stable English UI avoids another round of mojibake.
+- `report.generate` still writes `reports/report.md`.
+- Returned `ToolResult` fields remain additive only.
+- Chart JSON keeps existing top-level plotting fields while adding metadata fields.
+- `result.get_latest` still writes `.analysis/latest_result.json` and adds a separate `.analysis/latest_result_index.json`.
 
-## Risks / Trade-offs
+## Frontend Review Surface
 
-- [Risk] More structured reports may feel less conversational. -> Mitigation: include concise narrative interpretation in each section.
-- [Risk] Some demo outputs remain stub-based. -> Mitigation: clearly label confidence and method status.
-- [Risk] Browser review may reveal layout density issues. -> Mitigation: reserve a final self-review/fix pass.
+Dashboard and Report Studio stay file/API driven. They infer readiness from project state, report Markdown, and registered artifacts, then surface:
 
-## Migration Plan
-
-1. Create report/display contracts.
-2. Implement backend report plan and metadata.
-3. Implement frontend evidence-led views.
-4. Verify with tests/build and browser review.
-5. Commit each coherent slice.
+- KPI and coverage snapshots
+- evidence-chain status
+- report section navigation
+- artifact references
+- limitations and follow-up actions

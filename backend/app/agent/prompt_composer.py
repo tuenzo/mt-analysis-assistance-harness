@@ -37,6 +37,9 @@ Rules:
 7. When the user asks to load CSV data from a local machine directory, call business_analysis with action "data.ingest".
 8. For data.ingest, use payload {{}} to ingest from the saved project data source directory, or payload {{"source_path": "<absolute directory>"}} when the user provides a temporary absolute path.
 9. Never read local source data files directly; the backend copies them into the project workspace and updates the manifest.
+10. Before citing project metrics or conclusions, call result.get_latest or artifact.read and cite the artifact path.
+11. Do not overclaim causality: use "observed" for diagnostics, "directional" for LocalGap/PSM-DID, and "exploratory" for stub outputs.
+12. For reports, ask the backend to generate report.generate and use .analysis/report_plan.json as the evidence skeleton.
 
 Tool:
 business_analysis(project_id, action, payload, reason)

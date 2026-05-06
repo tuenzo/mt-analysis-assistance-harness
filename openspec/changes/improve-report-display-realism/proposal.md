@@ -1,27 +1,21 @@
 ## Why
 
-MVP0 can run end-to-end, but the result display and generated reports still feel like scaffold output: sections are template-like, chart evidence is thin, and the UI does not clearly explain what evidence supports each conclusion. The reference project contains stronger reporting artifacts and analytical framing; this change adapts the useful patterns into prompts, tool contracts, and display design without copying its report content.
+The MVP report path currently produces a flat Markdown file from whatever result JSON happens to exist. Demo runs look more credible when reports show how each conclusion is backed by concrete result and chart artifacts, and when limitations and next steps are explicit instead of implied.
 
 ## What Changes
 
-- Add a report planning layer that separates findings, evidence, assumptions, limitations, and next actions.
-- Improve generated Markdown so it reads like an evidence-backed business analysis deliverable.
-- Improve chart/result metadata so reports can cite artifacts and explain confidence.
-- Upgrade Dashboard and Report Studio to show KPI snapshots, evidence chains, artifact coverage, limitations, and next-step guidance.
-- Use the demo project's real data as the primary verification path.
-
-## Capabilities
-
-### New Capabilities
-- `credible-analysis-reporting`: Structured prompt/tool-call design and report output for credible business analysis deliverables.
-- `evidence-led-result-display`: Frontend result views that make metrics, evidence, limitations, and artifacts easy to inspect.
-
-### Modified Capabilities
-- `business-analysis-system`: Report generation and result dashboard behavior are upgraded from placeholder output to evidence-led MVP1-style outputs.
+- Add a lightweight report plan in backend code with section purpose, evidence artifacts, prompt/tool-call intent, assumptions, limitations, and recommended follow-up.
+- Render Markdown reports from that plan while preserving the existing `report.generate` API and `reports/report.md` output.
+- Enrich chart and latest-result tool artifacts with compatible metadata so the agent and UI can see sources, caveats, and recommended next actions.
+- Refresh Dashboard and Report Studio so users can review KPIs, evidence coverage, artifacts, caveats, and report sections without opening raw files.
+- Add focused tests for report planning/rendering and chart/result metadata.
 
 ## Impact
 
-- Modified: backend report generation, result/chart metadata, tests.
-- Modified: frontend Dashboard and Report Studio pages/components.
-- Added: OpenSpec artifacts documenting report/display contracts.
-- Validation: backend pytest, frontend build, local browser review against demo project.
+- **Modified**: `backend/app/reports/renderer.py`
+- **Modified**: `backend/app/tools/report_tools.py`
+- **Modified**: `backend/app/tools/result_tools.py`
+- **Modified**: `backend/app/analysis/chart_renderer.py`
+- **Modified**: `frontend/src/app/projects/[project_id]/dashboard/page.tsx`
+- **Modified**: `frontend/src/app/projects/[project_id]/reports/page.tsx`
+- **Tests**: report/chart/result tests only
