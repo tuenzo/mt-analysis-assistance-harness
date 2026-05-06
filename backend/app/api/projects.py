@@ -1,7 +1,10 @@
+import base64
 import json
+import mimetypes
+from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from typing import Optional
+from typing import Any, Optional
 from app.projects.schemas import (
     ProjectCreate, ProjectResponse,
     ProjectFileResponse, FileUploadResponse, SchemaInferResponse,
@@ -91,6 +94,58 @@ def list_artifacts(project_id: str, type: str | None = None, job_id: str | None 
                 for artifact in artifacts
             ],
         }
+    finally:
+        db.close()
+
+
+@router.get("/{project_id}/artifacts/content")
+def read_artifact_content_by_path(project_id: str, path: str):
+    project = service.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    artifact_path = _resolve_workspace_path(project.workspace_path, path)
+    artifact = {
+        "id": f"path:{path}",
+        "project_id": project_id,
+        "job_id": None,
+        "tool_call_id": None,
+        "type": _artifact_type_for_path(path),
+        "title": Path(path).name,
+        "path": path,
+        "mime_type": _mime_type_for_path(path),
+        "metadata_json": None,
+        "checksum": None,
+        "created_at": None,
+    }
+    return {"ok": True, "data": _read_artifact_file(artifact_path, artifact)}
+
+
+@router.get("/{project_id}/artifacts/{artifact_id}")
+def get_project_artifact(project_id: str, artifact_id: str):
+    db = get_session()
+    try:
+        artifact = db.query(Artifact).filter(Artifact.project_id == project_id, Artifact.id == artifact_id).first()
+        if not artifact:
+            raise HTTPException(status_code=404, detail="Artifact not found")
+        return {"ok": True, "data": _serialize_artifact(artifact)}
+    finally:
+        db.close()
+
+
+@router.get("/{project_id}/artifacts/{artifact_id}/content")
+def read_project_artifact_content(project_id: str, artifact_id: str):
+    project = service.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    db = get_session()
+    try:
+        artifact = db.query(Artifact).filter(Artifact.project_id == project_id, Artifact.id == artifact_id).first()
+        if not artifact:
+            raise HTTPException(status_code=404, detail="Artifact not found")
+        artifact_path = _resolve_workspace_path(project.workspace_path, artifact.path)
+        return {"ok": True, "data": _read_artifact_file(artifact_path, _serialize_artifact(artifact))}
     finally:
         db.close()
 
@@ -202,6 +257,85 @@ def _event_payload(payload_json: str | None) -> dict:
         return json.loads(payload_json)
     except json.JSONDecodeError:
         return {}
+
+
+def _serialize_artifact(artifact: Artifact) -> dict[str, Any]:
+    metadata_json = artifact.metadata_json
+    if metadata_json is not None and not isinstance(metadata_json, str):
+        metadata_json = json.dumps(metadata_json, ensure_ascii=False)
+    return {
+        "id": artifact.id,
+        "project_id": artifact.project_id,
+        "job_id": artifact.job_id,
+        "tool_call_id": artifact.tool_call_id,
+        "type": artifact.type,
+        "title": artifact.title,
+        "path": artifact.path,
+        "mime_type": artifact.mime_type,
+        "metadata_json": metadata_json,
+        "checksum": artifact.checksum,
+        "created_at": artifact.created_at,
+    }
+
+
+def _resolve_workspace_path(workspace_path: str, artifact_path: str) -> Path:
+    workspace = Path(workspace_path).resolve()
+    candidate = Path(artifact_path)
+    resolved = candidate.resolve() if candidate.is_absolute() else (workspace / candidate).resolve()
+    try:
+        resolved.relative_to(workspace)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Artifact path must stay within the project workspace") from exc
+    if not resolved.exists() or not resolved.is_file():
+        raise HTTPException(status_code=404, detail="Artifact file not found")
+    return resolved
+
+
+def _read_artifact_file(path: Path, artifact: dict[str, Any]) -> dict[str, Any]:
+    content_type = artifact.get("mime_type") or _mime_type_for_path(str(path))
+    size_bytes = path.stat().st_size
+    if content_type == "application/json" or path.suffix.lower() == ".json":
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"Artifact JSON could not be parsed: {exc}") from exc
+        encoding = "json"
+    elif content_type.startswith("text/") or path.suffix.lower() in {".md", ".csv", ".txt", ".log", ".yaml", ".yml"}:
+        data = path.read_text(encoding="utf-8")
+        encoding = "text"
+    else:
+        data = base64.b64encode(path.read_bytes()).decode("ascii")
+        encoding = "base64"
+
+    return {
+        "artifact": artifact,
+        "content_type": content_type,
+        "encoding": encoding,
+        "data": data,
+        "size_bytes": size_bytes,
+    }
+
+
+def _mime_type_for_path(path: str) -> str:
+    guessed, _ = mimetypes.guess_type(path)
+    if guessed:
+        return guessed
+    if path.lower().endswith(".json"):
+        return "application/json"
+    return "application/octet-stream"
+
+
+def _artifact_type_for_path(path: str) -> str:
+    lower = path.lower()
+    if "/charts/" in lower.replace("\\", "/") or lower.endswith("_chart.json"):
+        return "chart"
+    if lower.endswith(".csv"):
+        return "table"
+    if lower.endswith(".md"):
+        return "report"
+    if lower.endswith(".png") or lower.endswith(".jpg") or lower.endswith(".jpeg") or lower.endswith(".webp"):
+        return "image"
+    return "artifact"
 
 
 @router.get("/{project_id}/files", response_model=list[ProjectFileResponse])

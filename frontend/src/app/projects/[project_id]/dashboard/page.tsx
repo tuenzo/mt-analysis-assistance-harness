@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkdownView } from '@/components/markdown-view'
+import { ChartArtifactGallery } from '@/features/project/chart-artifact-gallery'
 
 type ReportSection = {
   heading: string
@@ -154,6 +155,8 @@ export default function DashboardPage() {
           <KpiCard key={kpi.title} {...kpi} />
         ))}
       </div>
+
+      <ChartArtifactGallery projectId={projectId} artifacts={artifacts} />
 
       <div className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr]">
         <Card>

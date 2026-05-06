@@ -198,6 +198,44 @@ export interface ArtifactsFilter {
   tool_call_id?: string
 }
 
+export interface ArtifactContent<T = unknown> {
+  artifact: Artifact
+  content_type: string
+  encoding: 'json' | 'text' | 'base64'
+  data: T
+  size_bytes: number
+}
+
+export interface ChartMetadata {
+  method_status?: string
+  chart_type?: string
+  confidence?: {
+    label?: string
+    score?: number
+    basis?: string[]
+  }
+  source_results?: string[]
+  evidence_artifacts?: string[]
+  findings?: string[]
+  limitations?: string[]
+  recommended_follow_up?: string[]
+  generated_at?: string
+}
+
+export interface ChartArtifactData {
+  type: 'line' | 'bar' | 'pie' | string
+  title?: string
+  x?: Array<string | number | null>
+  y?: Array<number | string | null>
+  labels?: Array<string | number | null>
+  values?: Array<number | string | null>
+  x_label?: string
+  y_label?: string
+  series?: Array<Record<string, unknown>>
+  segments?: Array<{ key: string; color?: string }>
+  metadata?: ChartMetadata
+}
+
 // Report types
 export interface Report {
   id: string
