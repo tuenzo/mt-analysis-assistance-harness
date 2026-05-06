@@ -34,10 +34,9 @@ export function MessageList({ messages, isRunning }: MessageListProps) {
             />
           </svg>
         </div>
-        <h3 className="text-lg font-medium mb-2">Start a conversation</h3>
+        <h3 className="text-lg font-medium mb-2">开始一次分析对话</h3>
         <p className="text-muted-foreground max-w-md">
-          Send a message to the agent to begin your business analysis.
-          The agent can help you upload data, run analysis pipelines, and generate reports.
+          向 Agent 描述你的分析目标。它会根据项目状态协助接入数据、运行分析 pipeline，并生成可复核的结论和报告。
         </p>
       </div>
     )
@@ -57,7 +56,7 @@ export function MessageList({ messages, isRunning }: MessageListProps) {
                 <span className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
                 <span className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
-              <span>Agent is thinking...</span>
+              <span>Agent 正在分析...</span>
             </div>
           </div>
         </div>

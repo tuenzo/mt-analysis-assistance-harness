@@ -16,6 +16,8 @@ import { JobProgressIndicator } from '@/features/agent/job-progress-indicator'
 import { Button } from '@/components/ui/button'
 import { Bot, Square, Trash2 } from 'lucide-react'
 
+const agentModelName = process.env.NEXT_PUBLIC_AGENT_MODEL_NAME || 'LongCat-Flash-Chat'
+
 export default function AgentPage() {
   const params = useParams()
   const projectId = params.project_id as string
@@ -24,6 +26,7 @@ export default function AgentPage() {
     messageQueue,
     isRunning,
     error,
+    currentSession,
     toolCalls,
     approvalRequests,
     jobs,
@@ -73,7 +76,7 @@ export default function AgentPage() {
   const handleEventWithToast = useCallback((event: SSEEvent) => {
     // Show toast for artifact created
     if (event.type === 'artifact_created') {
-      toast.success(`Artifact created: ${event.name}`, {
+      toast.success(`产物已生成：${event.name}`, {
         description: event.path,
         duration: 5000,
       })
@@ -113,16 +116,33 @@ export default function AgentPage() {
 
   // Get the active job
   const activeJob = Object.values(jobs)[0] || null
+  const runtimeProvider = currentSession?.runtime_provider
 
   return (
     <div className="flex flex-col h-full">
       <Toaster position="top-right" richColors />
 
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-4 py-3 bg-card">
-        <div className="flex items-center gap-3">
-          <Bot className="h-5 w-5" />
-          <span className="font-medium">Agent Command Center</span>
+      <div className="flex flex-col gap-3 border-b bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <Bot className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <div className="truncate font-medium">Agent 分析中心</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <span className="inline-flex max-w-full items-center rounded-full border border-primary/50 bg-primary/15 px-2 py-0.5 text-xs font-medium text-secondary-foreground">
+                <span className="shrink-0">模型：</span>
+                <span className="ml-1 truncate">{agentModelName}</span>
+              </span>
+              {runtimeProvider && (
+                <span className="inline-flex max-w-full items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  <span className="shrink-0">运行时：</span>
+                  <span className="ml-1 truncate">{runtimeProvider}</span>
+                </span>
+              )}
+            </div>
+          </div>
           <span
             className={`text-xs px-2 py-0.5 rounded-full ${
               connected
@@ -132,19 +152,19 @@ export default function AgentPage() {
                 : 'bg-gray-100 text-gray-700'
             }`}
           >
-            {connected ? 'Connected' : sseError ? 'Disconnected' : 'Idle'}
+            {connected ? '已连接' : sseError ? '已断开' : '待命'}
           </span>
         </div>
         <div className="flex items-center gap-2">
           {isRunning && sessionId && (
             <Button variant="outline" size="sm" onClick={handleInterrupt}>
               <Square className="h-4 w-4 mr-1" />
-              Interrupt
+              中断
             </Button>
           )}
           <Button variant="outline" size="sm" onClick={clearMessages}>
             <Trash2 className="h-4 w-4 mr-1" />
-            Clear
+            清空
           </Button>
         </div>
       </div>
@@ -182,7 +202,7 @@ export default function AgentPage() {
         {currentToolCalls.length > 0 && (
           <div className="w-80 border-l bg-card overflow-y-auto">
             <div className="p-4 border-b">
-              <h3 className="font-medium text-sm">Tool Calls</h3>
+              <h3 className="font-medium text-sm">工具调用</h3>
             </div>
             <div className="p-2 space-y-2">
               {currentToolCalls.map((toolCall, index) => (

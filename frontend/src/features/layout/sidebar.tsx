@@ -20,17 +20,20 @@ export function Sidebar() {
 
   return (
     <aside
-      className={`flex shrink-0 flex-col border-r bg-card transition-all duration-300 ${
+      className={`hidden shrink-0 flex-col border-r border-[#e7b900] bg-[#ffd100] text-[#241a00] transition-all duration-300 md:flex ${
         sidebarCollapsed ? 'w-16' : 'w-64'
       }`}
     >
-      <div className="flex items-center justify-between border-b p-4">
+      <div className="flex items-center justify-between border-b border-[#e7b900] p-4">
         {!sidebarCollapsed && (
-          <span className="font-semibold text-sm">Projects</span>
+          <div className="min-w-0">
+            <span className="block truncate text-sm font-semibold">商业分析工作区</span>
+            <span className="block truncate text-[11px] font-medium text-[#6f5600]">活动评估与决策看板</span>
+          </div>
         )}
         <button
           onClick={toggleSidebar}
-          className="p-1 hover:bg-accent rounded"
+          className="rounded p-1 text-[#4f3a00] transition-colors hover:bg-white/35 hover:text-[#1f2329]"
           aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {sidebarCollapsed ? (
@@ -44,8 +47,8 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto p-2">
         <div className="space-y-1">
           {!sidebarCollapsed && (
-            <div className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Recent Projects
+            <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-[#6f5600]">
+              最近项目
             </div>
           )}
 
@@ -55,8 +58,8 @@ export function Sidebar() {
               href={`/projects/${project.id}`}
               className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
                 isProjectRoute && pathname.includes(project.id)
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  ? 'bg-white text-[#1f2329] shadow-sm ring-1 ring-black/5'
+                  : 'text-[#4f3a00] hover:bg-white/35 hover:text-[#1f2329]'
               }`}
               title={project.name}
             >
@@ -68,28 +71,28 @@ export function Sidebar() {
           ))}
 
           {projects.length === 0 && !sidebarCollapsed && (
-            <div className="px-3 py-4 text-center text-xs text-muted-foreground">
-              No projects yet
+            <div className="px-3 py-4 text-center text-xs text-[#6f5600]">
+              暂无项目
             </div>
           )}
         </div>
       </nav>
 
-      <div className="border-t p-2">
+      <div className="border-t border-[#e7b900] p-2">
         <Link
           href="/projects"
-          className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
-          title="New Project"
+          className="flex items-center gap-2 rounded-md bg-[#241a00] px-3 py-2 text-sm font-medium text-[#ffd100] transition-colors hover:bg-[#352600]"
+          title="新建项目"
         >
           <Plus className="h-4 w-4" />
-          {!sidebarCollapsed && <span>New Project</span>}
+          {!sidebarCollapsed && <span>新建项目</span>}
         </Link>
         <button
-          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
-          title="Settings"
+          className="mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-[#4f3a00] transition-colors hover:bg-white/35 hover:text-[#1f2329]"
+          title="设置"
         >
           <Settings className="h-4 w-4" />
-          {!sidebarCollapsed && <span>Settings</span>}
+          {!sidebarCollapsed && <span>设置</span>}
         </button>
       </div>
     </aside>

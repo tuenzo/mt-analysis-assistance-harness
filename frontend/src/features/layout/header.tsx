@@ -1,44 +1,47 @@
 'use client'
 
 import { useProjectStore } from '@/store/project-store'
-import { User, Bell } from 'lucide-react'
+import { Bell, User } from 'lucide-react'
 
 export function Header() {
   const { currentProject } = useProjectStore()
+  const projectStatus = currentProject
+    ? [currentProject.status, currentProject.current_stage].filter(Boolean).join(' - ')
+    : '工作区'
 
   return (
-    <header className="flex min-w-0 items-center justify-between gap-4 border-b bg-card px-6 py-3">
+    <header className="flex min-w-0 items-center justify-between gap-4 border-b border-t-2 border-t-primary bg-card px-4 py-3 shadow-sm shadow-black/[0.02] md:px-6">
       <div className="flex min-w-0 items-center gap-4">
         {currentProject ? (
           <div className="min-w-0">
             <h1 className="truncate text-lg font-semibold">{currentProject.name}</h1>
-            <p className="text-xs text-muted-foreground">
-              {currentProject.status} {currentProject.current_stage && `• ${currentProject.current_stage}`}
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {projectStatus}
             </p>
           </div>
         ) : (
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-semibold">Business Analysis Companion</h1>
-            <p className="text-xs text-muted-foreground">
-              Workspace
+            <h1 className="truncate text-lg font-semibold">商业分析伴随式工作区</h1>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {projectStatus}
             </p>
           </div>
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-4">
+      <div className="flex shrink-0 items-center gap-2 md:gap-3">
         <button
-          className="p-2 hover:bg-accent rounded-md transition-colors"
+          className="rounded-md p-2 transition-colors hover:bg-accent"
           aria-label="Notifications"
         >
           <Bell className="h-4 w-4" />
         </button>
         <button
-          className="flex items-center gap-2 p-2 hover:bg-accent rounded-md transition-colors"
+          className="flex items-center gap-2 rounded-md p-2 transition-colors hover:bg-accent"
           aria-label="User menu"
         >
           <User className="h-4 w-4" />
-          <span className="text-sm">User</span>
+          <span className="hidden text-sm sm:inline">用户</span>
         </button>
       </div>
     </header>

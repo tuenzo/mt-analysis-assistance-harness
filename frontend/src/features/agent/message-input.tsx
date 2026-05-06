@@ -45,7 +45,7 @@ export function MessageInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
+          placeholder="输入分析请求...（Enter 发送，Shift+Enter 换行）"
           disabled={disabled || isRunning}
           className="flex-1 min-h-[40px] max-h-[200px] resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
           rows={1}
@@ -64,14 +64,14 @@ export function MessageInput({
             disabled={!value.trim() || disabled}
           >
             <Send className="h-4 w-4 mr-2" />
-            Send
+            发送
           </Button>
         )}
       </div>
       {isRunning && (
         <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
           <Loader2 className="h-3 w-3 animate-spin" />
-          Agent is thinking...
+          Agent 正在分析...
         </div>
       )}
     </div>
