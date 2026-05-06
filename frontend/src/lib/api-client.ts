@@ -15,6 +15,8 @@ import type {
   AgentMessage,
   DemoStatus,
   Artifact,
+  ArtifactContent,
+  ChartArtifactData,
   ArtifactsFilter,
   Report,
   LatestReport,
@@ -216,6 +218,23 @@ class ApiClient {
 
   async getArtifact(artifactId: string): Promise<ApiResponse<Artifact>> {
     return this.request<Artifact>(`/api/artifacts/${artifactId}`)
+  }
+
+  async getProjectArtifact(projectId: string, artifactId: string): Promise<ApiResponse<Artifact>> {
+    return this.request<Artifact>(`/api/projects/${projectId}/artifacts/${artifactId}`)
+  }
+
+  async getArtifactContent(projectId: string, artifactId: string): Promise<ApiResponse<ArtifactContent<ChartArtifactData | string>>> {
+    return this.request<ArtifactContent<ChartArtifactData | string>>(
+      `/api/projects/${projectId}/artifacts/${artifactId}/content`
+    )
+  }
+
+  async getArtifactContentByPath(projectId: string, path: string): Promise<ApiResponse<ArtifactContent<ChartArtifactData | string>>> {
+    const params = new URLSearchParams({ path })
+    return this.request<ArtifactContent<ChartArtifactData | string>>(
+      `/api/projects/${projectId}/artifacts/content?${params.toString()}`
+    )
   }
 
   // ===== Reports API =====
