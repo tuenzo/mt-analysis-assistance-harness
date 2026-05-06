@@ -2,6 +2,7 @@
 
 import type { AgentMessage } from '@/lib/api-types'
 import { Card, CardContent } from '@/components/ui/card'
+import { MarkdownView } from '@/components/markdown-view'
 import { User, Bot } from 'lucide-react'
 
 interface MessageItemProps {
@@ -25,7 +26,11 @@ export function MessageItem({ message }: MessageItemProps) {
         }`}
       >
         <CardContent className="p-3">
-          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+          {isUser ? (
+            <p className="whitespace-pre-wrap text-sm">{message.content}</p>
+          ) : (
+            <MarkdownView content={message.content} compact />
+          )}
           {message.created_at && (
             <p
               className={`text-xs mt-2 ${

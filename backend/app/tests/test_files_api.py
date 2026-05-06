@@ -7,6 +7,10 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from app.main import app
 from app.core.database import init_db
+from app.core.permissions import PermissionLevel
+from app.projects.models import ProjectFile
+from app.core.database import get_session
+from app.tools.gateway import AnalysisToolGateway
 from app.workspace.manifest import ProjectManifest
 
 
@@ -143,6 +147,57 @@ def test_ingest_data_source_imports_csv_and_refreshes_manifest(client, project):
     assert manifest.current_stage == "data_uploaded"
     assert len(manifest.files) == 3
     assert (workspace_path / ".analysis" / "context_summary.md").read_text(encoding="utf-8")
+
+
+def test_data_validate_marks_ingested_files_validated(client, project):
+    proj_id = project["id"]
+    source = Path.cwd() / "valid_source"
+    source.mkdir()
+    (source / "order_info.csv").write_text(
+        "order_id,user_id,category,date,gmv,discount\n1,u1,food,2026-01-01,100,10",
+        encoding="utf-8",
+    )
+    (source / "exposure_info.csv").write_text(
+        "category,date,exposure\nfood,2026-01-01,30",
+        encoding="utf-8",
+    )
+    (source / "activity_timeline.csv").write_text(
+        "category,date,payday,activity_id\nfood,2026-01-01,1,A1",
+        encoding="utf-8",
+    )
+
+    client.put(f"/api/projects/{proj_id}/data-source", json={"path": str(source)})
+    ingest = client.post(f"/api/projects/{proj_id}/data-source/ingest", json={
+        "selected_files": [
+            {"source_path": str(source / "order_info.csv"), "role": "order_info", "reason": "order headers"},
+            {"source_path": str(source / "exposure_info.csv"), "role": "exposure_info", "reason": "exposure headers"},
+            {"source_path": str(source / "activity_timeline.csv"), "role": "activity_timeline", "reason": "activity headers"},
+        ]
+    })
+    assert ingest.status_code == 200
+
+    result = AnalysisToolGateway().execute(
+        tool_call_id="tc_validate_status",
+        project_id=proj_id,
+        action_str="data.validate",
+        payload={},
+        reason="validate after ingest",
+        user_permission_level=PermissionLevel.SAFE_COMPUTE,
+    )
+
+    assert result.ok is True
+    assert result.state_patch["current_stage"] == "data_validated"
+
+    db = get_session()
+    try:
+        files = db.query(ProjectFile).filter(ProjectFile.project_id == proj_id).all()
+        assert files
+        assert {file.status for file in files} == {"validated"}
+    finally:
+        db.close()
+
+    state = client.get(f"/api/projects/{proj_id}/state").json()["data"]
+    assert state["current_stage"] == "data_validated"
 
 
 def test_ingest_data_source_skips_non_csv_and_subdirectories(client, project):

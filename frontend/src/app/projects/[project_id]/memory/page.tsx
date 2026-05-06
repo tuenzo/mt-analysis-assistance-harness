@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Brain, Check, RefreshCw, Sparkles, X } from 'lucide-react'
 import { api } from '@/lib/api-client'
 import type { MemoryCandidate, ProjectMemory } from '@/lib/api-types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { MarkdownView } from '@/components/markdown-view'
 
 export default function MemoryPage() {
   const params = useParams<{ project_id: string }>()
@@ -17,7 +18,7 @@ export default function MemoryPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  async function loadMemory() {
+  const loadMemory = useCallback(async () => {
     setLoading(true)
     setError(null)
     const [candidateResponse, memoryResponse] = await Promise.all([
@@ -31,7 +32,7 @@ export default function MemoryPage() {
     }
     setCandidates(candidateResponse.data)
     setMemory(memoryResponse.ok && memoryResponse.data ? memoryResponse.data : [])
-  }
+  }, [projectId])
 
   async function generateSummary() {
     setBusy(true)
@@ -68,8 +69,11 @@ export default function MemoryPage() {
   }
 
   useEffect(() => {
-    void loadMemory()
-  }, [projectId])
+    const timeout = setTimeout(() => {
+      void loadMemory()
+    }, 0)
+    return () => clearTimeout(timeout)
+  }, [loadMemory])
 
   const pending = candidates.filter((candidate) => candidate.status === 'pending')
   const reviewed = candidates.filter((candidate) => candidate.status !== 'pending')
@@ -131,9 +135,9 @@ export default function MemoryPage() {
                       {candidate.status}
                     </span>
                   </div>
-                  <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded bg-secondary/40 p-3 text-xs leading-5">
-                    {candidate.content}
-                  </pre>
+                  <div className="max-h-56 overflow-auto rounded bg-secondary/40 p-3">
+                    <MarkdownView content={candidate.content} compact />
+                  </div>
                   {candidate.status === 'pending' && (
                     <div className="mt-3 flex justify-end gap-2">
                       <Button type="button" size="sm" variant="outline" onClick={() => reject(candidate.id)} disabled={busy}>
@@ -158,9 +162,9 @@ export default function MemoryPage() {
           </CardHeader>
           <CardContent>
             {storedMemory ? (
-              <pre className="max-h-[65vh] overflow-auto whitespace-pre-wrap rounded bg-secondary/40 p-3 text-xs leading-5">
-                {storedMemory}
-              </pre>
+              <div className="max-h-[65vh] overflow-auto rounded bg-secondary/40 p-3">
+                <MarkdownView content={storedMemory} compact />
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground">No approved project memory has been stored yet.</p>
             )}

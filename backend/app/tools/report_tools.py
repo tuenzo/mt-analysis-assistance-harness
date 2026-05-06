@@ -17,7 +17,7 @@ def report_generate(project_id: str, payload: dict) -> ToolResult:
 
     fmt = payload.get("format", "md")
     workspace_path = Path(project.workspace_path)
-    return render_report(project_id, str(workspace_path), fmt)
+    return render_report(project_id, str(workspace_path), fmt, project_name=project.name)
 
 
 def report_export(project_id: str, payload: dict) -> ToolResult:

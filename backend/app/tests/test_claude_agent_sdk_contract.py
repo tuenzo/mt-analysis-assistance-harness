@@ -48,6 +48,47 @@ def test_adapter_factory_falls_back_to_mock_when_provider_is_mock(monkeypatch):
     assert isinstance(adapter, MockClaudeRuntimeAdapter)
 
 
+def test_prompt_composer_guides_discover_first_data_load():
+    from app.agent.prompt_composer import PromptComposer
+
+    prompt = PromptComposer().compose(
+        {
+            "project_id": "proj_prompt",
+            "project_name": "Prompt",
+            "current_stage": "created",
+            "available_actions": ["data.discover_source_files", "data.ingest", "schema.infer", "data.validate"],
+        },
+        "加载 D:\\data\\hello 的数据",
+    )
+
+    assert "project.get_state -> data.discover_source_files -> data.ingest -> schema.infer -> data.validate" in prompt
+    assert "selected_files" in prompt
+    assert "Data load is complete only after data.validate succeeds" in prompt
+
+
+def test_mock_adapter_emits_autonomous_dataload_tool_sequence():
+    adapter = MockClaudeRuntimeAdapter()
+    session_id = adapter.create_session("proj_mock")
+
+    events = list(adapter.send_message(session_id, "请 dataload D:\\data\\hello", {"project_name": "Mock"}))
+    started = [event for event in events if event["type"] == "tool_call_started"]
+
+    assert [event["action"] for event in started] == [
+        "project.get_state",
+        "data.discover_source_files",
+        "data.ingest",
+        "schema.infer",
+        "data.validate",
+    ]
+    ingest = next(event for event in started if event["action"] == "data.ingest")
+    assert ingest["payload"]["source_path"].startswith("D:\\data\\hello")
+    assert {item["role"] for item in ingest["payload"]["selected_files"]} == {
+        "order_info",
+        "exposure_info",
+        "activity_timeline",
+    }
+
+
 def test_adapter_factory_creates_real_sdk_adapter_when_sdk_and_key_available(monkeypatch):
     import app.agent.claude_agent_sdk_adapter as sdk_adapter
 

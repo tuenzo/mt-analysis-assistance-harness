@@ -15,6 +15,6 @@ def chart_render(project_id: str, payload: dict) -> ToolResult:
             error={"code": "NOT_FOUND", "message": "Project not found"},
         )
 
-    chart_type = payload.get("type", "gmv_trend")
+    chart_type = payload.get("type") or payload.get("chart_type") or "gmv_trend"
     workspace_path = Path(project.workspace_path)
     return render_chart(str(workspace_path), chart_type)

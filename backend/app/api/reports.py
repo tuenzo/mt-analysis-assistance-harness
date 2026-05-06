@@ -1,3 +1,6 @@
+import json
+from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.projects.service import ProjectService
@@ -36,7 +39,16 @@ def get_latest_report(project_id: str):
         raise HTTPException(status_code=404, detail="Report not found")
 
     content = report_path.read_text(encoding="utf-8")
-    return {"ok": True, "data": {"content": content, "path": str(report_path)}}
+    metadata = _read_report_metadata(report_path)
+    return {
+        "ok": True,
+        "data": {
+            "content": content,
+            "path": str(report_path),
+            "metadata": metadata,
+            "kpi_summary": _extract_kpi_summary(metadata),
+        },
+    }
 
 
 @router.post("/{project_id}/reports/export")
@@ -48,3 +60,39 @@ def export_report(project_id: str, req: ExportReportRequest):
     if not result.ok:
         raise HTTPException(status_code=400, detail=result.error)
     return {"ok": True, "result": result.model_dump()}
+
+
+def _read_report_metadata(report_path: Path) -> dict[str, Any]:
+    metadata_path = report_path.with_name("report_metadata.json")
+    if not metadata_path.exists():
+        return {}
+    try:
+        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _extract_kpi_summary(metadata: dict[str, Any]) -> dict[str, Any]:
+    results = metadata.get("evidence_index", {}).get("results", [])
+    if not isinstance(results, list):
+        return {}
+
+    summary: dict[str, Any] = {}
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        name = result.get("name")
+        metrics = result.get("key_metrics")
+        if not isinstance(metrics, dict):
+            continue
+        if name == "diagnostics" and "total_gmv" in metrics:
+            summary["total_gmv"] = metrics["total_gmv"]
+        elif name == "localgap" and "total_local_gap" in metrics:
+            summary["total_local_gap"] = metrics["total_local_gap"]
+        elif name == "psm_did":
+            if "did_estimate" in metrics:
+                summary["did_estimate"] = metrics["did_estimate"]
+            if "incremental_lift_pct" in metrics:
+                summary["incremental_lift_pct"] = metrics["incremental_lift_pct"]
+    return summary

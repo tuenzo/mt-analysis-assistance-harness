@@ -35,8 +35,15 @@ def test_mock_adapter_implements_interface():
     assert hasattr(adapter, "interrupt")
 
 
-def test_get_claude_adapter_returns_mock_when_no_api_key():
+def test_get_claude_adapter_returns_mock_when_no_api_key(monkeypatch):
     """当没有 API key 时，返回 mock adapter"""
+    import app.agent.claude_agent_sdk_adapter as sdk_adapter
+    from app.core.config import settings as app_settings
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr(app_settings, "anthropic_api_key", "")
+    monkeypatch.setattr(sdk_adapter, "HAS_CLAUDE_AGENT_SDK", True)
+
     adapter = get_claude_adapter({"provider": "claude_agent_sdk"})
 
     assert isinstance(adapter, MockClaudeRuntimeAdapter)

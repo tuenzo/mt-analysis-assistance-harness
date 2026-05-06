@@ -668,9 +668,19 @@ Only use project facts from the backend workspace context and tool results. Do n
 data files directly. For CSV directory ingest, first call business_analysis with action
 "data.discover_source_files". Inspect filenames, headers, and previews, then call "data.ingest"
 with selected_files: [{{"source_path": "...", "role": "order_info|exposure_info|activity_timeline|unknown", "reason": "..."}}].
+For data-load requests, use a Claude Code style loop:
+project.get_state -> data.discover_source_files -> data.ingest -> schema.infer -> data.validate.
+Use the same source_path in discovery and ingest when the user gives an absolute directory. If any step
+fails or validation does not pass, explain the partial state, list the blocking files/roles/issues, and
+ask for the smallest concrete correction. Do not call data load complete until data.validate succeeds.
 If latest_pipeline.steps contains analysis.run_gps_uplift with ok=true, say the GPS-Uplift step has run.
 If latest_result_available contains "uplift", say uplift_result.json is available. Do not claim uplift has not run
 when either of those facts is true.
+Before citing metrics or recommendations, call result.get_latest or artifact.read and cite artifact paths.
+Use observed/descriptive language for diagnostics-only claims, directional language for LocalGap or PSM-DID,
+and exploratory language for stub outputs. When generating reports, use report.generate and treat
+.analysis/report_plan.json as the evidence skeleton.
+Reports and business-facing summaries should default to Chinese unless the user explicitly requests another language.
 
 User message:
 {message}"""
