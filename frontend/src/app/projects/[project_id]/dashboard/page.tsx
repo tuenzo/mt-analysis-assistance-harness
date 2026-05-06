@@ -59,7 +59,7 @@ export default function DashboardPage() {
     setLoading(false)
 
     if (!stateResponse.ok || !stateResponse.data) {
-      setError(stateResponse.error || 'Failed to load dashboard state.')
+      setError(stateResponse.error || '加载看板状态失败。')
       setState(null)
     } else {
       setState(stateResponse.data)
@@ -81,6 +81,9 @@ export default function DashboardPage() {
   const executiveSection = useMemo(() => pickSection(sections, ['summary', 'conclusion', 'executive', 'one-page', 'one page', '摘要', '结论', '一页']), [sections])
   const localGapSection = useMemo(() => pickSection(sections, ['localgap', 'increment', 'decomposition', '增量', '分解']), [sections])
   const causalSection = useMemo(() => pickSection(sections, ['psm', 'did', 'causal', '因果']), [sections])
+  const executiveReadout = executiveSection ?? pickSection(sections, ['摘要', '结论', '执行摘要'])
+  const incrementSection = localGapSection ?? pickSection(sections, ['增量', '拆解', '贡献'])
+  const causalReadoutSection = causalSection ?? pickSection(sections, ['因果', '方向', '净效应'])
   const limitationItems = useMemo(() => buildLimitations(sections, artifacts, state, report), [artifacts, report, sections, state])
   const nextActions = useMemo(() => buildNextActions(projectId, state, artifacts, report), [artifacts, projectId, report, state])
   const kpis = useMemo(() => buildKpis(state, artifacts, reportContent), [artifacts, reportContent, state])
@@ -103,30 +106,30 @@ export default function DashboardPage() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold">Results Dashboard</h1>
-            <Badge variant={report ? 'default' : 'secondary'}>{report ? 'report ready' : 'awaiting report'}</Badge>
-            {latestJob?.status && <Badge variant="outline">{latestJob.status}</Badge>}
+            <h1 className="text-2xl font-semibold">结果看板</h1>
+            <Badge variant={report ? 'default' : 'secondary'}>{report ? '报告就绪' : '等待报告'}</Badge>
+            {latestJob?.status && <Badge variant="outline">{humanize(latestJob.status)}</Badge>}
           </div>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            A business-facing readout of KPIs, method evidence, artifacts, limitations, and the next decisions to make.
+            面向业务复核展示 KPI、方法证据、产物、限制和下一步决策。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href={`/projects/${projectId}/agent`}>
             <Button type="button" variant="outline">
               <Activity className="mr-2 h-4 w-4" />
-              Agent
+              Agent 指挥台
             </Button>
           </Link>
           <Link href={`/projects/${projectId}/reports`}>
             <Button type="button" variant="outline">
               <FileText className="mr-2 h-4 w-4" />
-              Report Review
+              报告复核
             </Button>
           </Link>
           <Button type="button" variant="outline" onClick={loadDashboard} disabled={loading}>
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+            刷新
           </Button>
         </div>
       </div>
@@ -148,22 +151,22 @@ export default function DashboardPage() {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <CardTitle className="text-base">Executive Readout</CardTitle>
-                <CardDescription>What a business reviewer can act on first.</CardDescription>
+                <CardTitle className="text-base">执行摘要</CardTitle>
+                <CardDescription>业务复核者可以优先采取行动的结论。</CardDescription>
               </div>
-              <Badge variant={executiveSection ? 'default' : 'secondary'}>{executiveSection ? 'from report' : 'fallback'}</Badge>
+              <Badge variant={executiveReadout ? 'default' : 'secondary'}>{executiveReadout ? '来自报告' : '兜底提示'}</Badge>
             </div>
           </CardHeader>
           <CardContent>
-            {loading && <p className="text-sm text-muted-foreground">Loading results...</p>}
-            {!loading && executiveSection && (
-              <MarkdownView content={executiveSection.content} className="rounded-md bg-secondary/30 p-4" />
+            {loading && <p className="text-sm text-muted-foreground">正在加载结果...</p>}
+            {!loading && executiveReadout && (
+              <MarkdownView content={executiveReadout.content} className="rounded-md bg-secondary/30 p-4" />
             )}
-            {!loading && !executiveSection && (
+            {!loading && !executiveReadout && (
               <div className="rounded-md border bg-secondary/25 p-4">
-                <p className="text-sm font-medium">No executive summary has been published yet.</p>
+                <p className="text-sm font-medium">尚未发布执行摘要。</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  The dashboard can still show workspace coverage and generated artifacts. Ask the agent to run or refresh the full analysis pipeline when the input data is ready.
+                  看板仍会展示 workspace 覆盖情况和已生成产物。输入数据就绪后，可让 Agent 运行或刷新完整分析 pipeline。
                 </p>
               </div>
             )}
@@ -172,8 +175,8 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Evidence Chain</CardTitle>
-            <CardDescription>Data-to-decision coverage inferred from state and artifacts.</CardDescription>
+            <CardTitle className="text-base">证据链</CardTitle>
+            <CardDescription>由项目状态和产物推断的数据到决策覆盖情况。</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {evidenceSteps.map((step) => (
@@ -185,17 +188,17 @@ export default function DashboardPage() {
 
       <div className="grid gap-4 xl:grid-cols-2">
         <ResultSection
-          title="Increment Evidence"
-          description="LocalGap or increment decomposition signals."
-          content={localGapSection?.content ?? ''}
-          empty="No increment decomposition section is available in the latest report."
+          title="增量证据"
+          description="LocalGap 或增量拆解信号。"
+          content={incrementSection?.content ?? ''}
+          empty="最新报告中暂无增量拆解章节。"
           icon={<BarChart3 className="h-4 w-4" />}
         />
         <ResultSection
-          title="Causal Direction"
-          description="PSM-DID or other directional causal evidence."
-          content={causalSection?.content ?? ''}
-          empty="No causal direction section is available in the latest report."
+          title="因果方向"
+          description="PSM-DID 或其他方向性因果证据。"
+          content={causalReadoutSection?.content ?? ''}
+          empty="最新报告中暂无因果方向章节。"
           icon={<Scale className="h-4 w-4" />}
         />
       </div>
@@ -203,8 +206,8 @@ export default function DashboardPage() {
       <div className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Limitations To Review</CardTitle>
-            <CardDescription>Known gaps before this becomes decision-grade.</CardDescription>
+            <CardTitle className="text-base">待复核限制</CardTitle>
+            <CardDescription>进入决策级输出前需要确认的缺口。</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -220,8 +223,8 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Next Actions</CardTitle>
-            <CardDescription>Practical handoffs for the next analysis turn.</CardDescription>
+            <CardTitle className="text-base">下一步行动</CardTitle>
+            <CardDescription>下一轮分析可直接接手的动作。</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {nextActions.map((action) => (
@@ -245,16 +248,16 @@ export default function DashboardPage() {
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <CardTitle className="text-base">Artifact Index</CardTitle>
-              <CardDescription>Generated files that support the current readout.</CardDescription>
+              <CardTitle className="text-base">证据产物索引</CardTitle>
+              <CardDescription>支撑当前看板结论的生成文件。</CardDescription>
             </div>
-            <Badge variant="outline">{artifacts.length} artifact{artifacts.length === 1 ? '' : 's'}</Badge>
+            <Badge variant="outline">{artifacts.length} 个产物</Badge>
           </div>
         </CardHeader>
         <CardContent>
           {artifacts.length === 0 ? (
             <p className="rounded-md border bg-secondary/25 p-4 text-sm text-muted-foreground">
-              No generated artifacts are registered yet.
+              暂无已注册的生成产物。
             </p>
           ) : (
             <div className="grid gap-4 xl:grid-cols-2">
@@ -335,8 +338,13 @@ function EvidenceRow({
       <Activity className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
     ) : (
       <Gauge className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-    )
+  )
   const badgeVariant = status === 'complete' ? 'default' : status === 'partial' ? 'outline' : 'secondary'
+  const statusLabel: Record<EvidenceStatus, string> = {
+    complete: '完成',
+    partial: '部分完成',
+    pending: '待处理',
+  }
 
   return (
     <div className="flex gap-3 rounded-md border px-3 py-3">
@@ -344,7 +352,7 @@ function EvidenceRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-3">
           <p className="truncate text-sm font-medium">{label}</p>
-          <Badge variant={badgeVariant}>{status}</Badge>
+          <Badge variant={badgeVariant}>{statusLabel[status]}</Badge>
         </div>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p>
       </div>
@@ -429,10 +437,10 @@ function ArtifactRow({
           type="button"
           onClick={onCopy}
           className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors hover:bg-secondary"
-          title="Copy artifact path"
+          title="复制产物路径"
         >
           <Clipboard className="h-3.5 w-3.5" />
-          {copied ? 'Copied' : 'Path'}
+          {copied ? '已复制' : '路径'}
         </button>
         <span className="text-xs text-muted-foreground">{formatTime(artifact.created_at)}</span>
       </div>
@@ -445,11 +453,12 @@ function buildKpis(state: ProjectState | null, artifacts: Artifact[], reportCont
   const totalGmv = extractMetric(reportContent, [
     /total[_\s-]*gmv\s*[:=]\s*([0-9,.+-]+)/i,
     /total\s+gmv\s*[:=]\s*([0-9,.+-]+)/i,
-    /总\s*GMV\s*[:：]\s*([0-9,.+-]+)/,
+    /总\s*GMV\s*[:：]\s*([0-9,.+-]+)/i,
   ])
   const increment = extractMetric(reportContent, [
     /total[_\s-]*local[_\s-]*gap\s*[:=]\s*([0-9,.+-]+)/i,
     /localgap\s*[:=]\s*([0-9,.+-]+)/i,
+    /总增量\s*[:：]\s*([0-9,.+-]+)/,
     /总\s*增量\s*[:：]\s*([0-9,.+-]+)/,
   ])
   const didEstimate = extractMetric(reportContent, [
@@ -460,30 +469,30 @@ function buildKpis(state: ProjectState | null, artifacts: Artifact[], reportCont
 
   return [
     {
-      title: 'Analysis Stage',
+      title: '分析阶段',
       value: humanize(state?.current_stage || 'unknown'),
-      detail: latestStatus ? `Latest job: ${humanize(latestStatus)}` : 'No recent pipeline job is registered.',
+      detail: latestStatus ? `最近任务：${humanize(latestStatus)}` : '暂无已注册的近期 pipeline 任务。',
       icon: <Gauge className="h-4 w-4" />,
       tone: state?.current_stage === 'report_ready' ? 'good' as const : 'neutral' as const,
     },
     {
-      title: 'Data Coverage',
-      value: `${state?.files_count ?? 0} files`,
-      detail: `${artifacts.length || state?.artifacts_count || 0} artifacts available for review.`,
+      title: '数据覆盖',
+      value: `${state?.files_count ?? 0} 个文件`,
+      detail: `${artifacts.length || state?.artifacts_count || 0} 个产物可供复核。`,
       icon: <Database className="h-4 w-4" />,
       tone: (state?.files_count ?? 0) >= 3 ? 'good' as const : 'watch' as const,
     },
     {
-      title: 'GMV Signal',
-      value: totalGmv ? formatNumberText(totalGmv) : 'Not reported',
-      detail: totalGmv ? 'Parsed from the latest report.' : 'Run diagnostics or refresh the report to expose this KPI.',
+      title: 'GMV 信号',
+      value: totalGmv ? formatNumberText(totalGmv) : '未报告',
+      detail: totalGmv ? '从最新报告中解析。' : '运行 diagnostics 或刷新报告以暴露该 KPI。',
       icon: <TrendingUp className="h-4 w-4" />,
       tone: totalGmv ? 'default' as const : 'neutral' as const,
     },
     {
-      title: 'Increment / DID',
-      value: increment ? formatNumberText(increment) : didEstimate ? formatNumberText(didEstimate) : 'Pending',
-      detail: increment ? 'LocalGap increment surfaced in report.' : didEstimate ? 'DID estimate surfaced in report.' : 'No increment or DID value found yet.',
+      title: '增量 / DID',
+      value: increment ? formatNumberText(increment) : didEstimate ? formatNumberText(didEstimate) : '待处理',
+      detail: increment ? '报告中已呈现 LocalGap 增量。' : didEstimate ? '报告中已呈现 DID 估计。' : '尚未找到增量或 DID 数值。',
       icon: <BarChart3 className="h-4 w-4" />,
       tone: increment || didEstimate ? 'default' as const : 'watch' as const,
     },
@@ -500,34 +509,34 @@ function buildEvidenceSteps(state: ProjectState | null, artifacts: Artifact[], r
 
   return [
     {
-      label: 'Input data',
+      label: '输入数据',
       status: filesCount >= 3 ? 'complete' as const : filesCount > 0 ? 'partial' as const : 'pending' as const,
-      detail: filesCount >= 3 ? `${filesCount} registered files cover the expected intake set.` : `${filesCount} registered file${filesCount === 1 ? '' : 's'} found; order, exposure, and activity data may be incomplete.`,
+      detail: filesCount >= 3 ? `${filesCount} 个已注册文件覆盖预期接入集。` : `发现 ${filesCount} 个已注册文件；订单、曝光和活动数据可能不完整。`,
     },
     {
-      label: 'Panel build',
+      label: 'Panel 构建',
       status: hasPanel ? 'complete' as const : filesCount > 0 ? 'partial' as const : 'pending' as const,
-      detail: hasPanel ? 'A category-day panel artifact is available.' : 'No panel artifact is registered in the current artifact index.',
+      detail: hasPanel ? 'category-day panel 产物已可用。' : '当前产物索引中暂无 panel 产物。',
     },
     {
-      label: 'Diagnostics',
+      label: '描述性诊断',
       status: hasDiagnostics ? 'complete' as const : hasPanel ? 'partial' as const : 'pending' as const,
-      detail: hasDiagnostics ? 'Trend, concentration, or diagnostics artifacts are available.' : 'Descriptive evidence has not been surfaced as an artifact yet.',
+      detail: hasDiagnostics ? '趋势、集中度或 diagnostics 产物已可用。' : '描述性证据尚未注册为产物。',
     },
     {
-      label: 'Causal direction',
+      label: '因果方向',
       status: hasCausal ? 'complete' as const : hasDiagnostics ? 'partial' as const : 'pending' as const,
-      detail: hasCausal ? 'A PSM-DID or causal-direction artifact is available.' : 'Treat causal claims as directional until a method artifact is registered.',
+      detail: hasCausal ? 'PSM-DID 或因果方向产物已可用。' : '方法产物注册前，因果结论只能作为方向性判断。',
     },
     {
-      label: 'Increment decomposition',
+      label: '增量拆解',
       status: hasLocalGap ? 'complete' as const : hasDiagnostics ? 'partial' as const : 'pending' as const,
-      detail: hasLocalGap ? 'LocalGap evidence is available for contribution review.' : 'No LocalGap artifact is registered yet.',
+      detail: hasLocalGap ? 'LocalGap 证据可用于贡献复核。' : '尚未注册 LocalGap 产物。',
     },
     {
-      label: 'Report and handoff',
+      label: '报告与交接',
       status: hasReport ? 'complete' as const : hasLocalGap ? 'partial' as const : 'pending' as const,
-      detail: hasReport ? 'The latest Markdown report is ready for review.' : 'Generate a report after the core analysis artifacts are ready.',
+      detail: hasReport ? '最新 Markdown 报告已可复核。' : '核心分析产物准备好后再生成报告。',
     },
   ]
 }
@@ -540,23 +549,26 @@ function buildLimitations(
 ) {
   const limitationSection = pickSection(sections, ['limitation', 'limits', 'caveat', 'assumption', 'risk', '局限', '假设', '风险'])
   const fromReport = limitationSection ? extractBullets(limitationSection.content).slice(0, 4) : []
+  const cnLimitationSection = pickSection(sections, ['限制', '假设', '风险'])
+  const cnFromReport = cnLimitationSection ? extractBullets(cnLimitationSection.content).slice(0, 4) : []
   if (fromReport.length > 0) return fromReport
+  if (cnFromReport.length > 0) return cnFromReport
 
   const items: string[] = []
   if ((state?.files_count ?? 0) < 3) {
-    items.push('The expected order, exposure, and activity timeline files are not all registered yet.')
+    items.push('预期的订单、曝光和活动时间线文件尚未全部注册。')
   }
   if (!hasArtifact(artifacts, ['psm', 'did', 'causal'])) {
-    items.push('No causal-direction artifact is registered, so lift claims should stay directional.')
+    items.push('尚未注册因果方向产物，因此 lift 结论应保持方向性表述。')
   }
   if (!hasArtifact(artifacts, ['localgap', 'local_gap'])) {
-    items.push('No LocalGap artifact is registered, so increment attribution is not yet auditable.')
+    items.push('尚未注册 LocalGap 产物，因此增量归因还不能审计。')
   }
   if (!report) {
-    items.push('No latest report is available, so conclusions have not been packaged for business review.')
+    items.push('暂无最新报告，因此结论还没有打包成业务复核材料。')
   }
   if (items.length === 0) {
-    items.push('Current outputs should still be checked for margin, stockout, campaign calendar, and retention controls before production decisions.')
+    items.push('用于生产决策前，仍需检查毛利、缺货、活动日历和留存控制。')
   }
   return items.slice(0, 4)
 }
@@ -565,13 +577,13 @@ function buildNextActions(projectId: string, state: ProjectState | null, artifac
   if ((state?.files_count ?? 0) === 0) {
     return [
       {
-        label: 'Import source CSVs',
-        detail: 'Start with order, exposure, and activity timeline data.',
+        label: '导入源 CSV',
+        detail: '先接入订单、曝光和活动时间线数据。',
         href: `/projects/${projectId}/data-intake`,
       },
       {
-        label: 'Ask the agent to validate schema',
-        detail: 'Route the next natural-language request through the message runtime.',
+        label: '让 Agent 校验 schema',
+        detail: '下一条自然语言请求仍通过 message runtime 路由。',
         href: `/projects/${projectId}/agent`,
       },
     ]
@@ -580,13 +592,13 @@ function buildNextActions(projectId: string, state: ProjectState | null, artifac
   if (!hasArtifact(artifacts, ['panel', 'category_day_panel', 'category_date_panel'])) {
     return [
       {
-        label: 'Build the category-day panel',
-        detail: 'Ask the agent to run panel.build_category_day after schema checks.',
+        label: '构建 category-day panel',
+        detail: 'schema 检查后让 Agent 运行 panel.build_category_day。',
         href: `/projects/${projectId}/agent`,
       },
       {
-        label: 'Review data intake',
-        detail: 'Confirm each file role before analysis runs.',
+        label: '复核数据接入',
+        detail: '分析运行前确认每个文件角色。',
         href: `/projects/${projectId}/data-intake`,
       },
     ]
@@ -595,13 +607,13 @@ function buildNextActions(projectId: string, state: ProjectState | null, artifac
   if (!report) {
     return [
       {
-        label: 'Generate a business report',
-        detail: 'Ask the agent for an approved full pipeline or report refresh.',
+        label: '生成业务报告',
+        detail: '让 Agent 执行已批准的完整 pipeline 或刷新报告。',
         href: `/projects/${projectId}/agent`,
       },
       {
-        label: 'Inspect run history',
-        detail: 'Check jobs, approvals, and tool outputs for blockers.',
+        label: '检查运行历史',
+        detail: '查看 jobs、approvals 和工具输出中的阻塞点。',
         href: `/projects/${projectId}/timeline`,
       },
     ]
@@ -609,18 +621,18 @@ function buildNextActions(projectId: string, state: ProjectState | null, artifac
 
   return [
     {
-      label: 'Review the full report',
-      detail: 'Use the report review page to inspect claims, evidence, and gaps.',
+      label: '复核完整报告',
+      detail: '在报告复核页检查结论、证据和缺口。',
       href: `/projects/${projectId}/reports`,
     },
     {
-      label: 'Check the timeline',
-      detail: 'Confirm which approved jobs produced the displayed outputs.',
+      label: '检查时间线',
+      detail: '确认哪些已批准任务生成了当前展示结果。',
       href: `/projects/${projectId}/timeline`,
     },
     {
-      label: 'Promote durable conclusions',
-      detail: 'Review memory candidates before keeping project-level takeaways.',
+      label: '沉淀稳定结论',
+      detail: '保留项目级结论前先复核 memory candidates。',
       href: `/projects/${projectId}/memory`,
     },
   ]
@@ -637,11 +649,11 @@ function groupArtifacts(artifacts: Artifact[]) {
 
 function artifactGroupLabel(artifact: Artifact) {
   const key = `${artifact.type} ${artifact.path} ${artifact.title}`.toLowerCase()
-  if (key.includes('report')) return 'Reports'
-  if (key.includes('chart') || key.includes('trend')) return 'Charts'
-  if (key.includes('table') || key.includes('.csv')) return 'Tables'
-  if (key.includes('localgap') || key.includes('diagnostics') || key.includes('psm') || key.includes('panel')) return 'Analysis outputs'
-  return 'Other artifacts'
+  if (key.includes('report')) return '报告'
+  if (key.includes('chart') || key.includes('trend')) return '图表'
+  if (key.includes('table') || key.includes('.csv')) return '表格'
+  if (key.includes('localgap') || key.includes('diagnostics') || key.includes('psm') || key.includes('panel')) return '分析输出'
+  return '其他产物'
 }
 
 function hasArtifact(artifacts: Artifact[], needles: string[]) {
@@ -676,7 +688,7 @@ function parseMarkdownSections(content: string): ReportSection[] {
 
   if (current) sections.push(current)
   if (sections.length === 0) {
-    return [{ heading: 'Latest report', level: 1, content }]
+    return [{ heading: '最新报告', level: 1, content }]
   }
   return sections
 }
@@ -728,15 +740,25 @@ function formatNumberText(value: string) {
 }
 
 function humanize(value: string) {
+  const labels: Record<string, string> = {
+    report_ready: '报告就绪',
+    succeeded: '成功',
+    completed: '完成',
+    failed: '失败',
+    running: '运行中',
+    pending: '等待中',
+    unknown: '未知',
+  }
+  if (labels[value]) return labels[value]
   return value
     .replace(/[_-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase()) || 'Unknown'
+    .replace(/\b\w/g, (letter) => letter.toUpperCase()) || '未知'
 }
 
 function formatTime(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '--'
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }

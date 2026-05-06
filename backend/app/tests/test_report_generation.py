@@ -49,15 +49,23 @@ def test_report_generate_creates_evidence_backed_markdown(project_with_results):
     report_path = workspace / "reports" / "report.md"
     metadata_path = workspace / "reports" / "report_metadata.json"
     plan_path = workspace / "reports" / "report_plan.json"
+    analysis_plan_path = workspace / ".analysis" / "report_plan.json"
     assert report_path.exists()
     assert metadata_path.exists()
     assert plan_path.exists()
+    assert analysis_plan_path.exists()
 
     content = report_path.read_text(encoding="utf-8")
-    assert "## Executive Snapshot" in content
-    assert "## Evidence Coverage" in content
-    assert "Evidence artifacts" in content
-    assert "Recommended follow-up" in content
+    assert "# Report Realism Test 分析报告" in content
+    assert "## 执行摘要" in content
+    assert "## 证据覆盖" in content
+    assert "## 增量与因果方向" in content
+    assert "**证据文件**" in content
+    assert "**建议下一步**" in content
+    assert "总 GMV" in content
+    assert "总增量" in content
+    assert "Analysis Report" not in content
+    assert "Executive Snapshot" not in content
     assert "```json" not in content
     assert "![" not in content
 
@@ -67,10 +75,12 @@ def test_report_generate_creates_evidence_backed_markdown(project_with_results):
     assert metadata["evidence_artifacts"]
     assert metadata["limitations"]
     assert metadata["recommended_follow_up"]
+    assert any("PSM-DID" in item for item in metadata["limitations"])
 
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     assert all(section["findings"] for section in plan["sections"])
     assert all("evidence_artifacts" in section for section in plan["sections"])
+    assert plan["sections"][0]["title"] == "执行摘要"
 
 
 def test_report_partial_results_do_not_overclaim_causality(isolated_backend):
@@ -90,10 +100,10 @@ def test_report_partial_results_do_not_overclaim_causality(isolated_backend):
 
     assert result.ok is True
     content = (workspace / "reports" / "report.md").read_text(encoding="utf-8")
-    assert "does not make a causal lift claim" in content
-    assert "Run `analysis.run_psm_did`" in content
+    assert "不做因果 lift 结论" in content
+    assert "运行 `analysis.run_psm_did`" in content
     metadata = json.loads((workspace / "reports" / "report_metadata.json").read_text(encoding="utf-8"))
-    assert any("PSM-DID evidence is missing" in item for item in metadata["limitations"])
+    assert any("PSM-DID 证据缺失" in item for item in metadata["limitations"])
 
 
 def test_chart_render_preserves_plot_fields_and_adds_metadata(project_with_results):

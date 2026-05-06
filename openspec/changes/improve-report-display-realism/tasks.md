@@ -8,3 +8,4 @@
 - [x] 6. Add focused pytest coverage for reports, charts, and latest-result artifacts.
 - [x] 7. Run backend pytest and frontend production build.
 - [x] 8. Browser-review the demo project and fix presentation bugs.
+- [x] 9. Default generated report Markdown, report display surfaces, and agent report guidance to Chinese.

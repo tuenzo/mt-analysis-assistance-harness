@@ -73,7 +73,7 @@ def render_report(project_id: str, workspace_path: str, format: str = "md", proj
             ok=False,
             action="report.generate",
             summary="",
-            error={"code": "NO_RESULTS", "message": "Run analysis before generating a report."},
+            error={"code": "NO_RESULTS", "message": "请先运行分析，再生成报告。"},
         )
 
     sections = _build_sections(context)
@@ -145,7 +145,7 @@ def render_report(project_id: str, workspace_path: str, format: str = "md", proj
     return ToolResult(
         ok=True,
         action="report.generate",
-        summary=f"Report generated with {len(sections)} planned sections and {context.evidence_index['coverage']['available_artifact_count']} evidence artifact(s).",
+        summary=f"已生成中文分析报告：包含 {len(sections)} 个规划章节和 {context.evidence_index['coverage']['available_artifact_count']} 个证据文件。",
         artifacts=[
             report_artifact,
             {
@@ -163,8 +163,8 @@ def render_report(project_id: str, workspace_path: str, format: str = "md", proj
         ],
         state_patch={"current_stage": "report_ready", "latest_report": str(report_path.relative_to(workspace))},
         assistant_hint=(
-            "Use report_metadata.json to trace every section to source result/chart artifacts. "
-            "If a section names missing evidence, run the recommended follow-up tool calls before presenting final decisions."
+            "默认使用中文解读 reports/report.md。使用 report_metadata.json 追踪每个章节对应的结果或图表证据；"
+            "如果章节指出缺失证据，先运行 recommended_follow_up 中的工具调用，再给出最终建议。"
         ),
     )
 
@@ -175,15 +175,15 @@ def export_report(report_path: str, export_format: str) -> ToolResult:
         return ToolResult(
             ok=True,
             action="report.export",
-            summary=f"Export format {export_format} is not available yet; Markdown remains the source artifact.",
+            summary=f"暂不支持导出为 {export_format}；Markdown 仍是当前源报告。",
             artifacts=[],
-            assistant_hint="Use Markdown for this MVP build. PDF/LaTeX export can be layered on the same report metadata later.",
+            assistant_hint="MVP 阶段请使用 Markdown 报告。PDF/LaTeX 后续可基于同一份 report_metadata 扩展。",
         )
 
     return ToolResult(
         ok=True,
         action="report.export",
-        summary="Report exported as Markdown.",
+        summary="报告已按 Markdown 输出。",
         artifacts=[{"type": "exported_report", "format": "md", "path": report_path}],
     )
 
@@ -262,28 +262,28 @@ def _executive_snapshot_section(context: ReportContext) -> ReportSection:
     estimates = psm_did.get("estimates", {})
 
     findings = [
-        f"Workspace covers {_fmt_int(summary.get('total_days'))} day(s), {_fmt_int(summary.get('total_categories'))} category/categories, and {_fmt_money(summary.get('total_gmv'))} GMV in diagnostics.",
-        f"Activity-period average GMV lift is {_fmt_percent(lift.get('lift'))} versus non-activity rows when diagnostics are available.",
-        f"LocalGap estimates {_fmt_money(localgap.get('total_local_gap'))} incremental GMV against a local baseline.",
+        f"诊断口径覆盖 {_fmt_int(summary.get('total_days'))} 天、{_fmt_int(summary.get('total_categories'))} 个品类；总 GMV: {_fmt_money(summary.get('total_gmv'))}。",
+        f"活动期平均 GMV 相对非活动样本的观察性提升为 {_fmt_percent(lift.get('lift'))}。",
+        f"LocalGap 基于局部基线估算的总增量: {_fmt_money(localgap.get('total_local_gap'))}。",
     ]
     if estimates:
         findings.append(
-            f"Directional PSM-DID estimate is {_fmt_signed_money(estimates.get('did_estimate'))}; interpret this as directional evidence, not a production-grade causal claim."
+            f"PSM-DID 方向性估计为 {_fmt_signed_money(estimates.get('did_estimate'))}；这只能作为方向性证据，不等同于生产级因果结论。"
         )
     else:
-        findings.append("No PSM-DID estimate is available, so this report does not make a causal lift claim.")
+        findings.append("当前没有 PSM-DID 估计，因此本报告不做因果 lift 结论。")
 
     plan = _plan(
         "executive_snapshot",
-        "Executive Snapshot",
-        "Give the demo audience the smallest decision-ready summary that is still tied to source evidence.",
-        "Synthesize diagnostics, LocalGap, and PSM-DID into a concise decision snapshot.",
+        "执行摘要",
+        "用最短篇幅给出可汇报的业务结论，同时保持每个判断都能追溯到证据文件。",
+        "综合 diagnostics、LocalGap 与 PSM-DID，生成谨慎的决策摘要。",
         [
-            _tool_call("result.get_latest", "Load the freshest analysis result bundle."),
-            _tool_call("artifact.read", "Inspect the report metadata or result JSON behind any challenged number."),
+            _tool_call("result.get_latest", "加载最新分析结果包。"),
+            _tool_call("artifact.read", "当指标被追问时，读取对应 report metadata 或 result JSON。"),
         ],
         _artifact_paths(context, ["diagnostics", "localgap", "psm_did", "gmv_trend", "localgap_chart"]),
-        ["All monetary metrics use the same unit as the input GMV column."],
+        ["所有金额指标沿用输入 GMV 字段的单位。"],
         _limitations_for(context, ["diagnostics", "localgap", "psm_did"]),
         _recommended_next_actions(context)[:3],
         findings=findings,
@@ -295,35 +295,35 @@ def _evidence_coverage_section(context: ReportContext) -> ReportSection:
     coverage = context.evidence_index["coverage"]
     rows = []
     for item in context.evidence_index["results"]:
-        rows.append([item["name"], "yes" if item["available"] else "no", item["path"], item.get("method_status") or "-"])
-    result_table = _markdown_table(["Result", "Available", "Path", "Status"], rows)
+        rows.append([item["name"], "是" if item["available"] else "否", item["path"], item.get("method_status") or "-"])
+    result_table = _markdown_table(["结果", "可用", "路径", "状态"], rows)
 
     chart_rows = []
     for item in context.evidence_index["charts"]:
-        chart_rows.append([item["name"], "yes" if item["available"] else "no", item["path"], item.get("title") or "-"])
-    chart_table = _markdown_table(["Chart", "Available", "Path", "Title"], chart_rows)
+        chart_rows.append([item["name"], "是" if item["available"] else "否", item["path"], item.get("title") or "-"])
+    chart_table = _markdown_table(["图表", "可用", "路径", "标题"], chart_rows)
 
     panel = context.panel_summary
     panel_lines = [
-        f"Panel rows: {_fmt_int(panel.get('row_count'))}",
-        f"Panel categories: {_fmt_int(panel.get('category_count'))}",
-        f"Panel date range: {_date_range_label(panel.get('date_range'))}",
-        f"Available evidence artifacts: {coverage['available_artifact_count']} of {coverage['expected_artifact_count']}",
+        f"Panel 行数：{_fmt_int(panel.get('row_count'))}",
+        f"Panel 品类数：{_fmt_int(panel.get('category_count'))}",
+        f"Panel 日期范围：{_date_range_label(panel.get('date_range'))}",
+        f"可用证据文件：{coverage['available_artifact_count']} / {coverage['expected_artifact_count']}",
     ]
 
     plan = _plan(
         "evidence_coverage",
-        "Evidence Coverage",
-        "Make provenance visible before presenting recommendations.",
-        "List the result and chart artifacts that support the report, and call out gaps.",
-        [_tool_call("result.get_latest", "Refresh latest_result and latest_result_index before report generation.")],
+        "证据覆盖",
+        "在给出建议前先展示证据来源和缺口。",
+        "列出支撑报告的结果文件与图表文件，并标明缺失证据。",
+        [_tool_call("result.get_latest", "生成报告前刷新 latest_result 与 latest_result_index。")],
         _all_available_artifact_paths(context),
-        ["File and artifact paths are relative to the project workspace."],
+        ["文件和 artifact 路径均相对于项目 workspace。"],
         context.evidence_index["missing_evidence"],
         _recommended_next_actions(context),
         findings=panel_lines,
     )
-    body = "\n".join([_bullets(panel_lines), "\n**Result files**\n", result_table, "\n**Chart files**\n", chart_table])
+    body = "\n".join([_bullets(panel_lines), "\n**结果文件**\n", result_table, "\n**图表文件**\n", chart_table])
     return ReportSection(plan, body)
 
 
@@ -334,25 +334,25 @@ def _observed_performance_section(context: ReportContext) -> ReportSection:
     payday = diagnostics.get("payday_overlap", {})
     concentration = diagnostics.get("category_concentration", [])
 
-    trend_line = "GMV trend evidence is missing."
+    trend_line = "GMV 趋势证据缺失。"
     if len(trend) >= 2:
         first = trend[0]
         last = trend[-1]
         delta = _as_float(last.get("gmv")) - _as_float(first.get("gmv"))
         trend_line = (
-            f"GMV moves from {_fmt_money(first.get('gmv'))} on {first.get('date')} "
-            f"to {_fmt_money(last.get('gmv'))} on {last.get('date')} ({_fmt_signed_money(delta)} change)."
+            f"GMV 从 {first.get('date')} 的 {_fmt_money(first.get('gmv'))} "
+            f"变化到 {last.get('date')} 的 {_fmt_money(last.get('gmv'))}，变动 {_fmt_signed_money(delta)}。"
         )
     elif len(trend) == 1:
-        trend_line = f"GMV trend has one observed day: {trend[0].get('date')} at {_fmt_money(trend[0].get('gmv'))}."
+        trend_line = f"GMV 趋势只有一个观测日：{trend[0].get('date')}，GMV {_fmt_money(trend[0].get('gmv'))}。"
 
     rows = [
-        ["Activity avg GMV", _fmt_money(activity.get("activity_avg_gmv"))],
-        ["Non-activity avg GMV", _fmt_money(activity.get("non_activity_avg_gmv"))],
-        ["Activity lift", _fmt_percent(activity.get("lift"))],
-        ["Payday avg GMV", _fmt_money(payday.get("payday_avg_gmv"))],
-        ["Non-payday avg GMV", _fmt_money(payday.get("non_payday_avg_gmv"))],
-        ["Payday lift", _fmt_percent(payday.get("lift"))],
+        ["活动期平均 GMV", _fmt_money(activity.get("activity_avg_gmv"))],
+        ["非活动期平均 GMV", _fmt_money(activity.get("non_activity_avg_gmv"))],
+        ["活动期观察性提升", _fmt_percent(activity.get("lift"))],
+        ["发薪日平均 GMV", _fmt_money(payday.get("payday_avg_gmv"))],
+        ["非发薪日平均 GMV", _fmt_money(payday.get("non_payday_avg_gmv"))],
+        ["发薪日观察性提升", _fmt_percent(payday.get("lift"))],
     ]
     concentration_rows = [
         [item.get("category", ""), _fmt_money(item.get("gmv")), _fmt_percent(item.get("share"))]
@@ -361,26 +361,26 @@ def _observed_performance_section(context: ReportContext) -> ReportSection:
 
     plan = _plan(
         "observed_performance",
-        "Observed Performance",
-        "Separate descriptive movement from causal attribution.",
-        "Use diagnostics and chart artifacts to describe trends, concentration, activity, and payday patterns.",
+        "观察性表现",
+        "把描述性变化与因果归因分开呈现。",
+        "使用 diagnostics 和图表文件描述趋势、品类集中度、活动期与发薪日模式。",
         [
-            _tool_call("chart.render", "Render GMV trend chart data.", {"type": "gmv_trend"}),
-            _tool_call("chart.render", "Render category concentration chart data.", {"type": "category_concentration"}),
+            _tool_call("chart.render", "渲染 GMV 趋势图表数据。", {"type": "gmv_trend"}),
+            _tool_call("chart.render", "渲染品类集中度图表数据。", {"type": "category_concentration"}),
         ],
         _artifact_paths(context, ["diagnostics", "gmv_trend", "category_concentration", "activity_comparison"]),
-        ["Descriptive comparisons use the panel rows produced by the current panel builder."],
+        ["描述性对比基于当前 panel builder 生成的 panel 行。"],
         _limitations_for(context, ["diagnostics", "gmv_trend"]),
-        ["Validate whether visible trend shifts align with campaign dates, stock availability, and seasonality."],
+        ["复核趋势变化是否与活动日期、库存可用性和季节性因素一致。"],
         findings=[trend_line],
     )
     body = "\n".join(
         [
             _bullets([trend_line]),
-            "\n**Activity and payday comparison**\n",
-            _markdown_table(["Metric", "Value"], rows),
-            "\n**Category concentration**\n",
-            _markdown_table(["Category", "GMV", "Share"], concentration_rows),
+            "\n**活动期与发薪日对比**\n",
+            _markdown_table(["指标", "数值"], rows),
+            "\n**品类集中度**\n",
+            _markdown_table(["品类", "GMV", "占比"], concentration_rows),
         ]
     )
     return ReportSection(plan, body)
@@ -405,34 +405,34 @@ def _increment_causal_section(context: ReportContext) -> ReportSection:
         for item in localgap.get("categories", [])[:10]
     ]
     did_rows = [
-        ["DID estimate", _fmt_signed_money(estimates.get("did_estimate"))],
-        ["Treated pre avg", _fmt_money(estimates.get("treated_pre_avg"))],
-        ["Treated post avg", _fmt_money(estimates.get("treated_post_avg"))],
-        ["Control pre avg", _fmt_money(estimates.get("control_pre_avg"))],
-        ["Control post avg", _fmt_money(estimates.get("control_post_avg"))],
-        ["Incremental lift", _fmt_percent(lift.get("incremental_lift_pct"))],
+        ["DID 估计值", _fmt_signed_money(estimates.get("did_estimate"))],
+        ["处理组活动前均值", _fmt_money(estimates.get("treated_pre_avg"))],
+        ["处理组活动后均值", _fmt_money(estimates.get("treated_post_avg"))],
+        ["对照组活动前均值", _fmt_money(estimates.get("control_pre_avg"))],
+        ["对照组活动后均值", _fmt_money(estimates.get("control_post_avg"))],
+        ["增量 lift", _fmt_percent(lift.get("incremental_lift_pct"))],
     ]
 
     plan = _plan(
         "increment_causal_direction",
-        "Increment and Causal Direction",
-        "Explain what appears incremental and how strong the causal evidence is.",
-        "Use LocalGap for accounting and PSM-DID for directional causal checks.",
+        "增量与因果方向",
+        "解释哪些变化看起来像增量，以及因果证据强度到什么程度。",
+        "使用 LocalGap 做增量核算，使用 PSM-DID 做方向性因果检查。",
         [
-            _tool_call("analysis.run_localgap", "Refresh increment decomposition if source panel changed."),
-            _tool_call("analysis.run_psm_did", "Refresh directional causal estimate if source panel changed."),
-            _tool_call("chart.render", "Render LocalGap decomposition chart data.", {"type": "localgap"}),
+            _tool_call("analysis.run_localgap", "如果源 panel 更新，刷新增量分解。"),
+            _tool_call("analysis.run_psm_did", "如果源 panel 更新，刷新方向性因果估计。"),
+            _tool_call("chart.render", "渲染 LocalGap 分解图表数据。", {"type": "localgap"}),
         ],
         _artifact_paths(context, ["localgap", "psm_did", "localgap_chart"]),
-        ["LocalGap is an accounting layer, not a randomized experiment."],
+        ["LocalGap 是增量核算层，不是随机实验。"],
         _limitations_for(context, ["localgap", "psm_did"]),
-        ["Use a holdout or stronger matching controls before committing budget based on causal lift."],
+        ["在基于因果 lift 分配预算前，应补充 holdout 或更强匹配控制。"],
         findings=[
-            f"Estimated LocalGap is {_fmt_signed_money(localgap.get('total_local_gap'))}.",
+            f"估算 LocalGap 为 {_fmt_signed_money(localgap.get('total_local_gap'))}。",
             (
-                f"Directional DID estimate is {_fmt_signed_money(estimates.get('did_estimate'))}."
+                f"DID 方向性估计为 {_fmt_signed_money(estimates.get('did_estimate'))}。"
                 if estimates
-                else "DID evidence is missing, so causal attribution remains unclaimed."
+                else "DID 证据缺失，因此不做因果归因结论。"
             ),
         ],
     )
@@ -440,18 +440,18 @@ def _increment_causal_section(context: ReportContext) -> ReportSection:
         [
             _bullets(
                 [
-                    f"Actual activity GMV totals {_fmt_money(localgap.get('total_actual_gmv'))}.",
-                    f"Local baseline totals {_fmt_money(localgap.get('total_baseline_gmv'))}.",
-                    f"Estimated LocalGap is {_fmt_signed_money(localgap.get('total_local_gap'))}.",
+                    f"活动期实际 GMV 合计为 {_fmt_money(localgap.get('total_actual_gmv'))}。",
+                    f"局部基线 GMV 合计为 {_fmt_money(localgap.get('total_baseline_gmv'))}。",
+                    f"估算 LocalGap 为 {_fmt_signed_money(localgap.get('total_local_gap'))}。",
                 ]
             ),
-            "\n**LocalGap by category**\n",
+            "\n**分品类 LocalGap**\n",
             _markdown_table(
-                ["Category", "Baseline", "Actual", "Gap", "Exposure", "Discount", "Payday"],
+                ["品类", "基线", "实际", "增量", "曝光", "折扣", "发薪日"],
                 category_rows,
             ),
-            "\n**Directional PSM-DID check**\n",
-            _markdown_table(["Metric", "Value"], did_rows),
+            "\n**PSM-DID 方向性检查**\n",
+            _markdown_table(["指标", "数值"], did_rows),
         ]
     )
     return ReportSection(plan, body)
@@ -471,23 +471,23 @@ def _action_plan_section(context: ReportContext) -> ReportSection:
 
     plan = _plan(
         "action_plan",
-        "Action Plan",
-        "Convert evidence into a cautious next-cycle operating plan.",
-        "Rank categories and actions using available LocalGap, diagnostics, and uplift outputs.",
+        "行动计划",
+        "把当前证据转化为下一轮谨慎可执行的运营计划。",
+        "基于 LocalGap、diagnostics 与 uplift 输出排序品类行动。",
         [
-            _tool_call("analysis.run_gps_uplift", "Generate segment strategy before scaling actions."),
-            _tool_call("artifact.read", "Read category recommendations or report metadata for the operating plan."),
+            _tool_call("analysis.run_gps_uplift", "在放大动作前生成分群策略。"),
+            _tool_call("artifact.read", "读取品类建议或 report metadata，支撑运营计划。"),
         ],
         _artifact_paths(context, ["localgap", "uplift"]),
-        ["Recommendations assume business constraints such as inventory and margin are checked outside this MVP."],
+        ["建议默认假设库存、毛利等业务约束会在 MVP 外另行复核。"],
         _limitations_for(context, ["uplift"]),
-        ["Review unit margin, stock depth, and channel capacity before execution."],
+        ["执行前复核单品毛利、库存深度和渠道承载能力。"],
         findings=[
             f"{item.get('category', '-')}: {item.get('action', '-')}"
             for item in actions[:5]
         ],
     )
-    body = _markdown_table(["Category", "Action", "Evidence", "Guardrail"], rows)
+    body = _markdown_table(["品类", "动作", "证据", "护栏"], rows)
     return ReportSection(plan, body)
 
 
@@ -495,17 +495,17 @@ def _assumptions_next_checks_section(context: ReportContext) -> ReportSection:
     limitations = _global_limitations(context)
     follow_up = _recommended_next_actions(context)
     assumptions = [
-        "Input CSVs have already been mapped into the standard order, exposure, and activity roles.",
-        "The report uses current workspace artifacts as the source of truth.",
-        "All causal language is intentionally directional unless stronger experiment design is added.",
+        "输入 CSV 已映射到标准的订单、曝光和活动时间线角色。",
+        "报告以当前 workspace artifact 作为事实来源。",
+        "除非补充更强实验设计，所有因果表述都保持方向性措辞。",
     ]
 
     plan = _plan(
         "assumptions_next_checks",
-        "Assumptions, Limitations, and Next Checks",
-        "Keep the report honest about evidence quality and missing work.",
-        "Summarize the constraints that should accompany any demo or decision review.",
-        [_tool_call("result.get_latest", "Confirm the result bundle is current after any new pipeline run.")],
+        "假设、限制与下一步",
+        "清楚说明证据质量和缺失工作，避免报告过度自信。",
+        "总结 demo 或决策评审时必须携带的约束条件。",
+        [_tool_call("result.get_latest", "每次 pipeline 更新后确认结果包是否最新。")],
         _all_available_artifact_paths(context),
         assumptions,
         limitations,
@@ -514,11 +514,11 @@ def _assumptions_next_checks_section(context: ReportContext) -> ReportSection:
     )
     body = "\n".join(
         [
-            "**Assumptions**\n",
+            "**关键假设**\n",
             _bullets(assumptions),
-            "\n**Limitations**\n",
+            "\n**限制条件**\n",
             _bullets(limitations),
-            "\n**Recommended follow-up**\n",
+            "\n**建议下一步**\n",
             _bullets(follow_up),
         ]
     )
@@ -527,17 +527,17 @@ def _assumptions_next_checks_section(context: ReportContext) -> ReportSection:
 
 def _render_markdown(context: ReportContext, sections: list[ReportSection]) -> str:
     lines = [
-        f"# {context.project_name} Analysis Report",
+        f"# {context.project_name} 分析报告",
         "",
-        f"**Project ID**: `{context.project_id}`",
-        f"**Generated at**: {context.generated_at}",
+        f"**项目 ID**: `{context.project_id}`",
+        f"**生成时间**: {context.generated_at}",
         "",
-        "> This report is generated from workspace artifacts. Each section names its purpose, evidence, assumptions or limitations, and follow-up.",
+        "> 本报告由 workspace artifact 自动生成。每个章节都说明用途、证据、假设或限制，以及建议下一步。",
         "",
-        "## Report Plan",
+        "## 报告结构",
         "",
         _markdown_table(
-            ["Section", "Purpose", "Evidence Count"],
+            ["章节", "目的", "证据数量"],
             [
                 [section.plan.title, section.plan.purpose, str(len(section.plan.evidence_artifacts))]
                 for section in sections
@@ -551,21 +551,21 @@ def _render_markdown(context: ReportContext, sections: list[ReportSection]) -> s
             [
                 f"## {section.plan.title}",
                 "",
-                f"**Purpose**: {section.plan.purpose}",
+                f"**本节目的**: {section.plan.purpose}",
                 "",
-                "**Evidence artifacts**",
+                "**证据文件**",
                 "",
-                _bullets(section.plan.evidence_artifacts or ["No dedicated artifact available."]),
+                _bullets(section.plan.evidence_artifacts or ["暂无专属证据文件。"]),
                 "",
                 section.body,
                 "",
-                "**Assumptions / limitations**",
+                "**假设与限制**",
                 "",
-                _bullets([*section.plan.assumptions, *section.plan.limitations] or ["None noted."]),
+                _bullets([*section.plan.assumptions, *section.plan.limitations] or ["暂无。"]),
                 "",
-                "**Recommended follow-up**",
+                "**建议下一步**",
                 "",
-                _bullets(section.plan.recommended_follow_up or ["No immediate follow-up required."]),
+                _bullets(section.plan.recommended_follow_up or ["暂无立即动作。"]),
                 "",
             ]
         )
@@ -622,10 +622,10 @@ def _build_evidence_index(
     missing = []
     for entry in result_entries:
         if not entry["available"]:
-            missing.append(f"Missing result: {entry['name']} ({entry['path']}).")
+            missing.append(f"缺失结果文件：{entry['name']}（{entry['path']}）。")
     for entry in chart_entries:
         if not entry["available"] and _chart_source_is_ready(entry["name"], results):
-            missing.append(f"Missing chart: {entry['name']} ({entry['path']}).")
+            missing.append(f"缺失图表文件：{entry['name']}（{entry['path']}）。")
 
     return {
         "generated_at": generated_at,
@@ -693,8 +693,8 @@ def _recommended_actions(context: ReportContext) -> list[dict[str, str]]:
             {
                 "category": str(item.get("category", "-")),
                 "action": str(item.get("action", "-")),
-                "evidence": str(item.get("reason") or item.get("evidence") or "Provided by latest_result."),
-                "guardrail": str(item.get("guardrail") or "Check margin, stock, and operational capacity."),
+                "evidence": str(item.get("reason") or item.get("evidence") or "由 latest_result 提供。"),
+                "guardrail": str(item.get("guardrail") or "复核毛利、库存和运营承载能力。"),
             }
             for item in explicit[:8]
             if isinstance(item, dict)
@@ -708,17 +708,17 @@ def _recommended_actions(context: ReportContext) -> list[dict[str, str]]:
         discount_gap = _as_float(item.get("discount_gap"))
         payday_gap = _as_float(item.get("payday_gap"))
         if exposure_gap >= discount_gap and exposure_gap >= payday_gap:
-            action = "Scale qualified exposure"
-            guardrail = "Avoid low-conversion placements; monitor exposure-to-order conversion."
-            evidence = f"Exposure contribution {_fmt_signed_money(exposure_gap)} is the largest available driver."
+            action = "放大高质量曝光"
+            guardrail = "避免低转化坑位，持续监控曝光到订单的转化。"
+            evidence = f"曝光贡献 {_fmt_signed_money(exposure_gap)} 是当前最大可见驱动。"
         elif discount_gap >= payday_gap:
-            action = "Tune discount depth"
-            guardrail = "Check gross margin and avoid subsidy leakage."
-            evidence = f"Discount contribution {_fmt_signed_money(discount_gap)} is the largest available driver."
+            action = "校准折扣深度"
+            guardrail = "复核毛利，避免补贴外溢。"
+            evidence = f"折扣贡献 {_fmt_signed_money(discount_gap)} 是当前最大可见驱动。"
         else:
-            action = "Move timing around payday"
-            guardrail = "Validate stock and channel capacity around payday windows."
-            evidence = f"Payday contribution {_fmt_signed_money(payday_gap)} is the largest available driver."
+            action = "围绕发薪日调整节奏"
+            guardrail = "复核发薪窗口期的库存和渠道承载能力。"
+            evidence = f"发薪日贡献 {_fmt_signed_money(payday_gap)} 是当前最大可见驱动。"
         actions.append({"category": category, "action": action, "evidence": evidence, "guardrail": guardrail})
 
     uplift = context.results.get("uplift", {})
@@ -730,18 +730,18 @@ def _recommended_actions(context: ReportContext) -> list[dict[str, str]]:
             actions.append(
                 {
                     "category": str(segment.get("segment", "Segment")),
-                    "action": str(segment.get("recommendation", "Review segment strategy.")),
-                    "evidence": "Uplift segment output.",
-                    "guardrail": "Treat as directional while GPS-Uplift remains stub or unvalidated.",
+                    "action": str(segment.get("recommendation", "复核分群策略。")),
+                    "evidence": "Uplift 分群输出。",
+                    "guardrail": "GPS-Uplift 仍为 stub 或未验证时，只能作为方向性参考。",
                 }
             )
 
     return actions or [
         {
-            "category": "All",
-            "action": "Run full pipeline before category-level action.",
-            "evidence": "No category recommendation artifact is available.",
-            "guardrail": "Do not present unsupported category tactics.",
+            "category": "全部",
+            "action": "先运行完整 pipeline，再给出品类级动作。",
+            "evidence": "当前没有可用的品类建议 artifact。",
+            "guardrail": "不要展示缺乏证据支撑的品类战术。",
         }
     ]
 
@@ -751,26 +751,26 @@ def _global_limitations(context: ReportContext) -> list[str]:
     if "psm_did" in context.results:
         status = context.results["psm_did"].get("method_status")
         if status in {None, "simplified", "stub"}:
-            limitations.append("PSM-DID is a simplified directional check in the MVP and does not replace experiment-grade causal identification.")
+            limitations.append("PSM-DID 在 MVP 中是简化的方向性检查，不能替代实验级因果识别。")
     else:
-        limitations.append("PSM-DID evidence is missing, so causal direction is not available.")
+        limitations.append("PSM-DID 证据缺失，因此当前没有可用的因果方向判断。")
 
     if "localgap" in context.results:
-        limitations.append("LocalGap decomposes observed increment against a local baseline; seasonality, inventory, and competitor shocks are not fully controlled.")
+        limitations.append("LocalGap 是相对局部基线的观察性增量分解，尚未完全控制季节性、库存和竞品冲击。")
     else:
-        limitations.append("LocalGap evidence is missing, so increment decomposition is unavailable.")
+        limitations.append("LocalGap 证据缺失，因此当前无法审计增量分解。")
 
     uplift = context.results.get("uplift")
     if not uplift:
-        limitations.append("GPS-Uplift is missing, so segment recommendations are derived from available diagnostics and LocalGap only.")
+        limitations.append("GPS-Uplift 证据缺失，因此分群建议只能来自 diagnostics 和 LocalGap 的现有信号。")
     elif uplift.get("method_status") == "stub":
-        limitations.append("GPS-Uplift output is currently a stub; treat segment actions as placeholders.")
+        limitations.append("GPS-Uplift 当前仍是 stub 输出，分群行动只能视为占位建议。")
 
     if not context.panel_summary:
-        limitations.append("Panel summary is missing, so row counts and date coverage may be incomplete.")
+        limitations.append("Panel summary 缺失，因此行数和日期覆盖可能不完整。")
 
     if context.evidence_index["missing_evidence"]:
-        limitations.append("Some expected evidence artifacts are missing; see the Evidence Coverage section.")
+        limitations.append("部分预期证据文件缺失；请查看“证据覆盖”章节。")
 
     return limitations
 
@@ -805,7 +805,7 @@ def _report_confidence(context: ReportContext) -> dict[str, Any]:
         "basis": [
             f"results={sorted(evidence_names)}",
             f"charts={sorted(context.charts.keys())}",
-            "causal claims remain directional without holdout, event-study, and robustness evidence.",
+            "缺少 holdout、event-study 和稳健性证据时，因果表述保持方向性。",
         ],
     }
 
@@ -813,18 +813,18 @@ def _report_confidence(context: ReportContext) -> dict[str, Any]:
 def _recommended_next_actions(context: ReportContext) -> list[str]:
     actions: list[str] = []
     if "diagnostics" not in context.results:
-        actions.append("Run `analysis.run_diagnostics` after panel build.")
+        actions.append("Panel 构建后运行 `analysis.run_diagnostics`。")
     if "psm_did" not in context.results:
-        actions.append("Run `analysis.run_psm_did` for directional causal evidence.")
+        actions.append("运行 `analysis.run_psm_did` 以补充方向性因果证据。")
     if "localgap" not in context.results:
-        actions.append("Run `analysis.run_localgap` for increment decomposition.")
+        actions.append("运行 `analysis.run_localgap` 以补充增量分解。")
     if "uplift" not in context.results:
-        actions.append("Run `analysis.run_gps_uplift` before segment-level strategy claims.")
+        actions.append("在提出分群策略前运行 `analysis.run_gps_uplift`。")
     if "diagnostics" in context.results and "gmv_trend" not in context.charts:
-        actions.append("Run `chart.render` with `{type: 'gmv_trend'}`.")
+        actions.append("使用 `{type: 'gmv_trend'}` 运行 `chart.render`。")
     if "localgap" in context.results and "localgap" not in context.charts:
-        actions.append("Run `chart.render` with `{type: 'localgap'}`.")
-    actions.append("Review margin, inventory, and channel capacity before moving recommendations into execution.")
+        actions.append("使用 `{type: 'localgap'}` 运行 `chart.render`。")
+    actions.append("执行建议前复核毛利、库存和渠道承载能力。")
     return _dedupe_strings(actions)
 
 
@@ -833,11 +833,11 @@ def _limitations_for(context: ReportContext, evidence_names: list[str]) -> list[
     for name in evidence_names:
         normalized = "localgap" if name == "localgap_chart" else name
         if normalized in RESULT_SOURCES and normalized not in context.results:
-            limitations.append(f"{normalized} result is missing.")
+            limitations.append(f"{normalized} 结果缺失。")
         if normalized in CHART_SOURCES and normalized not in context.charts:
-            limitations.append(f"{normalized} chart is missing.")
+            limitations.append(f"{normalized} 图表缺失。")
     if not limitations:
-        return ["Evidence is based on current workspace artifacts and should be refreshed after source data changes."]
+        return ["证据基于当前 workspace artifact；源数据变更后应刷新。"]
     return limitations
 
 
@@ -964,7 +964,7 @@ def _date_range_label(value: Any) -> str:
     if isinstance(value, dict):
         start = value.get("start") or "?"
         end = value.get("end") or "?"
-        return f"{start} to {end}"
+        return f"{start} 至 {end}"
     return "-"
 
 

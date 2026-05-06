@@ -105,7 +105,7 @@ export default function ReportsPage() {
   const reportContent = report?.content ?? ''
   const sections = useMemo(() => parseMarkdownSections(reportContent), [reportContent])
   const activeSection = sections[Math.min(activeSectionIndex, Math.max(sections.length - 1, 0))]
-  const reportTitle = useMemo(() => extractReportTitle(reportContent) || 'Latest Analysis Report', [reportContent])
+  const reportTitle = useMemo(() => extractReportTitle(reportContent) || '最新分析报告', [reportContent])
   const qualityCues = useMemo(() => buildQualityCues(sections, artifacts, report, state), [artifacts, report, sections, state])
   const reviewNotes = useMemo(() => buildReviewNotes(sections, artifacts, report, state), [artifacts, report, sections, state])
   const referencedArtifacts = useMemo(() => rankReportArtifacts(artifacts), [artifacts])
@@ -118,7 +118,7 @@ export default function ReportsPage() {
     setExporting(false)
 
     if (!response.ok) {
-      setExportState({ type: 'error', message: response.error || 'Markdown export failed.' })
+      setExportState({ type: 'error', message: response.error || 'Markdown 导出失败。' })
       return
     }
 
@@ -134,12 +134,12 @@ export default function ReportsPage() {
     setGenerating(false)
 
     if (!response.ok) {
-      setError(normalizeError(response.error, 'Report generation failed.'))
+      setError(normalizeError(response.error, '报告生成失败。'))
       return
     }
 
     await loadReport()
-    setNotice('Report regenerated from the latest workspace artifacts.')
+    setNotice('已基于最新 workspace 产物重新生成报告。')
   }
 
   async function copyValue(value: string, key: string) {
@@ -157,32 +157,32 @@ export default function ReportsPage() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold">Report Studio</h1>
-            <Badge variant={report ? 'default' : 'secondary'}>{report ? 'latest report' : 'not generated'}</Badge>
+            <h1 className="text-2xl font-semibold">报告工作台</h1>
+            <Badge variant={report ? 'default' : 'secondary'}>{report ? '最新报告' : '未生成'}</Badge>
             {state?.current_stage && <Badge variant="outline">{humanize(state.current_stage)}</Badge>}
           </div>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Review the report structure, evidence quality, artifact references, and caveats before using outputs in a business decision.
+            在用于业务决策前，复核报告结构、证据质量、产物引用和关键限制。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href={`/projects/${projectId}/dashboard`}>
             <Button type="button" variant="outline">
               <Gauge className="mr-2 h-4 w-4" />
-              Dashboard
+              结果看板
             </Button>
           </Link>
           <Button type="button" variant="outline" onClick={generateReport} disabled={loading || generating}>
             <FileCheck2 className={`mr-2 h-4 w-4 ${generating ? 'animate-pulse' : ''}`} />
-            Generate
+            生成报告
           </Button>
           <Button type="button" variant="outline" onClick={exportMarkdown} disabled={loading || exporting || !report}>
             <Download className={`mr-2 h-4 w-4 ${exporting ? 'animate-pulse' : ''}`} />
-            Export MD
+            导出 MD
           </Button>
           <Button type="button" variant="outline" onClick={loadReport} disabled={loading}>
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+            刷新
           </Button>
         </div>
       </div>
@@ -213,8 +213,8 @@ export default function ReportsPage() {
         <div className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Report Metadata</CardTitle>
-              <CardDescription>Workspace source and coverage context.</CardDescription>
+              <CardTitle className="text-base">报告元信息</CardTitle>
+              <CardDescription>Workspace 来源、项目阶段与覆盖情况。</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {metadata.map((item) => (
@@ -228,7 +228,7 @@ export default function ReportsPage() {
                       type="button"
                       onClick={() => void copyValue(item.copyValue ?? '', `metadata-${item.label}`)}
                       className="hidden shrink-0 rounded-md border p-1.5 transition-colors hover:bg-secondary sm:block"
-                      title={`Copy ${item.label}`}
+                      title={`复制${item.label}`}
                     >
                       <Clipboard className="h-3.5 w-3.5" />
                     </button>
@@ -240,12 +240,12 @@ export default function ReportsPage() {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Section Outline</CardTitle>
-              <CardDescription>Jump through the latest Markdown report.</CardDescription>
+              <CardTitle className="text-base">章节大纲</CardTitle>
+              <CardDescription>快速浏览最新 Markdown 报告章节。</CardDescription>
             </CardHeader>
             <CardContent>
               {sections.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No report sections are available.</p>
+                <p className="text-sm text-muted-foreground">暂无可用报告章节。</p>
               ) : (
                 <div className="space-y-2">
                   {sections.map((section, index) => (
@@ -268,8 +268,8 @@ export default function ReportsPage() {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Quality Cues</CardTitle>
-              <CardDescription>Signals that the report is ready for business review.</CardDescription>
+              <CardTitle className="text-base">质量信号</CardTitle>
+              <CardDescription>判断报告是否适合进入业务复核。</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {qualityCues.map((cue) => (
@@ -285,23 +285,23 @@ export default function ReportsPage() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <CardTitle className="text-base">{reportTitle}</CardTitle>
-                  <CardDescription>{activeSection?.heading || 'Report preview'}</CardDescription>
+                  <CardDescription>{activeSection?.heading || '报告预览'}</CardDescription>
                 </div>
                 {report?.path && (
                   <button
                     type="button"
                     onClick={() => void copyValue(report.path, 'report-path')}
                     className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors hover:bg-secondary"
-                    title="Copy report path"
+                    title="复制报告路径"
                   >
                     <Clipboard className="h-3.5 w-3.5" />
-                    {copiedValue === 'report-path' ? 'Copied' : 'Path'}
+                    {copiedValue === 'report-path' ? '已复制' : '路径'}
                   </button>
                 )}
               </div>
             </CardHeader>
             <CardContent>
-              {loading && <p className="text-sm text-muted-foreground">Loading report...</p>}
+              {loading && <p className="text-sm text-muted-foreground">正在加载报告...</p>}
               {!loading && report && activeSection && (
                 <div className="max-h-[72vh] overflow-auto rounded-md border bg-secondary/20 p-4">
                   <MarkdownView content={activeSection.content} />
@@ -312,12 +312,12 @@ export default function ReportsPage() {
                   <div className="flex items-start gap-3">
                     <FileText className="mt-0.5 h-5 w-5 text-muted-foreground" />
                     <div>
-                      <p className="text-sm font-medium">No report has been generated for this project.</p>
+                      <p className="text-sm font-medium">该项目尚未生成报告。</p>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        Use the agent to run or refresh the analysis pipeline once data intake and schema mapping are ready.
+                        数据接入和 schema 映射完成后，可让 Agent 运行或刷新分析 pipeline。
                       </p>
                       <Link href={`/projects/${projectId}/agent`} className="mt-3 inline-flex text-sm font-medium text-primary underline-offset-2 hover:underline">
-                        Open Agent Command Center
+                        打开 Agent 指挥台
                       </Link>
                     </div>
                   </div>
@@ -329,8 +329,8 @@ export default function ReportsPage() {
           <div className="grid gap-4 xl:grid-cols-2">
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Review Notes</CardTitle>
-                <CardDescription>Caveats to check before sharing the report.</CardDescription>
+                <CardTitle className="text-base">复核提示</CardTitle>
+                <CardDescription>对外分享报告前需要确认的限制。</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {reviewNotes.map((note) => (
@@ -344,13 +344,13 @@ export default function ReportsPage() {
 
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base">Artifact References</CardTitle>
-                <CardDescription>Files that support or package this report.</CardDescription>
+                <CardTitle className="text-base">证据文件</CardTitle>
+                <CardDescription>支撑或打包该报告的产物文件。</CardDescription>
               </CardHeader>
               <CardContent>
                 {referencedArtifacts.length === 0 ? (
                   <p className="rounded-md border bg-secondary/25 p-4 text-sm text-muted-foreground">
-                    No supporting artifacts are registered yet.
+                    暂无已注册的支撑产物。
                   </p>
                 ) : (
                   <div className="space-y-2">
@@ -431,9 +431,9 @@ function ReportArtifactReference({
         type="button"
         onClick={onCopy}
         className="shrink-0 rounded-md border px-2 py-1 text-xs transition-colors hover:bg-secondary"
-        title="Copy artifact path"
+        title="复制产物路径"
       >
-        {copied ? 'Copied' : 'Path'}
+        {copied ? '已复制' : '路径'}
       </button>
     </div>
   )
@@ -442,21 +442,21 @@ function ReportArtifactReference({
 function buildMetadata(report: LatestReport | null, state: ProjectState | null, artifacts: Artifact[]) {
   return [
     {
-      label: 'Report source',
-      value: report?.path ? trimPath(report.path) : 'Not generated',
+      label: '报告来源',
+      value: report?.path ? trimPath(report.path) : '未生成',
       copyValue: report?.path,
     },
     {
-      label: 'Project stage',
+      label: '项目阶段',
       value: humanize(state?.current_stage || 'unknown'),
     },
     {
-      label: 'Latest activity',
+      label: '最近活动',
       value: formatDateTime(state?.last_activity),
     },
     {
-      label: 'Coverage',
-      value: `${state?.files_count ?? 0} files | ${artifacts.length || state?.artifacts_count || 0} artifacts | ${state?.reports_count ?? (report ? 1 : 0)} reports`,
+      label: '覆盖情况',
+      value: `${state?.files_count ?? 0} 个文件 | ${artifacts.length || state?.artifacts_count || 0} 个产物 | ${state?.reports_count ?? (report ? 1 : 0)} 份报告`,
     },
   ]
 }
@@ -472,32 +472,35 @@ function buildQualityCues(
   const hasMethodEvidence = hasArtifact(artifacts, ['diagnostics', 'localgap', 'psm', 'did', 'panel'])
   const hasLimits = Boolean(pickSection(sections, ['limitation', 'caveat', 'assumption', 'risk', '局限', '假设', '风险']))
   const hasArtifactReferences = artifacts.length > 0
+  const reportHasSummary = hasSummary || Boolean(pickSection(sections, ['摘要', '结论', '执行摘要']))
+  const reportHasKpi = hasKpi || Boolean(report?.content.match(/gmv|localgap|did|lift|增量|净效应|总增量/i))
+  const reportHasLimits = hasLimits || Boolean(pickSection(sections, ['限制', '假设', '风险']))
 
   return [
     {
-      label: 'Executive answer',
-      status: hasSummary ? 'ready' as const : report ? 'review' as const : 'missing' as const,
-      detail: hasSummary ? 'A summary or conclusion section is present.' : 'No explicit summary section was found.',
+      label: '执行摘要',
+      status: reportHasSummary ? 'ready' as const : report ? 'review' as const : 'missing' as const,
+      detail: reportHasSummary ? '报告中已包含摘要或结论章节。' : '尚未识别到明确的摘要章节。',
     },
     {
-      label: 'KPI traceability',
-      status: hasKpi ? 'ready' as const : report ? 'review' as const : 'missing' as const,
-      detail: hasKpi ? 'The report includes KPI or effect-size terms.' : 'KPI values are not obvious in the report text.',
+      label: 'KPI 可追溯性',
+      status: reportHasKpi ? 'ready' as const : report ? 'review' as const : 'missing' as const,
+      detail: reportHasKpi ? '报告包含 KPI 或效应规模相关表述。' : '报告正文中 KPI 数值还不够明显。',
     },
     {
-      label: 'Method evidence',
+      label: '方法证据',
       status: hasMethodEvidence ? 'ready' as const : (state?.files_count ?? 0) > 0 ? 'review' as const : 'missing' as const,
-      detail: hasMethodEvidence ? 'Panel, diagnostics, LocalGap, or causal artifacts are registered.' : 'Method artifacts are not registered yet.',
+      detail: hasMethodEvidence ? 'Panel、diagnostics、LocalGap 或因果方向产物已注册。' : '方法产物尚未注册。',
     },
     {
-      label: 'Limitations',
-      status: hasLimits ? 'ready' as const : report ? 'review' as const : 'missing' as const,
-      detail: hasLimits ? 'A caveat or limitations section is present.' : 'Add explicit caveats before sharing externally.',
+      label: '限制说明',
+      status: reportHasLimits ? 'ready' as const : report ? 'review' as const : 'missing' as const,
+      detail: reportHasLimits ? '报告中已包含假设、限制或风险说明。' : '对外分享前需要补充明确限制。',
     },
     {
-      label: 'Artifact references',
+      label: '产物引用',
       status: hasArtifactReferences ? 'ready' as const : 'missing' as const,
-      detail: hasArtifactReferences ? `${artifacts.length} registered artifact${artifacts.length === 1 ? '' : 's'} can support review.` : 'No artifact index is available for this report.',
+      detail: hasArtifactReferences ? `${artifacts.length} 个已注册产物可支持复核。` : '该报告暂无可用产物索引。',
     },
   ]
 }
@@ -510,13 +513,16 @@ function buildReviewNotes(
 ) {
   const limitationSection = pickSection(sections, ['limitation', 'caveat', 'assumption', 'risk', '局限', '假设', '风险'])
   const reportNotes = limitationSection ? extractBullets(limitationSection.content).slice(0, 3) : []
+  const cnLimitationSection = pickSection(sections, ['限制', '假设', '风险'])
+  const cnReportNotes = cnLimitationSection ? extractBullets(cnLimitationSection.content).slice(0, 3) : []
   if (reportNotes.length > 0) return reportNotes
+  if (cnReportNotes.length > 0) return cnReportNotes
 
   const notes: string[] = []
-  if (!report) notes.push('A report has not been generated, so there is no narrative package to review.')
-  if ((state?.files_count ?? 0) < 3) notes.push('Input coverage may be incomplete; confirm order, exposure, and activity timeline files.')
-  if (!hasArtifact(artifacts, ['localgap', 'psm', 'did', 'diagnostics'])) notes.push('Effect claims should remain cautious until method artifacts are registered.')
-  if (notes.length === 0) notes.push('Before business rollout, validate margin, stockout, channel allocation, and calendar controls outside the current report.')
+  if (!report) notes.push('尚未生成报告，因此还没有可复核的业务叙事包。')
+  if ((state?.files_count ?? 0) < 3) notes.push('输入覆盖可能不完整；请确认订单、曝光和活动时间线文件。')
+  if (!hasArtifact(artifacts, ['localgap', 'psm', 'did', 'diagnostics'])) notes.push('方法产物注册前，效应类结论应保持方向性表述。')
+  if (notes.length === 0) notes.push('进入业务动作前，还需在报告外确认毛利、缺货、渠道分配和活动日历控制。')
   return notes
 }
 
@@ -563,7 +569,7 @@ function parseMarkdownSections(content: string): ReportSection[] {
   }
 
   if (current) sections.push(current)
-  return sections.length > 0 ? sections : [{ heading: 'Report body', level: 1, content }]
+  return sections.length > 0 ? sections : [{ heading: '报告正文', level: 1, content }]
 }
 
 function pickSection(sections: ReportSection[], keywords: string[]) {
@@ -589,10 +595,10 @@ function extractBullets(content: string) {
 
 function summarizeExportResponse(response: ApiResponse<unknown>) {
   const data = response.data
-  if (typeof data === 'string') return data || 'Markdown export is ready.'
+  if (typeof data === 'string') return data || 'Markdown 导出已准备好。'
   if (isRecord(data) && typeof data.summary === 'string') return data.summary
-  if (isRecord(data) && Array.isArray(data.artifacts) && data.artifacts.length > 0) return 'Markdown export is ready and referenced in artifacts.'
-  return 'Markdown export is ready.'
+  if (isRecord(data) && Array.isArray(data.artifacts) && data.artifacts.length > 0) return 'Markdown 导出已生成，并已写入产物引用。'
+  return 'Markdown 导出已准备好。'
 }
 
 function normalizeError(error: unknown, fallback: string) {
@@ -614,15 +620,25 @@ function trimPath(value: string) {
 }
 
 function humanize(value: string) {
+  const labels: Record<string, string> = {
+    report_ready: '报告就绪',
+    succeeded: '成功',
+    completed: '完成',
+    failed: '失败',
+    running: '运行中',
+    pending: '等待中',
+    unknown: '未知',
+  }
+  if (labels[value]) return labels[value]
   return value
     .replace(/[_-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .replace(/\b\w/g, (letter) => letter.toUpperCase()) || 'Unknown'
+    .replace(/\b\w/g, (letter) => letter.toUpperCase()) || '未知'
 }
 
 function formatDateTime(value?: string | null) {
-  if (!value) return 'No activity yet'
+  if (!value) return '暂无活动'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleString()

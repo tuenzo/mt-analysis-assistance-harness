@@ -11,6 +11,12 @@ The system SHALL generate reports from an explicit report plan containing findin
 - **WHEN** a result file indicates stub, partial, or heuristic method status
 - **THEN** the report clearly labels the confidence level and avoids overstating causality
 
+#### Scenario: Default report language
+- **WHEN** `report.generate` is called without an explicit language override
+- **THEN** the generated Markdown report uses Chinese headings and business-facing narrative
+- **AND** Dashboard and Report Studio report-review surfaces use Chinese labels, cues, and fallback states by default
+- **AND** technical artifact paths and tool action names remain unchanged for traceability
+
 ### Requirement: Preserve source-of-truth boundaries
 The system SHALL use backend result files and artifacts as the factual source for reports.
 
