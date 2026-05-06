@@ -108,7 +108,7 @@ function DecisionSection({
           />
         }
       />
-      <div className="mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.24fr)_minmax(96px,0.76fr)] gap-2 max-[720px]:grid-cols-[minmax(0,1.08fr)_minmax(88px,0.92fr)]">
+      <div className="mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.62fr)_minmax(78px,0.48fr)] gap-2 max-[720px]:grid-cols-[minmax(0,1.35fr)_minmax(74px,0.65fr)]">
         <ParetoMiniChart />
         <div className="grid min-h-0 content-start gap-1.5 overflow-hidden">
           {snapshot.recommendations.slice(0, 1).map((recommendation, index) => (
@@ -150,7 +150,7 @@ function DidSection({
           />
         }
       />
-      <div className="mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.24fr)_minmax(96px,0.76fr)] gap-2 max-[720px]:grid-cols-[minmax(0,1.08fr)_minmax(88px,0.92fr)]">
+      <div className="mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.62fr)_minmax(78px,0.48fr)] gap-2 max-[720px]:grid-cols-[minmax(0,1.35fr)_minmax(74px,0.65fr)]">
         <LocalGapMiniChart />
         <div className="grid min-h-0 content-start gap-1 overflow-hidden">
           <MiniMetric label="净效应" value={did.effect} tone={did.tone} />
@@ -177,19 +177,16 @@ function PeriodSection({
         title="活动前中后"
         subtitle={metricLabel}
         info={
-          <InfoCopy
+        <InfoCopy
             lines={[
-              '左侧同时看 GMV 波动、活动期、发薪日和活动/非活动对比。',
+              '左侧复合图同时看 GMV 波动、活动期、发薪日和活动/非活动对比。',
               ...periods.map((period) => `${period.label}: ${period.interpretation}`),
             ]}
           />
         }
       />
-      <div className="mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.24fr)_minmax(96px,0.76fr)] gap-2 max-[720px]:grid-cols-[minmax(0,1.08fr)_minmax(88px,0.92fr)]">
-        <div className="grid min-h-0 grid-rows-[minmax(0,1.06fr)_minmax(0,0.94fr)] gap-1.5">
-          <GmvTrendMiniChart />
-          <ActivityLiftMiniBars />
-        </div>
+      <div className="mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.62fr)_minmax(78px,0.48fr)] gap-2 max-[720px]:grid-cols-[minmax(0,1.35fr)_minmax(74px,0.65fr)]">
+        <PeriodCompositeChart />
         <div className="grid min-h-0 content-start gap-1 overflow-hidden">
           {periods.map((period) => {
             const Icon = period.id === 'before' ? Database : period.id === 'during' ? Activity : TrendingUp
@@ -228,7 +225,7 @@ function UpliftSection({ quadrants }: { quadrants: UpliftQuadrantSnapshot[] }) {
           />
         }
       />
-      <div className="mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.24fr)_minmax(96px,0.76fr)] gap-2 max-[720px]:grid-cols-[minmax(0,1.08fr)_minmax(88px,0.92fr)]">
+      <div className="mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.62fr)_minmax(78px,0.48fr)] gap-2 max-[720px]:grid-cols-[minmax(0,1.35fr)_minmax(74px,0.65fr)]">
         <UpliftBubbleMiniChart />
         <div className="grid min-h-0 content-start gap-1 overflow-hidden">
           {quadrants.slice(0, 2).map((quadrant) => (
@@ -254,22 +251,43 @@ function UpliftSection({ quadrants }: { quadrants: UpliftQuadrantSnapshot[] }) {
 function ParetoMiniChart() {
   return (
     <ChartFrame title="品类 GMV Pareto" ariaLabel="品类GMV Pareto 小图">
-      <svg className="h-full w-full" viewBox="0 0 108 86" role="img" aria-label="饮料、零食、生鲜、母婴、家清的 GMV 累计占比">
-        <line x1="8" y1="70" x2="104" y2="70" stroke="#d9dde3" />
-        <rect x="14" y="18" width="12" height="52" rx="2" fill="#3b82f6" />
-        <rect x="34" y="34" width="12" height="36" rx="2" fill="#3b82f6" opacity="0.9" />
-        <rect x="54" y="48" width="12" height="22" rx="2" fill="#3b82f6" opacity="0.82" />
-        <rect x="74" y="58" width="12" height="12" rx="2" fill="#3b82f6" opacity="0.72" />
-        <rect x="94" y="64" width="8" height="6" rx="2" fill="#3b82f6" opacity="0.62" />
-        <polyline points="20,46 40,32 60,23 80,17 98,13" fill="none" stroke="#1d4ed8" strokeWidth="2" />
-        <circle cx="20" cy="46" r="2.5" fill="#1d4ed8" />
-        <circle cx="40" cy="32" r="2.5" fill="#1d4ed8" />
-        <circle cx="60" cy="23" r="2.5" fill="#1d4ed8" />
-        <circle cx="80" cy="17" r="2.5" fill="#1d4ed8" />
-        <circle cx="98" cy="13" r="2.5" fill="#1d4ed8" />
-        <text x="8" y="82" fontSize="8" fill="#646a73">饮料</text>
-        <text x="34" y="82" fontSize="8" fill="#646a73">零食</text>
-        <text x="58" y="82" fontSize="8" fill="#646a73">生鲜</text>
+      <svg className="h-full w-full" viewBox="0 0 220 76" role="img" aria-label="饮料、零食、生鲜、母婴、家清的 GMV 和累计占比">
+        <text x="2" y="7" fontSize="7.5" fontWeight="600" fill="#1f2329">品类 GMV Pareto</text>
+        <text x="2" y="15" fontSize="6.5" fill="#3f4652">GMV(万元)</text>
+        <text x="164" y="15" fontSize="6.5" fill="#3f4652">累计占比(%)</text>
+        {[22, 34, 46, 58].map((y) => (
+          <line key={y} x1="28" y1={y} x2="188" y2={y} stroke="#e5e7eb" strokeDasharray="3 3" />
+        ))}
+        <line x1="28" y1="20" x2="28" y2="58" stroke="#9aa1aa" />
+        <line x1="188" y1="20" x2="188" y2="58" stroke="#9aa1aa" />
+        <line x1="28" y1="58" x2="188" y2="58" stroke="#9aa1aa" />
+        <text x="13" y="60" fontSize="6" fill="#646a73">0</text>
+        <text x="3" y="48" fontSize="6" fill="#646a73">800</text>
+        <text x="0" y="24" fontSize="6" fill="#646a73">2,400</text>
+        <text x="192" y="60" fontSize="6" fill="#646a73">0%</text>
+        <text x="192" y="48" fontSize="6" fill="#646a73">40%</text>
+        <text x="192" y="24" fontSize="6" fill="#646a73">100%</text>
+        {[
+          [42, 24, 34, '饮料'],
+          [72, 32, 26, '零食'],
+          [102, 42, 16, '生鲜'],
+          [132, 51, 7, '母婴'],
+          [162, 54, 4, '家清'],
+        ].map(([x, y, h, label]) => (
+          <g key={label}>
+            <rect x={Number(x)} y={Number(y)} width="13" height={Number(h)} rx="1.5" fill="#3b82f6" opacity={label === '饮料' ? 1 : 0.82} />
+            <text x={Number(x) - 1} y="66" fontSize="6.2" fill="#646a73">{label}</text>
+          </g>
+        ))}
+        <polyline points="48,42 78,33 108,27 138,23 168,21" fill="none" stroke="#1d4ed8" strokeWidth="1.7" />
+        {[48, 78, 108, 138, 168].map((x, index) => (
+          <circle key={x} cx={x} cy={[42, 33, 27, 23, 21][index]} r="2" fill="#1d4ed8" />
+        ))}
+        <rect x="64" y="70" width="6" height="4" fill="#3b82f6" />
+        <text x="73" y="74" fontSize="6" fill="#646a73">GMV</text>
+        <line x1="111" y1="72" x2="124" y2="72" stroke="#1d4ed8" strokeWidth="1.4" />
+        <circle cx="118" cy="72" r="1.7" fill="#1d4ed8" />
+        <text x="128" y="74" fontSize="6" fill="#646a73">累计占比</text>
       </svg>
     </ChartFrame>
   )
@@ -278,78 +296,96 @@ function ParetoMiniChart() {
 function LocalGapMiniChart() {
   return (
     <ChartFrame title="LocalGap 增量拆解" ariaLabel="LocalGap 增量瀑布小图">
-      <svg className="h-full w-full" viewBox="0 0 206 64" role="img" aria-label="基线 GMV 到实际 GMV 的增量瀑布">
-        <line x1="7" y1="50" x2="198" y2="50" stroke="#d9dde3" />
-        <rect x="8" y="32" width="22" height="18" rx="1.5" fill="#a8adb5" />
-        <rect x="44" y="22" width="22" height="28" rx="1.5" fill="#55b95b" />
-        <rect x="78" y="16" width="22" height="22" rx="1.5" fill="#55b95b" />
-        <rect x="112" y="12" width="22" height="15" rx="1.5" fill="#55b95b" />
-        <rect x="146" y="14" width="22" height="13" rx="1.5" fill="#d92929" />
-        <rect x="180" y="10" width="18" height="40" rx="1.5" fill="#9aa1aa" />
+      <svg className="h-full w-full" viewBox="0 0 230 76" role="img" aria-label="基线 GMV 到实际 GMV 的增量瀑布">
+        <text x="2" y="7" fontSize="7.5" fontWeight="600" fill="#1f2329">LocalGap 增量拆解</text>
+        <text x="2" y="15" fontSize="6.5" fill="#3f4652">GMV(万元)</text>
+        {[22, 34, 46, 58].map((y) => (
+          <line key={y} x1="30" y1={y} x2="220" y2={y} stroke="#e5e7eb" strokeDasharray="3 3" />
+        ))}
+        <line x1="30" y1="20" x2="30" y2="58" stroke="#9aa1aa" />
+        <line x1="30" y1="58" x2="220" y2="58" stroke="#9aa1aa" />
+        <text x="14" y="60" fontSize="6" fill="#646a73">0</text>
+        <text x="4" y="47" fontSize="6" fill="#646a73">700</text>
+        <text x="0" y="24" fontSize="6" fill="#646a73">1,400</text>
+        {[
+          [45, 40, 18, '#a8adb5', '800', '基线'],
+          [76, 31, 27, '#55b95b', '+300', '曝光'],
+          [107, 26, 20, '#55b95b', '+180', '折扣'],
+          [138, 23, 14, '#55b95b', '+120', '发薪'],
+          [169, 25, 12, '#d92929', '-110', '交互'],
+          [200, 24, 34, '#9aa1aa', '1,290', '实际'],
+        ].map(([x, y, h, color, value, label]) => (
+          <g key={label}>
+            <rect x={Number(x)} y={Number(y)} width="18" height={Number(h)} rx="1.4" fill={String(color)} />
+            <text x={Number(x) - 1} y={Number(y) - 3} fontSize="6.5" fill="#1f2329">{value}</text>
+            <text x={Number(x) - 1} y="67" fontSize="6.2" fill="#646a73">{label}</text>
+          </g>
+        ))}
         <polyline
-          points="30,32 44,32 66,22 78,22 100,16 112,16 134,12 146,12 168,14 180,14"
+          points="63,40 76,40 94,31 107,31 125,26 138,26 156,23 169,23 187,25 200,25"
           fill="none"
           stroke="#1f2329"
           strokeDasharray="4 3"
         />
-        <text x="5" y="61" fontSize="8" fill="#646a73">基线</text>
-        <text x="42" y="17" fontSize="8" fill="#1f2329">+300</text>
-        <text x="77" y="12" fontSize="8" fill="#1f2329">+180</text>
-        <text x="111" y="9" fontSize="8" fill="#1f2329">+120</text>
-        <text x="146" y="10" fontSize="8" fill="#1f2329">-110</text>
-        <text x="177" y="8" fontSize="8" fill="#1f2329">1,290</text>
-        <text x="178" y="61" fontSize="8" fill="#646a73">实际</text>
       </svg>
     </ChartFrame>
   )
 }
 
-function GmvTrendMiniChart() {
+function PeriodCompositeChart() {
   return (
-    <ChartFrame title="GMV 趋势 + 活动/发薪日" ariaLabel="GMV 趋势与活动发薪日小图">
-      <svg className="h-full w-full" viewBox="0 0 190 54" role="img" aria-label="GMV 趋势线，含活动期和发薪日标记">
-        <line x1="8" y1="42" x2="182" y2="42" stroke="#d9dde3" />
-        <line x1="8" y1="30" x2="182" y2="30" stroke="#eef0f3" strokeDasharray="4 3" />
-        <line x1="8" y1="18" x2="182" y2="18" stroke="#eef0f3" strokeDasharray="4 3" />
-        {[28, 72, 116, 160].map((x) => (
-          <rect key={x} x={x} y="8" width="10" height="34" fill="#fde7cf" opacity="0.9" />
+    <ChartFrame title="GMV 趋势 + 活动/发薪日" ariaLabel="活动前中后复合业务图">
+      <svg className="h-full w-full" viewBox="0 0 236 84" role="img" aria-label="GMV 趋势、活动发薪日和活动期对比">
+        <text x="2" y="7" fontSize="7.5" fontWeight="600" fill="#1f2329">GMV 趋势 + 活动/发薪日</text>
+        <text x="2" y="15" fontSize="6.5" fill="#3f4652">GMV(万元)</text>
+        {[20, 30, 40, 50].map((y) => (
+          <line key={y} x1="28" y1={y} x2="154" y2={y} stroke="#e5e7eb" strokeDasharray="3 3" />
+        ))}
+        <line x1="28" y1="18" x2="28" y2="50" stroke="#9aa1aa" />
+        <line x1="28" y1="50" x2="154" y2="50" stroke="#9aa1aa" />
+        <text x="13" y="52" fontSize="5.8" fill="#646a73">0</text>
+        <text x="3" y="22" fontSize="5.8" fill="#646a73">1,200</text>
+        {[48, 86, 124].map((x) => (
+          <rect key={x} x={x} y="19" width="7" height="31" fill="#fde7cf" opacity="0.9" />
         ))}
         <polyline
-          points="8,39 20,37 31,29 42,31 54,25 66,32 78,17 90,22 102,35 114,28 126,21 138,33 150,18 162,25 174,36 182,31"
+          points="28,46 36,44 45,38 54,39 62,34 70,38 78,23 86,29 94,44 102,38 110,32 118,41 126,22 134,29 142,45 154,38"
           fill="none"
           stroke="#1d6ff2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          strokeWidth="2"
+          strokeWidth="1.6"
         />
-        {[52, 96, 144].map((x) => (
-          <circle key={x} cx={x} cy="41" r="2.5" fill="#d92929" />
+        {[58, 102, 142].map((x) => (
+          <circle key={x} cx={x} cy="48" r="1.9" fill="#d92929" />
         ))}
-      </svg>
-    </ChartFrame>
-  )
-}
-
-function ActivityLiftMiniBars() {
-  return (
-    <ChartFrame title="活动期 vs 非活动期" ariaLabel="活动期与非活动期对比小图">
-      <svg className="h-full w-full" viewBox="0 0 142 54" role="img" aria-label="活动期 GMV、订单、转化、曝光高于非活动期">
-        <line x1="8" y1="42" x2="134" y2="42" stroke="#d9dde3" />
+        <text x="28" y="58" fontSize="5.8" fill="#646a73">04-01</text>
+        <text x="82" y="58" fontSize="5.8" fill="#646a73">04-29</text>
+        <text x="132" y="58" fontSize="5.8" fill="#646a73">06-03</text>
+        <rect x="170" y="13" width="7" height="7" fill="#fde7cf" stroke="#efc89e" />
+        <text x="180" y="19" fontSize="6" fill="#646a73">活动期</text>
+        <circle cx="173" cy="31" r="2" fill="#d92929" />
+        <text x="180" y="34" fontSize="6" fill="#646a73">发薪日</text>
+        <line x1="168" y1="44" x2="181" y2="44" stroke="#1d6ff2" strokeWidth="1.4" />
+        <text x="184" y="47" fontSize="6" fill="#646a73">GMV</text>
+        <text x="2" y="68" fontSize="7" fill="#3f4652">活动 vs 非活动</text>
+        <line x1="70" y1="74" x2="225" y2="74" stroke="#9aa1aa" />
         {[
-          [16, 15, 29],
-          [47, 22, 35],
-          [78, 26, 33],
-          [109, 8, 21],
-        ].map(([x, blueTop, grayTop]) => (
-          <g key={x}>
-            <rect x={x} y={blueTop} width="10" height={42 - blueTop} rx="1.5" fill="#3b82f6" />
-            <rect x={x + 12} y={grayTop} width="10" height={42 - grayTop} rx="1.5" fill="#c8ccd3" />
+          [78, 59, 66, 'GMV'],
+          [112, 62, 68, '订单'],
+          [146, 65, 70, '转化'],
+          [180, 56, 63, '曝光'],
+        ].map(([x, blueTop, grayTop, label]) => (
+          <g key={label}>
+            <rect x={Number(x)} y={Number(blueTop)} width="9" height={74 - Number(blueTop)} rx="1.2" fill="#3b82f6" />
+            <rect x={Number(x) + 11} y={Number(grayTop)} width="9" height={74 - Number(grayTop)} rx="1.2" fill="#c8ccd3" />
+            <text x={Number(x) - 2} y="82" fontSize="5.8" fill="#646a73">{label}</text>
           </g>
         ))}
-        <text x="13" y="52" fontSize="8" fill="#646a73">GMV</text>
-        <text x="46" y="52" fontSize="8" fill="#646a73">订单</text>
-        <text x="76" y="52" fontSize="8" fill="#646a73">转化</text>
-        <text x="108" y="52" fontSize="8" fill="#646a73">曝光</text>
+        <rect x="8" y="75" width="6" height="4" fill="#3b82f6" />
+        <text x="17" y="79" fontSize="6" fill="#646a73">活动期</text>
+        <rect x="43" y="75" width="6" height="4" fill="#c8ccd3" />
+        <text x="52" y="79" fontSize="6" fill="#646a73">非活动期</text>
       </svg>
     </ChartFrame>
   )
@@ -358,23 +394,37 @@ function ActivityLiftMiniBars() {
 function UpliftBubbleMiniChart() {
   return (
     <ChartFrame ariaLabel="品类策略四象限气泡图">
-      <svg className="h-full w-full" viewBox="0 0 210 124" role="img" aria-label="增量贡献和效果改善四象限">
-        <line x1="18" y1="104" x2="198" y2="104" stroke="#8a8f99" />
-        <line x1="18" y1="104" x2="18" y2="14" stroke="#8a8f99" />
-        <line x1="102" y1="14" x2="102" y2="104" stroke="#8a8f99" strokeDasharray="5 4" />
-        <line x1="18" y1="58" x2="198" y2="58" stroke="#8a8f99" strokeDasharray="5 4" />
-        <text x="36" y="32" fontSize="10" fill="#1d6ff2">小规模试验</text>
-        <text x="36" y="86" fontSize="10" fill="#1d6ff2">减少投入</text>
-        <text x="164" y="32" fontSize="10" fill="#1d6ff2">优先加码</text>
-        <text x="164" y="86" fontSize="10" fill="#1d6ff2">保护盘</text>
-        <circle cx="158" cy="36" r="22" fill="#60a5fa" opacity="0.82" stroke="#2563eb" />
-        <circle cx="124" cy="44" r="13" fill="#bde27b" opacity="0.9" />
-        <circle cx="140" cy="75" r="14" fill="#f6b75e" opacity="0.88" />
-        <circle cx="62" cy="39" r="12" fill="#b7d5fb" opacity="0.9" />
-        <text x="148" y="40" fontSize="11" fill="#0f172a">饮料</text>
-        <text x="116" y="48" fontSize="10" fill="#0f172a">零食</text>
-        <text x="132" y="79" fontSize="10" fill="#0f172a">生鲜</text>
-        <text x="54" y="43" fontSize="10" fill="#0f172a">母婴</text>
+      <svg className="h-full w-full" viewBox="0 0 230 80" role="img" aria-label="增量贡献和效果改善四象限">
+        <defs>
+          <marker id="axisArrow" markerHeight="5" markerWidth="5" orient="auto" refX="4" refY="2.5">
+            <path d="M0,0 L5,2.5 L0,5 Z" fill="#8a8f99" />
+          </marker>
+        </defs>
+        <text x="2" y="7" fontSize="7.5" fontWeight="600" fill="#1f2329">品类策略四象限</text>
+        <line x1="28" y1="60" x2="212" y2="60" stroke="#8a8f99" markerEnd="url(#axisArrow)" />
+        <line x1="28" y1="60" x2="28" y2="13" stroke="#8a8f99" markerEnd="url(#axisArrow)" />
+        <line x1="119" y1="15" x2="119" y2="60" stroke="#8a8f99" strokeDasharray="5 4" />
+        <line x1="28" y1="37" x2="212" y2="37" stroke="#8a8f99" strokeDasharray="5 4" />
+        <text x="6" y="38" fontSize="7" fill="#1f2329" transform="rotate(-90 6 38)">效果改善</text>
+        <text x="100" y="77" fontSize="7" fill="#1f2329">增量贡献</text>
+        <text x="24" y="70" fontSize="6.3" fill="#1f2329">低</text>
+        <text x="116" y="70" fontSize="6.3" fill="#1f2329">中</text>
+        <text x="204" y="70" fontSize="6.3" fill="#1f2329">高</text>
+        <text x="17" y="58" fontSize="6.3" fill="#1f2329">低</text>
+        <text x="17" y="36" fontSize="6.3" fill="#1f2329">中</text>
+        <text x="17" y="14" fontSize="6.3" fill="#1f2329">高</text>
+        <text x="45" y="22" fontSize="7" fill="#1d6ff2">小规模试验</text>
+        <text x="45" y="51" fontSize="7" fill="#1d6ff2">减少投入</text>
+        <text x="178" y="22" fontSize="7" fill="#1d6ff2">优先加码</text>
+        <text x="178" y="51" fontSize="7" fill="#1d6ff2">保护盘</text>
+        <circle cx="166" cy="24" r="18" fill="#60a5fa" opacity="0.82" stroke="#2563eb" />
+        <circle cx="133" cy="30" r="10" fill="#bde27b" opacity="0.9" />
+        <circle cx="151" cy="49" r="11" fill="#f6b75e" opacity="0.88" />
+        <circle cx="72" cy="23" r="10" fill="#b7d5fb" opacity="0.9" />
+        <text x="157" y="27" fontSize="8.5" fill="#0f172a">饮料</text>
+        <text x="126" y="33" fontSize="7.5" fill="#0f172a">零食</text>
+        <text x="144" y="52" fontSize="7.5" fill="#0f172a">生鲜</text>
+        <text x="65" y="26" fontSize="7.5" fill="#0f172a">母婴</text>
       </svg>
     </ChartFrame>
   )
@@ -412,18 +462,13 @@ function SectionTitle({
   )
 }
 
-function ChartFrame({
-  title,
-  ariaLabel,
-  children,
-}: {
+function ChartFrame({ ariaLabel, children }: {
   title?: string
   ariaLabel: string
   children: ReactNode
 }) {
   return (
-    <div className="flex min-h-0 flex-col rounded border bg-background px-2 py-1.5" aria-label={ariaLabel}>
-      {title && <p className="shrink-0 truncate text-[11px] font-semibold leading-4">{title}</p>}
+    <div className="flex min-h-0 flex-col rounded border bg-background px-1.5 py-1" aria-label={ariaLabel}>
       <div className="min-h-0 flex-1">{children}</div>
     </div>
   )

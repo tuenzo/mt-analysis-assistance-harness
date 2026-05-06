@@ -21,6 +21,7 @@
 - [x] 4.4 Render uplift quadrants with segment counts, meanings, and recommended actions
 - [x] 4.5 Render executive recommendations, conclusions, and caveats above supporting detail
 - [x] 4.6 Reorganize the result dashboard into a stable responsive 2×2 quadrant layout with unified chart-left and summary-right card structure
+- [x] 4.7 Add business chart essentials: axis names, units, ticks, legends, category/date labels, and key values
 
 ## 5. Quality Checks
 
