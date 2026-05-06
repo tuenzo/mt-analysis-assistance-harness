@@ -326,18 +326,33 @@ def _render_uplift_quadrant() -> Image.Image:
     for y, label in [(bottom - 24, "低"), (mid_y, "中"), (top + 28, "高")]:
         _text(draw, (left - 28, y), label, 18, TEXT, anchor="mm")
 
-    _text(draw, (160, 118), "小规模试验", 22, BLUE)
-    _text(draw, (160, 248), "减少投入", 22, BLUE)
-    _text(draw, (806, 118), "优先加码", 22, BLUE)
-    _text(draw, (796, 248), "保护基本盘", 22, BLUE)
-    _bubble(draw, (690, 126), 52, "#60a5fa", "饮料", outline="#2563eb")
-    _bubble(draw, (500, 152), 34, "#bde27b", "零食")
-    _bubble(draw, (620, 246), 34, "#f6b75e", "生鲜")
-    _bubble(draw, (292, 128), 30, "#b7d5fb", "母婴")
+    _text(draw, (152, 116), "小规模试验", 20, BLUE)
+    _text(draw, (152, 252), "减少投入", 20, BLUE)
+    _text(draw, (806, 86), "优先加码", 20, BLUE)
+    _text(draw, (770, 292), "保护基本盘", 20, BLUE)
+    _bubble(draw, (704, 126), 46, "#60a5fa", "饮料", outline="#2563eb", font_size=20)
+    _bubble(draw, (558, 142), 30, "#bde27b", "零食", font_size=17)
+    _bubble(draw, (632, 104), 23, "#a7f3d0", "乳品", font_size=15)
+    _bubble(draw, (830, 154), 24, "#bfdbfe", "烘焙", font_size=15)
+    _bubble(draw, (288, 130), 28, "#b7d5fb", "母婴", font_size=16)
+    _bubble(draw, (398, 160), 23, "#c4b5fd", "酒水", font_size=15)
+    _bubble(draw, (640, 246), 30, "#f6b75e", "生鲜", font_size=17)
+    _bubble(draw, (802, 246), 25, "#fde68a", "家清", font_size=15)
+    _bubble(draw, (270, 248), 22, "#fbcfe8", "个护", font_size=14)
+    _bubble(draw, (394, 270), 24, "#ddd6fe", "粮油", font_size=15)
     return image
 
 
-def _bubble(draw: ImageDraw.ImageDraw, center: tuple[int, int], radius: int, color: str, label: str, *, outline: str | None = None) -> None:
+def _bubble(
+    draw: ImageDraw.ImageDraw,
+    center: tuple[int, int],
+    radius: int,
+    color: str,
+    label: str,
+    *,
+    outline: str | None = None,
+    font_size: int = 22,
+) -> None:
     x, y = center
     draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=color, outline=outline or color, width=3)
-    _text(draw, (x, y), label, 22, TEXT, anchor="mm")
+    _text(draw, (x, y), label, font_size, TEXT, anchor="mm")

@@ -112,13 +112,13 @@ function DecisionSection({
           />
         }
       />
-      <div className="mt-1.5 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(58px,0.2fr)] gap-1.5 max-[720px]:grid-cols-[minmax(0,1.35fr)_minmax(64px,0.45fr)]">
+      <div className="mt-1.5 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(86px,0.32fr)] gap-1.5 max-[720px]:grid-cols-[minmax(0,1fr)_minmax(86px,0.5fr)]">
         <ParetoMiniChart projectId={projectId} />
         <div className="grid min-h-0 content-start gap-1.5 overflow-hidden">
           {snapshot.recommendations.slice(0, 1).map((recommendation, index) => (
-            <div key={`${recommendation}-${index}`} className="flex gap-1.5 rounded border bg-amber-50/45 px-2 py-1.5">
+            <div key={`${recommendation}-${index}`} className="flex gap-1 rounded border bg-amber-50/45 px-1.5 py-1.5">
               <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-amber-700" />
-              <p className="line-clamp-2 text-[11px] leading-4">{recommendation}</p>
+              <p className="line-clamp-4 text-[11px] leading-[15px]">{recommendation}</p>
             </div>
           ))}
         </div>
@@ -235,20 +235,9 @@ function UpliftSection({ projectId, quadrants }: { projectId: string; quadrants:
       />
       <div className="mt-1.5 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(58px,0.2fr)] gap-1.5 max-[720px]:grid-cols-[minmax(0,1.35fr)_minmax(64px,0.45fr)]">
         <UpliftBubbleMiniChart projectId={projectId} />
-        <div className="grid min-h-0 content-start gap-1 overflow-hidden">
+        <div className="grid min-h-0 content-start gap-1 overflow-visible">
           {quadrants.slice(0, 2).map((quadrant) => (
-            <div
-              key={quadrant.id}
-              className={`rounded border px-1.5 py-1 ${
-                quadrant.emphasis ? 'border-amber-300 bg-amber-50/60' : 'bg-background'
-              }`}
-              title={`${quadrant.meaning} ${quadrant.action}`}
-            >
-              <div className="flex items-center justify-between gap-1.5">
-                <p className="truncate text-[11px] font-semibold leading-4">{quadrantActionLabel(quadrant.id)}</p>
-                <TonePill tone={quadrant.tone}>{quadrant.countLabel}</TonePill>
-              </div>
-            </div>
+            <QuadrantCategoryButton key={quadrant.id} quadrant={quadrant} />
           ))}
         </div>
       </div>
@@ -287,6 +276,47 @@ function UpliftBubbleMiniChart({ projectId }: { projectId: string }) {
     <ChartFrame ariaLabel="品类策略四象限后端图">
       <BackendChartImage projectId={projectId} chartId="uplift_quadrant" alt="品类策略四象限气泡图" />
     </ChartFrame>
+  )
+}
+
+function QuadrantCategoryButton({ quadrant }: { quadrant: UpliftQuadrantSnapshot }) {
+  const [open, setOpen] = useState(false)
+  const title = quadrantActionLabel(quadrant.id)
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={`${title}具体品类`}
+        onClick={() => setOpen((current) => !current)}
+        className={`w-full rounded border px-1.5 py-1 text-left transition hover:border-primary ${
+          quadrant.emphasis ? 'border-amber-300 bg-amber-50/60' : 'bg-background'
+        }`}
+        title={`${quadrant.meaning} ${quadrant.action}`}
+      >
+        <div className="flex items-center justify-between gap-1">
+          <span className="truncate text-[11px] font-semibold leading-4">{title}</span>
+          <TonePill tone={quadrant.tone}>{quadrant.countLabel}</TonePill>
+        </div>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-[calc(100%+4px)] z-40 w-56 rounded-md border border-amber-200 bg-white p-2 text-xs shadow-lg">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <p className="font-semibold">{title}</p>
+            <span className="text-[11px] text-muted-foreground">{quadrant.countLabel}</span>
+          </div>
+          <p className="mb-2 line-clamp-2 text-[11px] leading-4 text-muted-foreground">{quadrant.action}</p>
+          <div className="flex flex-wrap gap-1">
+            {quadrant.categories.map((category) => (
+              <span key={category} className="rounded-full border bg-amber-50 px-2 py-0.5 text-[11px] leading-4">
+                {category}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -45,6 +45,7 @@ export type UpliftQuadrantSnapshot = {
   label: string
   countLabel: string
   shareLabel: string
+  categories: string[]
   meaning: string
   action: string
   emphasis?: boolean
@@ -182,6 +183,7 @@ const MVP_CAMPAIGN_SNAPSHOT: CampaignDashboardSnapshot = {
       label: '可被撬动人群 / 品类',
       countLabel: '18 个品类',
       shareLabel: '占活动 GMV 31%',
+      categories: ['饮料', '零食', '乳品', '烘焙', '咖啡', '冰品', '速食', '夜宵', '酒水', '水果', '休闲熟食', '宠物食品', '个护', '清洁', '鲜花', '母婴', '数码配件', '调味品'],
       meaning: 'uplift 高且成本可控，是活动真正能撬动的主要增长池。',
       action: '优先给到券力度、流量位和补货保障。',
       emphasis: true,
@@ -192,6 +194,7 @@ const MVP_CAMPAIGN_SNAPSHOT: CampaignDashboardSnapshot = {
       label: '自然会买人群 / 品类',
       countLabel: '12 个品类',
       shareLabel: '占活动 GMV 29%',
+      categories: ['生鲜', '粮油', '家清', '纸品', '基础乳', '日用百货', '医药健康', '米面粮油', '肉禽蛋', '蔬菜', '水产', '厨具'],
       meaning: '基线需求强，但活动增量有限。收入高，不代表补贴效率高。',
       action: '保留曝光，降低折扣深度，优先保护毛利。',
       tone: 'neutral',
@@ -201,6 +204,7 @@ const MVP_CAMPAIGN_SNAPSHOT: CampaignDashboardSnapshot = {
       label: '低响应人群 / 品类',
       countLabel: '9 个品类',
       shareLabel: '占活动 GMV 11%',
+      categories: ['大家电', '家具', '户外装备', '高客单厨电', '礼品卡', '鲜花礼盒', '进口保健', '汽车用品', '小众宠物'],
       meaning: '基线低、响应也低，泛化促销很难形成高效增长。',
       action: '暂停一刀切投放，先诊断供给、价格或库存问题。',
       tone: 'risk',
@@ -210,6 +214,7 @@ const MVP_CAMPAIGN_SNAPSHOT: CampaignDashboardSnapshot = {
       label: '避免打扰人群 / 品类',
       countLabel: '7 个品类',
       shareLabel: '占活动 GMV 8%',
+      categories: ['刚需纸品', '常温水', '基础米面', '盐糖调味', '低价蔬菜', '基础药品', '清洁耗材'],
       meaning: '可能存在蚕食或负 uplift，额外补贴会提前透支自然需求。',
       action: '减少折扣曝光，测试非补贴型留存手段。',
       tone: 'watch',

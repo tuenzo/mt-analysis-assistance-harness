@@ -24,6 +24,7 @@
 - [x] 4.7 Add business chart essentials: axis names, units, ticks, legends, category/date labels, and key values
 - [x] 4.8 Move the five core dashboard charts to backend-rendered PNGs and load them in the frontend as stable images
 - [x] 4.9 Remove chart title numbering, compress dashboard chrome, and combine the period charts into one readable backend image
+- [x] 4.10 Expand the recommendation copy, make top Uplift strategy groups clickable, and show 10 category bubbles in the Uplift chart
 
 ## 5. Quality Checks
 
