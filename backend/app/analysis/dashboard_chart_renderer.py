@@ -202,42 +202,60 @@ def _render_activity_comparison() -> Image.Image:
 
 def _render_period_overview() -> Image.Image:
     image, draw = _canvas()
-    _text(draw, (36, 24), "活动前中后：GMV趋势与活动期对比", 26, TEXT, bold=True)
-    left, top, right, bottom = 82, 76, 940, 260
-    _text(draw, (36, 60), "GMV（万元）", 18, MUTED)
+    _text(draw, (36, 26), "活动前中后：GMV趋势与活动期对比", 26, TEXT, bold=True)
+
+    left, top, right, bottom = 86, 98, 680, 306
+    _text(draw, (86, 68), "GMV（万元）", 18, MUTED)
     _grid(draw, left, top, right, bottom, [0, 300, 600, 900, 1200], 0, 1200)
 
     dates = ["04-01", "04-08", "04-15", "04-22", "04-29", "05-06", "05-13", "05-20", "05-27", "06-03"]
-    values = [300, 520, 610, 905, 480, 970, 580, 1110, 510, 780, 535]
+    values = [300, 520, 610, 905, 480, 970, 580, 1110, 510, 780]
     xs = [_scale(i, 0, len(values) - 1, left, right) for i in range(len(values))]
-    for x in [left + 90, left + 240, left + 425, left + 625, left + 820]:
-        draw.rectangle((x, top, x + 34, bottom), fill=ORANGE_FILL, outline="#f2d4b8")
+    for index in [1, 3, 5, 7, 9]:
+        x = _scale(index, 0, len(values) - 1, left, right)
+        draw.rectangle((x - 14, top, x + 14, bottom), fill=ORANGE_FILL, outline="#f2d4b8")
     points = [(x, _scale(v, 0, 1200, bottom, top)) for x, v in zip(xs, values)]
     draw.line(points, fill=BLUE, width=5, joint="curve")
-    for x in [left + 150, left + 360, left + 570, left + 780]:
+    for index in [2, 4, 6, 8]:
+        x = _scale(index, 0, len(values) - 1, left, right)
         draw.ellipse((x - 6, bottom - 10, x + 6, bottom + 2), fill="#d71920")
     for i, label in enumerate(dates):
-        if i in {0, 2, 4, 5, 6, 7, 8, 9}:
+        if i in {0, 2, 4, 6, 8, 9}:
             x = _scale(i, 0, len(dates) - 1, left, right)
-            _text(draw, (x, bottom + 18), label, 17, MUTED, anchor="ma")
+            _text(draw, (x, bottom + 18), label, 16, MUTED, anchor="ma")
 
-    baseline_y = 342
-    _text(draw, (82, 296), "活动期 vs 非活动期", 20, TEXT, bold=True)
+    panel_left, panel_top, panel_right, panel_bottom = 720, 86, 948, 302
+    draw.rounded_rectangle((panel_left, panel_top, panel_right, panel_bottom), radius=10, fill="#f8fafc", outline=GRID)
+    _text(draw, (740, 106), "活动 vs 非活动", 21, TEXT, bold=True)
+    _text(draw, (740, 132), "同口径均值对比", 15, MUTED)
+    draw.rectangle((742, 158, 756, 169), fill=BAR_BLUE)
+    _text(draw, (762, 154), "活动期", 14, MUTED)
+    draw.rectangle((822, 158, 836, 169), fill=GRAY_BAR)
+    _text(draw, (842, 154), "非活动期", 14, MUTED)
+
     comparison = [
-        ("GMV", 112, 68),
-        ("订单", 98, 62),
-        ("转化", 62, 48),
-        ("曝光", 158, 90),
+        ("GMV", 112, 68, "1,120", "680"),
+        ("订单", 98, 62, "98", "62"),
+        ("转化", 62, 48, "4.6%", "3.1%"),
+        ("曝光", 158, 90, "2,450", "1,620"),
     ]
-    for i, (label, active, non_active) in enumerate(comparison):
-        x = 260 + i * 150
-        active_top = _scale(active, 0, 160, baseline_y, 286)
-        non_top = _scale(non_active, 0, 160, baseline_y, 286)
-        draw.rectangle((x, active_top, x + 32, baseline_y), fill=BAR_BLUE, outline="#2f6fd6")
-        draw.rectangle((x + 42, non_top, x + 74, baseline_y), fill=GRAY_BAR, outline="#aeb4bd")
-        _text(draw, (x + 37, baseline_y + 18), label, 17, TEXT, anchor="ma")
-    draw.line((226, baseline_y, 890, baseline_y), fill=AXIS, width=2)
-    _legend(draw, 270, 364, [("line", BLUE, "GMV"), ("bar", ORANGE_FILL, "活动期"), ("dot", "#d71920", "发薪日"), ("bar", BAR_BLUE, "活动期对比")])
+    bar_left, bar_right = 798, 910
+    for i, (label, active, non_active, active_label, non_label) in enumerate(comparison):
+        row_y = 194 + i * 27
+        _text(draw, (740, row_y - 6), label, 15, TEXT, bold=True)
+        active_w = _scale(active, 0, 160, 0, bar_right - bar_left)
+        non_w = _scale(non_active, 0, 160, 0, bar_right - bar_left)
+        draw.rounded_rectangle((bar_left, row_y - 12, bar_left + active_w, row_y - 3), radius=4, fill=BAR_BLUE)
+        draw.rounded_rectangle((bar_left, row_y + 2, bar_left + non_w, row_y + 11), radius=4, fill=GRAY_BAR)
+        _text(draw, (bar_right + 8, row_y - 17), active_label, 13, TEXT)
+        _text(draw, (bar_right + 8, row_y - 2), non_label, 13, MUTED)
+
+    draw.line((left, 348, left + 30, 348), fill=BLUE, width=4)
+    _text(draw, (left + 38, 339), "GMV", 16, MUTED)
+    draw.rectangle((left + 116, 340, left + 140, 354), fill=ORANGE_FILL, outline="#f2d4b8")
+    _text(draw, (left + 148, 339), "活动期", 16, MUTED)
+    draw.ellipse((left + 232, 342, left + 244, 354), fill="#d71920")
+    _text(draw, (left + 252, 339), "发薪日", 16, MUTED)
     return image
 
 
