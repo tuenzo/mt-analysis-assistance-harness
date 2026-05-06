@@ -188,6 +188,18 @@ def run_approved_full_pipeline(
 
     events.append(
         {
+            "type": "tool_call_finished" if all_ok else "tool_call_failed",
+            "turn_id": turn_id,
+            "tool": "business_analysis",
+            "action": "analysis.run_full_pipeline",
+            "ok": all_ok,
+            "summary": summary,
+            "tool_call_id": tool_call.id if tool_call else None,
+            "sdk_executed": True,
+        }
+    )
+    events.append(
+        {
             "type": "job_finished",
             "turn_id": turn_id,
             "job_id": job.id,

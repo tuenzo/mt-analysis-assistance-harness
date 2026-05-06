@@ -9,7 +9,7 @@ export interface ToolCall {
   tool: string
   action: string
   payload: Record<string, unknown>
-  status: 'pending' | 'running' | 'success' | 'error'
+  status: 'pending' | 'running' | 'waiting_approval' | 'success' | 'error'
   result?: Record<string, unknown>
   summary?: string
   startedAt?: string
@@ -63,8 +63,8 @@ interface AgentStore {
   clearError: () => void
   failRun: (error: string) => void
   selectToolCall: (toolCall: ToolCall | null) => void
-  approveApproval: (approvalId: string) => Promise<void>
-  rejectApproval: (approvalId: string) => Promise<void>
+  approveApproval: (approvalId: string) => Promise<SSEEvent[]>
+  rejectApproval: (approvalId: string) => Promise<SSEEvent[]>
 }
 
 export const useAgentStore = create<AgentStore>((set, get) => ({
@@ -273,14 +273,14 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
             for (const [turnId, calls] of Object.entries(state.toolCalls)) {
               updatedToolCalls[turnId] = calls.map((tc) => {
                 const matches = event.tool_call_id
-                  ? tc.id === event.tool_call_id || (tc.turnId === event.turn_id && tc.tool === toolName && tc.action === actionName && tc.status === 'running')
-                  : tc.tool === toolName && tc.action === actionName && tc.status === 'running'
+                  ? tc.id === event.tool_call_id || (tc.turnId === event.turn_id && tc.tool === toolName && tc.action === actionName && (tc.status === 'running' || tc.status === 'waiting_approval'))
+                  : tc.tool === toolName && tc.action === actionName && (tc.status === 'running' || tc.status === 'waiting_approval')
                 if (matches) {
                   return {
                     ...tc,
-                    status: event.ok ? 'success' : 'error',
+                    status: event.approval_required ? 'waiting_approval' : event.ok ? 'success' : 'error',
                     summary: event.summary,
-                    finishedAt: new Date().toISOString(),
+                    finishedAt: event.approval_required ? tc.finishedAt : new Date().toISOString(),
                   }
                 }
                 return tc
@@ -318,8 +318,8 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
             for (const [turnId, calls] of Object.entries(state.toolCalls)) {
               updatedToolCalls[turnId] = calls.map((tc) => {
                 const matches = event.tool_call_id
-                  ? tc.id === event.tool_call_id || (tc.turnId === event.turn_id && tc.tool === toolName && tc.action === actionName && tc.status === 'running')
-                  : tc.tool === toolName && tc.action === actionName && tc.status === 'running'
+                  ? tc.id === event.tool_call_id || (tc.turnId === event.turn_id && tc.tool === toolName && tc.action === actionName && (tc.status === 'running' || tc.status === 'waiting_approval'))
+                  : tc.tool === toolName && tc.action === actionName && (tc.status === 'running' || tc.status === 'waiting_approval')
                 if (matches) {
                   return {
                     ...tc,
@@ -494,12 +494,16 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       set((state) => ({
         approvalRequests: state.approvalRequests.filter((a) => a.id !== approvalId),
       }))
-      response.data?.events?.forEach((event) => get().handleSSEEvent(event))
+      const events = response.data?.events || []
+      events.forEach((event) => get().handleSSEEvent(event))
       if (!response.ok) {
         set({ error: response.error || 'Failed to approve', isRunning: false })
+        return []
       }
+      return events
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to approve' })
+      return []
     }
   },
 
@@ -509,9 +513,12 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       set((state) => ({
         approvalRequests: state.approvalRequests.filter((a) => a.id !== approvalId),
       }))
-      response.data?.events?.forEach((event) => get().handleSSEEvent(event))
+      const events = response.data?.events || []
+      events.forEach((event) => get().handleSSEEvent(event))
+      return events
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to reject' })
+      return []
     }
   },
 }))

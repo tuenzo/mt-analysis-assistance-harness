@@ -3,7 +3,7 @@
 import type { ToolCall } from '@/store/agent-store'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
-import { ChevronDown, ChevronRight, Loader2, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { ChevronDown, ChevronRight, Loader2, CheckCircle, XCircle, Clock, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 
 interface ToolCallItemProps {
@@ -15,6 +15,7 @@ interface ToolCallItemProps {
 const statusConfig = {
   pending: { color: 'secondary', icon: Clock, label: 'Pending' },
   running: { color: 'default', icon: Loader2, label: 'Running' },
+  waiting_approval: { color: 'secondary', icon: ShieldCheck, label: 'Approval' },
   success: { color: 'default', icon: CheckCircle, label: 'Success' },
   error: { color: 'destructive', icon: XCircle, label: 'Error' },
 }

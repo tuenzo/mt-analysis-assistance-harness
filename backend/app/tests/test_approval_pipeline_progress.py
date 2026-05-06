@@ -34,6 +34,10 @@ def test_full_pipeline_approval_emits_progress_and_persists_outputs():
         assert "job_progress" in event_types
         assert "artifact_created" in event_types
         assert "job_finished" in event_types
+        assert event_types[-3] == "tool_call_finished"
+        assert events[-3]["action"] == "analysis.run_full_pipeline"
+        assert events[-3]["tool_call_id"] == "tc_full_pipeline_test"
+        assert events[-3]["ok"] is True
         assert event_types[-1] == "final_answer"
 
         db = get_session()

@@ -60,10 +60,12 @@ class MessageRuntime:
             context = self.context_builder.build(project_id, ui_context)
             context["runtime_session_id"] = session_id
             context["runtime_turn_id"] = turn.id
+            context["user_message"] = message
 
             prompt = self.prompt_composer.compose(context, message)
+            context["composed_prompt"] = prompt
 
-            for event in self.adapter.send_message(session.external_session_id or session_id, prompt, context):
+            for event in self.adapter.send_message(session.external_session_id or session_id, message, context):
                 if event.get("type") == "external_session_updated":
                     self.session_store.update_session(
                         session_id,
@@ -136,7 +138,7 @@ class MessageRuntime:
             project_id=project_id,
             action_str=action,
             payload=payload,
-            reason="",
+            reason=event.get("reason") or f"Agent requested {action}.",
             session_id=session_id,
             turn_id=turn_id,
             user_permission_level=PermissionLevel.EXTERNAL_SYNC,
@@ -155,6 +157,7 @@ class MessageRuntime:
                     "action": approval.action,
                     "reason": approval.reason or "",
                     "risk_level": approval.risk_level,
+                    "payload": json.loads(approval.payload_json or "{}"),
                 }
             )
 
@@ -168,6 +171,10 @@ class MessageRuntime:
                 "summary": result.summary,
                 "tool_call_id": tc.id,
                 "approval_required": bool(approval),
+                "approval_id": approval.id if approval else None,
+                "approval_reason": approval.reason if approval else None,
+                "risk_level": approval.risk_level if approval else None,
+                "approval_payload": json.loads(approval.payload_json or "{}") if approval else None,
             }
         )
 

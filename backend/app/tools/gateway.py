@@ -9,6 +9,7 @@ from app.projects.models import ToolCall, ApprovalRequest, Job
 from app.tools.registry import get_registry
 from app.tools.schemas import BusinessAnalysisAction, ToolResult, ToolError
 from app.core.permissions import action_to_permission_level, HIGH_RISK_ACTIONS, RISK_LEVEL_MAP, PermissionLevel
+from app.core.config import settings
 
 
 class AnalysisToolGateway:
@@ -95,9 +96,9 @@ class AnalysisToolGateway:
                 return ToolResult(
                     ok=True,
                     action=action_str,
-                    summary="需要用户审批",
+                    summary="Approval required.",
                     state_patch={},
-                    assistant_hint="此操作需要用户审批，请在 UI 中确认。"
+                    assistant_hint="This action requires user approval in the UI before execution.",
                 )
 
             result = tool_func(project_id, payload)
@@ -143,7 +144,7 @@ class AnalysisToolGateway:
 
     def _write_tool_call_log(self, log_entry: dict):
         try:
-            log_path = Path("./workspaces") / "tool_calls.jsonl"
+            log_path = settings.workspace_root / "tool_calls.jsonl"
             log_path.parent.mkdir(parents=True, exist_ok=True)
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
