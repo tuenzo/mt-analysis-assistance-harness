@@ -166,6 +166,7 @@ class MessageRuntime:
                 "action": action,
                 "ok": result.ok,
                 "summary": result.summary,
+                "tool_call_id": tc.id,
                 "approval_required": bool(approval),
             }
         )

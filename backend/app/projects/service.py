@@ -340,6 +340,54 @@ class ProjectService:
         finally:
             db.close()
 
+    def mark_data_validation(
+        self,
+        project_id: str,
+        validation_ok: bool,
+        file_info: dict[str, dict],
+        issues: list[str],
+        warnings: list[str],
+    ) -> dict:
+        db = get_session()
+        try:
+            project = self._query_project(db, project_id)
+            if not project:
+                return {}
+
+            project_files = db.query(ProjectFile).filter(ProjectFile.project_id == project_id).all()
+            now = datetime.now().isoformat()
+            if validation_ok:
+                for project_file in project_files:
+                    if project_file.role in file_info:
+                        project_file.status = "validated"
+                        project_file.updated_at = now
+                project.status = "data_validated"
+                project.current_stage = "data_validated"
+            else:
+                project.status = "data_partial" if project_files else "created"
+                project.current_stage = "data_partial" if project_files else "created"
+
+            project.updated_at = now
+            self._sync_workspace_state(
+                db,
+                project,
+                schema_status="validated" if validation_ok else "validation_failed",
+                completed_tasks="data_ingest,data_validate" if validation_ok else "data_ingest",
+                next_steps=(
+                    "Run panel.build_category_day"
+                    if validation_ok
+                    else "Fix validation issues: " + "; ".join(issues[:5])
+                ),
+                extra_lines=[
+                    f"Validation warnings: {'; '.join(warnings[:5]) if warnings else 'none'}",
+                    f"Validation issues: {'; '.join(issues[:5]) if issues else 'none'}",
+                ],
+            )
+            db.commit()
+            return {"current_stage": project.current_stage, "data_quality": "validated" if validation_ok else "partial"}
+        finally:
+            db.close()
+
     def _query_project(self, db, project_id: str) -> Optional[Project]:
         query = db.query(Project).filter(Project.id == project_id)
         if not self._can_read_hidden_project(project_id):
@@ -413,7 +461,16 @@ class ProjectService:
         db.flush()
         return project_file
 
-    def _sync_workspace_state(self, db, project: Project) -> None:
+    def _sync_workspace_state(
+        self,
+        db,
+        project: Project,
+        *,
+        schema_status: str = "not_started",
+        completed_tasks: str | None = None,
+        next_steps: str = "Run schema.infer and data.validate",
+        extra_lines: list[str] | None = None,
+    ) -> None:
         workspace_path = Path(project.workspace_path)
         manifest = ProjectManifest.load(workspace_path)
         project_files = db.query(ProjectFile).filter(ProjectFile.project_id == project.id).all()
@@ -442,10 +499,14 @@ class ProjectService:
             project_name=project.name,
             current_stage=manifest.current_stage,
             file_status=file_status,
-            schema_status="not_started",
-            completed_tasks="data_ingest" if project_files else "none",
-            next_steps="Run schema.infer and data.validate",
+            schema_status=schema_status,
+            completed_tasks=completed_tasks if completed_tasks is not None else ("data_ingest" if project_files else "none"),
+            next_steps=next_steps,
         )
+        if extra_lines:
+            summary_path = workspace_path / ".analysis" / "context_summary.md"
+            with open(summary_path, "a", encoding="utf-8") as f:
+                f.write("\n\n" + "\n".join(extra_lines) + "\n")
 
     @staticmethod
     def _safe_filename(filename: str) -> str:

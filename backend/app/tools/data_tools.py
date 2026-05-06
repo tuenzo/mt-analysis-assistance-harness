@@ -31,15 +31,22 @@ def data_discover_source_files(project_id: str, payload: dict) -> ToolResult:
         )
 
     csv_count = sum(1 for item in result["candidates"] if not item.get("skipped") and item.get("extension") == ".csv")
+    if csv_count == 0:
+        assistant_hint = (
+            "No importable first-level CSV files were found. Tell the user which items were skipped "
+            "and ask for a directory containing order_info, exposure_info, and activity_timeline CSV files."
+        )
+    else:
+        assistant_hint = (
+            "Inspect headers and previews, then call data.ingest with selected_files: "
+            "[{source_path, role, reason}]. Do not ingest files you cannot classify."
+        )
     return ToolResult(
         ok=True,
         action="data.discover_source_files",
         summary=f"Discovered {len(result['candidates'])} item(s), including {csv_count} CSV candidate(s).",
         artifacts=[{"type": "data_source_discovery", **result}],
-        assistant_hint=(
-            "Inspect headers and previews, then call data.ingest with selected_files: "
-            "[{source_path, role, reason}]. Do not ingest files you cannot classify."
-        ),
+        assistant_hint=assistant_hint,
     )
 
 
@@ -74,13 +81,22 @@ def data_ingest(project_id: str, payload: dict) -> ToolResult:
 
     imported_count = result["imported_count"]
     skipped_count = result["skipped_count"]
+    if imported_count:
+        assistant_hint = "Next run schema.infer, then data.validate. Do not call data load complete until validation succeeds."
+    else:
+        skipped = ", ".join(f"{item.get('name') or '(missing name)'}:{item.get('reason')}" for item in result["skipped"])
+        assistant_hint = (
+            "No CSV files were imported. Explain the skipped selections and fix the selected_files payload "
+            f"or ask the user for corrected files/source directory. Skipped: {skipped or 'none'}."
+        )
+
     return ToolResult(
         ok=True,
         action="data.ingest",
         summary=f"Imported {imported_count} CSV file(s), skipped {skipped_count} item(s).",
         artifacts=[{"type": "data_ingest_result", **result}],
         state_patch={"current_stage": "data_uploaded"} if imported_count else {},
-        assistant_hint="Next run schema.infer and data.validate." if imported_count else "No CSV files were imported.",
+        assistant_hint=assistant_hint,
     )
 
 
@@ -104,6 +120,13 @@ def data_validate(project_id: str, payload: dict) -> ToolResult:
 
     ok = val_result.ok
     summary = "Data validation passed" if ok else f"Found {len(issues)} issue(s)"
+    state_patch = service.mark_data_validation(
+        project_id=project_id,
+        validation_ok=ok,
+        file_info=file_info,
+        issues=issues,
+        warnings=warnings,
+    )
 
     artifacts = [{"type": "validation_report", "title": "Data quality report", "issues": issues, "warnings": warnings}]
     for role, info in file_info.items():
@@ -119,7 +142,12 @@ def data_validate(project_id: str, payload: dict) -> ToolResult:
         action="data.validate",
         summary=summary,
         artifacts=artifacts,
-        assistant_hint="Fix missing or invalid files before continuing." if not ok else "Data validation passed; continue analysis.",
+        state_patch=state_patch,
+        assistant_hint=(
+            "Data load is complete. Continue with panel.build_category_day or analysis."
+            if ok
+            else "Data load remains partial. Explain these validation issues and ask for corrected files or mappings."
+        ),
     )
 
 
@@ -146,4 +174,19 @@ def schema_infer(project_id: str, payload: dict) -> ToolResult:
 
 
 def schema_apply_mapping(project_id: str, payload: dict) -> ToolResult:
-    return ToolResult(ok=True, action="schema.apply_mapping", summary="Field mapping saved (stub).")
+    service = ProjectService()
+    result = service.apply_schema(project_id, payload.get("mappings") or {})
+    if result.get("status") == "not_found":
+        return ToolResult(
+            ok=False,
+            action="schema.apply_mapping",
+            summary="Project not found.",
+            error={"code": "NOT_FOUND", "message": "Project not found", "details": {}},
+        )
+    return ToolResult(
+        ok=True,
+        action="schema.apply_mapping",
+        summary="Field mapping saved.",
+        state_patch={"current_stage": "schema_mapping"},
+        assistant_hint="Run data.validate after applying mappings.",
+    )

@@ -272,7 +272,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
             const updatedToolCalls: Record<string, ToolCall[]> = {}
             for (const [turnId, calls] of Object.entries(state.toolCalls)) {
               updatedToolCalls[turnId] = calls.map((tc) => {
-                if (tc.tool === toolName && tc.action === actionName && tc.status === 'running') {
+                const matches = event.tool_call_id
+                  ? tc.id === event.tool_call_id || (tc.turnId === event.turn_id && tc.tool === toolName && tc.action === actionName && tc.status === 'running')
+                  : tc.tool === toolName && tc.action === actionName && tc.status === 'running'
+                if (matches) {
                   return {
                     ...tc,
                     status: event.ok ? 'success' : 'error',
@@ -314,7 +317,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
             const updatedToolCalls: Record<string, ToolCall[]> = {}
             for (const [turnId, calls] of Object.entries(state.toolCalls)) {
               updatedToolCalls[turnId] = calls.map((tc) => {
-                if (tc.tool === toolName && tc.action === actionName && tc.status === 'running') {
+                const matches = event.tool_call_id
+                  ? tc.id === event.tool_call_id || (tc.turnId === event.turn_id && tc.tool === toolName && tc.action === actionName && tc.status === 'running')
+                  : tc.tool === toolName && tc.action === actionName && tc.status === 'running'
+                if (matches) {
                   return {
                     ...tc,
                     status: 'error',

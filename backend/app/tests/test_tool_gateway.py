@@ -123,7 +123,7 @@ def test_memory_propose_update_creates_approval_request(gateway, project):
         db.close()
 
 
-def test_data_ingest_creates_approval_request(gateway, project):
+def test_data_ingest_is_not_blocked_by_approval(gateway, project):
     result = gateway.execute(
         tool_call_id="tc_test_ingest",
         project_id=project["id"],
@@ -132,14 +132,12 @@ def test_data_ingest_creates_approval_request(gateway, project):
         reason="import local data source",
         user_permission_level=PermissionLevel.MODIFY_WORKSPACE,
     )
-    assert result.ok is True
+    assert result.ok is False
 
     db = get_session()
     try:
         approval = db.query(ApprovalRequest).filter(ApprovalRequest.tool_call_id == "tc_test_ingest").first()
-        assert approval is not None
-        assert approval.action == "data.ingest"
-        assert approval.risk_level == "medium"
+        assert approval is None
     finally:
         db.close()
 

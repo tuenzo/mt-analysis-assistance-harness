@@ -31,7 +31,7 @@ ACTION_PERMISSION_MAP: dict[BusinessAnalysisAction, PermissionLevel] = {
 }
 
 
-HIGH_RISK_ACTIONS = {BusinessAnalysisAction.DATA_INGEST, BusinessAnalysisAction.PANEL_BUILD_CATEGORY_DAY, BusinessAnalysisAction.ANALYSIS_RUN_FULL_PIPELINE, BusinessAnalysisAction.MEMORY_PROPOSE_UPDATE}
+HIGH_RISK_ACTIONS = {BusinessAnalysisAction.PANEL_BUILD_CATEGORY_DAY, BusinessAnalysisAction.ANALYSIS_RUN_FULL_PIPELINE, BusinessAnalysisAction.MEMORY_PROPOSE_UPDATE}
 
 RISK_LEVEL_MAP: dict[BusinessAnalysisAction, str] = {
     BusinessAnalysisAction.MEMORY_PROPOSE_UPDATE: "high",

@@ -151,13 +151,14 @@ export type SSEEvent =
       action: string
       ok: boolean
       summary?: string
+      tool_call_id?: string
       approval_required?: boolean
       approval_id?: string
       approval_reason?: string
       risk_level?: 'low' | 'medium' | 'high'
       approval_payload?: Record<string, unknown>
     }
-  | { type: 'tool_call_failed'; turn_id: string; tool: string; action: string; error?: string }
+  | { type: 'tool_call_failed'; turn_id: string; tool: string; action: string; error?: string; tool_call_id?: string }
   | { type: 'job_started'; turn_id: string; job_id: string; action: string }
   | { type: 'job_progress'; turn_id: string; job_id: string; progress: number; message: string }
   | { type: 'job_finished'; turn_id: string; job_id: string; ok: boolean }
