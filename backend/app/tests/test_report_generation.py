@@ -2,7 +2,9 @@ import json
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
+from app.main import app
 from app.analysis.chart_renderer import render_chart
 from app.core import config
 from app.core.database import init_db, reset_engine
@@ -104,6 +106,22 @@ def test_report_partial_results_do_not_overclaim_causality(isolated_backend):
     assert "运行 `analysis.run_psm_did`" in content
     metadata = json.loads((workspace / "reports" / "report_metadata.json").read_text(encoding="utf-8"))
     assert any("PSM-DID 证据缺失" in item for item in metadata["limitations"])
+
+
+def test_latest_report_returns_structured_kpi_summary(project_with_results):
+    render_report(project_with_results.id, project_with_results.workspace_path, project_name=project_with_results.name)
+
+    response = TestClient(app).get(f"/api/projects/{project_with_results.id}/reports/latest")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["kpi_summary"] == {
+        "total_gmv": 1984.4,
+        "total_local_gap": 437.1,
+        "did_estimate": -111.49,
+        "incremental_lift_pct": -102.05,
+    }
+    assert data["metadata"]["evidence_index"]["results"]
 
 
 def test_chart_render_preserves_plot_fields_and_adds_metadata(project_with_results):

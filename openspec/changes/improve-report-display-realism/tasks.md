@@ -9,3 +9,4 @@
 - [x] 7. Run backend pytest and frontend production build.
 - [x] 8. Browser-review the demo project and fix presentation bugs.
 - [x] 9. Default generated report Markdown, report display surfaces, and agent report guidance to Chinese.
+- [x] 10. Expose structured report KPI summary and use it for Dashboard GMV, LocalGap, and DID cards.

@@ -38,6 +38,15 @@ type EvidenceStatus = 'complete' | 'partial' | 'pending'
 
 type KpiTone = 'default' | 'good' | 'watch' | 'neutral'
 
+type LatestReportWithKpis = LatestReport & {
+  kpi_summary?: {
+    total_gmv?: number | string
+    total_local_gap?: number | string
+    did_estimate?: number | string
+    incremental_lift_pct?: number | string
+  }
+}
+
 export default function DashboardPage() {
   const params = useParams<{ project_id: string }>()
   const projectId = params.project_id
@@ -86,7 +95,7 @@ export default function DashboardPage() {
   const causalReadoutSection = causalSection ?? pickSection(sections, ['因果', '方向', '净效应'])
   const limitationItems = useMemo(() => buildLimitations(sections, artifacts, state, report), [artifacts, report, sections, state])
   const nextActions = useMemo(() => buildNextActions(projectId, state, artifacts, report), [artifacts, projectId, report, state])
-  const kpis = useMemo(() => buildKpis(state, artifacts, reportContent), [artifacts, reportContent, state])
+  const kpis = useMemo(() => buildKpis(state, artifacts, report), [artifacts, report, state])
   const evidenceSteps = useMemo(() => buildEvidenceSteps(state, artifacts, report), [artifacts, report, state])
   const groupedArtifacts = useMemo(() => groupArtifacts(artifacts), [artifacts])
   const latestJob = state?.latest_jobs?.[0]
@@ -448,24 +457,29 @@ function ArtifactRow({
   )
 }
 
-function buildKpis(state: ProjectState | null, artifacts: Artifact[], reportContent: string) {
+function buildKpis(state: ProjectState | null, artifacts: Artifact[], report: LatestReport | null) {
   const latestStatus = state?.latest_jobs?.[0]?.status
-  const totalGmv = extractMetric(reportContent, [
+  const reportContent = report?.content ?? ''
+  const kpiSummary = (report as LatestReportWithKpis | null)?.kpi_summary
+  const totalGmv = metricToText(kpiSummary?.total_gmv) || extractMetric(reportContent, [
     /total[_\s-]*gmv\s*[:=]\s*([0-9,.+-]+)/i,
     /total\s+gmv\s*[:=]\s*([0-9,.+-]+)/i,
     /总\s*GMV\s*[:：]\s*([0-9,.+-]+)/i,
   ])
-  const increment = extractMetric(reportContent, [
+  const increment = metricToText(kpiSummary?.total_local_gap) || extractMetric(reportContent, [
     /total[_\s-]*local[_\s-]*gap\s*[:=]\s*([0-9,.+-]+)/i,
     /localgap\s*[:=]\s*([0-9,.+-]+)/i,
     /总增量\s*[:：]\s*([0-9,.+-]+)/,
     /总\s*增量\s*[:：]\s*([0-9,.+-]+)/,
   ])
-  const didEstimate = extractMetric(reportContent, [
+  const didEstimate = metricToText(kpiSummary?.did_estimate) || extractMetric(reportContent, [
     /did[_\s-]*estimate\s*[:=]\s*([0-9,.+-]+)/i,
     /did\s*(?:estimate|effect)?\s*[:=]\s*([0-9,.+-]+)/i,
     /净效应\s*[:：]?\s*([0-9,.+-]+)/,
+    /PSM-DID\s*方向性估计为\s*([0-9,.+-]+)/,
   ])
+  const incrementText = increment ? formatNumberText(increment) : ''
+  const didText = didEstimate ? formatNumberText(didEstimate) : ''
 
   return [
     {
@@ -491,8 +505,14 @@ function buildKpis(state: ProjectState | null, artifacts: Artifact[], reportCont
     },
     {
       title: '增量 / DID',
-      value: increment ? formatNumberText(increment) : didEstimate ? formatNumberText(didEstimate) : '待处理',
-      detail: increment ? '报告中已呈现 LocalGap 增量。' : didEstimate ? '报告中已呈现 DID 估计。' : '尚未找到增量或 DID 数值。',
+      value: incrementText && didText ? `${incrementText} / ${didText}` : incrementText || didText || '待处理',
+      detail: incrementText && didText
+        ? '左侧为 LocalGap 增量，右侧为 DID 方向性估计。'
+        : incrementText
+          ? '报告中已呈现 LocalGap 增量，DID 估计暂未识别。'
+          : didText
+            ? '报告中已呈现 DID 方向性估计，增量拆解暂未识别。'
+            : '尚未找到增量或 DID 数值。',
       icon: <BarChart3 className="h-4 w-4" />,
       tone: increment || didEstimate ? 'default' as const : 'watch' as const,
     },
@@ -715,6 +735,12 @@ function extractMetric(content: string, patterns: RegExp[]) {
     const match = content.match(pattern)
     if (match?.[1]) return match[1]
   }
+  return ''
+}
+
+function metricToText(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  if (typeof value === 'string' && value.trim()) return value.trim()
   return ''
 }
 

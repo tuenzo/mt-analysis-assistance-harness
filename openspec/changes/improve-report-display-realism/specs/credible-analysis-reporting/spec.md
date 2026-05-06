@@ -24,6 +24,11 @@ The system SHALL use backend result files and artifacts as the factual source fo
 - **WHEN** report sections reference metrics or recommendations
 - **THEN** those sections cite the result artifact or workspace file that provided the evidence
 
+#### Scenario: Dashboard consumes report KPIs
+- **WHEN** a generated report has `report_metadata.json`
+- **THEN** `reports/latest` exposes a structured KPI summary for total GMV, LocalGap increment, and DID estimate
+- **AND** Dashboard KPI cards prefer that structured summary before falling back to Markdown parsing
+
 #### Scenario: Missing results
 - **WHEN** report generation is requested before analysis results exist
 - **THEN** the tool returns a structured error instead of fabricating conclusions
