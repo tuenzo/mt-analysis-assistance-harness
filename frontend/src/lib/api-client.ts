@@ -28,8 +28,9 @@ import type {
   MemorySummaryResponse,
   ProjectTimeline,
 } from './api-types'
+import { API_BASE_STORAGE_KEY } from './navigation'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:18081'
 const API_BASE_QUERY_PARAMS = ['api_base', 'apiBase']
 
 function normalizeBaseUrl(baseUrl: string): string {
@@ -52,8 +53,23 @@ class ApiClient {
     for (const key of API_BASE_QUERY_PARAMS) {
       const override = params.get(key)
       if (override?.trim()) {
-        return normalizeBaseUrl(override)
+        const normalized = normalizeBaseUrl(override)
+        try {
+          window.sessionStorage.setItem(API_BASE_STORAGE_KEY, normalized)
+        } catch {
+          // Ignore storage failures and keep using the query override.
+        }
+        return normalized
       }
+    }
+
+    try {
+      const stored = window.sessionStorage.getItem(API_BASE_STORAGE_KEY)
+      if (stored?.trim()) {
+        return normalizeBaseUrl(stored)
+      }
+    } catch {
+      // Ignore storage failures and fall back to the configured default.
     }
 
     return this.defaultBaseUrl

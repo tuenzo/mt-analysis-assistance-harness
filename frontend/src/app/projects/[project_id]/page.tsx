@@ -1,12 +1,22 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useProjectStore } from '@/store/project-store'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Database, Bot, FileText, Brain, Clock, FolderOpen } from 'lucide-react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { preserveApiBaseParam, readApiBaseQueryFromLocation } from '@/lib/navigation'
 
 export default function ProjectHomePage() {
   const { currentProject, projectState, files } = useProjectStore()
+  const pathname = usePathname()
+  const [apiBaseQuery, setApiBaseQuery] = useState('')
+  const hrefFor = (href: string) => preserveApiBaseParam(href, apiBaseQuery)
+
+  useEffect(() => {
+    setApiBaseQuery(readApiBaseQueryFromLocation())
+  }, [pathname])
 
   if (!currentProject) {
     return (
@@ -64,7 +74,7 @@ export default function ProjectHomePage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Link href={`/projects/${currentProject.id}/data-intake`}>
+        <Link href={hrefFor(`/projects/${currentProject.id}/data-intake`)}>
           <Card className="hover:border-primary/50 transition-colors cursor-pointer">
             <CardHeader>
               <div className="flex items-center gap-3">
@@ -82,7 +92,7 @@ export default function ProjectHomePage() {
           </Card>
         </Link>
 
-        <Link href={`/projects/${currentProject.id}/agent`}>
+        <Link href={hrefFor(`/projects/${currentProject.id}/agent`)}>
           <Card className="hover:border-primary/50 transition-colors cursor-pointer">
             <CardHeader>
               <div className="flex items-center gap-3">
@@ -100,7 +110,7 @@ export default function ProjectHomePage() {
           </Card>
         </Link>
 
-        <Link href={`/projects/${currentProject.id}/dashboard`}>
+        <Link href={hrefFor(`/projects/${currentProject.id}/dashboard`)}>
           <Card className="hover:border-primary/50 transition-colors cursor-pointer">
             <CardHeader>
               <div className="flex items-center gap-3">
@@ -118,7 +128,7 @@ export default function ProjectHomePage() {
           </Card>
         </Link>
 
-        <Link href={`/projects/${currentProject.id}/memory`}>
+        <Link href={hrefFor(`/projects/${currentProject.id}/memory`)}>
           <Card className="hover:border-primary/50 transition-colors cursor-pointer">
             <CardHeader>
               <div className="flex items-center gap-3">

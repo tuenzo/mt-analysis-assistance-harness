@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useProjectStore } from '@/store/project-store'
 import { api } from '@/lib/api-client'
 import type { DemoStatus } from '@/lib/api-types'
+import { preserveApiBaseParam, readApiBaseQueryFromLocation } from '@/lib/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -22,10 +24,17 @@ import { Plus, FolderOpen, Clock, ChevronRight, Sparkles } from 'lucide-react'
 
 export default function ProjectsPage() {
   const { projects, loading, error, loadProjects, createProject } = useProjectStore()
+  const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [creating, setCreating] = useState(false)
   const [demoStatus, setDemoStatus] = useState<DemoStatus | null>(null)
+  const [apiBaseQuery, setApiBaseQuery] = useState('')
+  const hrefFor = (href: string) => preserveApiBaseParam(href, apiBaseQuery)
+
+  useEffect(() => {
+    setApiBaseQuery(readApiBaseQueryFromLocation())
+  }, [pathname])
 
   useEffect(() => {
     loadProjects()
@@ -112,7 +121,7 @@ export default function ProjectsPage() {
                 <p className="text-sm text-muted-foreground">{demoStatus.project_name}</p>
               </div>
             </div>
-            <Link href={`/projects/${demoStatus.project_id}/agent`}>
+            <Link href={hrefFor(`/projects/${demoStatus.project_id}/agent`)}>
               <Button>
                 <Sparkles className="mr-2 h-4 w-4" />
                 Enter Demo Project
@@ -173,7 +182,7 @@ export default function ProjectsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {projects.map((project) => (
-            <Link key={project.id} href={`/projects/${project.id}`}>
+            <Link key={project.id} href={hrefFor(`/projects/${project.id}`)}>
               <Card className="hover:border-primary/50 transition-colors cursor-pointer h-full">
                 <CardHeader>
                   <div className="flex items-start justify-between">

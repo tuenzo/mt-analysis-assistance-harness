@@ -123,6 +123,42 @@ def test_demo_seed_writes_workspace_manifest_context_latest_result(isolated_demo
     assert len(manifest["derived_assets"]) >= 8
 
 
+def test_demo_seed_repairs_missing_workspace_without_reset(isolated_demo_env, monkeypatch):
+    monkeypatch.setenv("APP_DEMO_MODE", "true")
+    DemoSeedService().seed(reset=True)
+
+    workspace = Path(isolated_demo_env) / "projects" / "proj_demo_test"
+    manifest_path = workspace / ".analysis" / "project_manifest.json"
+    manifest_path.unlink()
+
+    result = DemoSeedService().seed(reset=False)
+
+    assert result["project_id"] == "proj_demo_test"
+    assert manifest_path.exists()
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["current_stage"] == "report_ready"
+    assert (workspace / "reports" / "report.md").exists()
+
+
+def test_demo_seed_repairs_missing_artifact_file_without_reset(isolated_demo_env, monkeypatch):
+    monkeypatch.setenv("APP_DEMO_MODE", "true")
+    DemoSeedService().seed(reset=True)
+
+    workspace = Path(isolated_demo_env) / "projects" / "proj_demo_test"
+    db = get_session()
+    try:
+        artifact = db.query(Artifact).filter(Artifact.project_id == "proj_demo_test").first()
+        artifact_path = workspace / artifact.path
+    finally:
+        db.close()
+
+    artifact_path.unlink()
+
+    DemoSeedService().seed(reset=False)
+
+    assert artifact_path.exists()
+
+
 def test_demo_session_messages_returns_seeded_history(isolated_demo_env, monkeypatch, client):
     monkeypatch.setenv("APP_DEMO_MODE", "true")
     DemoSeedService().seed(reset=True)

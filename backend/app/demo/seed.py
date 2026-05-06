@@ -81,8 +81,11 @@ class DemoSeedService:
                         raise RuntimeError(f"Refusing to delete workspace outside demo root: {workspace_path}")
                     shutil.rmtree(workspace_path)
             elif existing:
-                session = db.query(AnalysisSession).filter(AnalysisSession.project_id == project_id).first()
-                return {"project_id": project_id, "session_id": session.id if session else None}
+                if not existing.is_test:
+                    raise RuntimeError(f"Refusing to repair non-test demo project {project_id}")
+                session_id = self._ensure_existing_demo_ready(db, existing)
+                db.commit()
+                return {"project_id": project_id, "session_id": session_id}
 
             workspace_path = self.workspace_manager.create_workspace(project_id)
             now = datetime.now().isoformat()
@@ -123,6 +126,90 @@ class DemoSeedService:
             return {"project_id": project_id, "session_id": session_id}
         finally:
             db.close()
+
+    def _ensure_existing_demo_ready(self, db, project: Project) -> str | None:
+        project_id = project.id
+        workspace_path = Path(project.workspace_path)
+        manifest_path = workspace_path / ".analysis" / "project_manifest.json"
+        workspace_missing = not manifest_path.exists()
+        if workspace_missing:
+            workspace_path = self.workspace_manager.create_workspace(project_id)
+            project.workspace_path = str(workspace_path)
+
+        now = datetime.now().isoformat()
+        files = self._ensure_demo_files(db, project, workspace_path, now)
+        artifacts = db.query(Artifact).filter(Artifact.project_id == project_id).all()
+        artifact_missing = any(not (workspace_path / artifact.path).exists() for artifact in artifacts)
+        if workspace_missing or not artifacts or artifact_missing:
+            db.query(Artifact).filter(Artifact.project_id == project_id).delete()
+            artifacts = self._create_artifacts(db, project_id, workspace_path, now)
+        if not db.query(Report).filter(Report.project_id == project_id).first():
+            db.add(Report(
+                id=f"rep_{uuid.uuid4().hex[:12]}",
+                project_id=project_id,
+                status="ready",
+                title="Keemart Demo Report",
+                source_md_path="reports/report.md",
+                metadata_json=json.dumps({"demo": True, "showcase": True}, ensure_ascii=False),
+                created_at=now,
+                updated_at=now,
+            ))
+
+        session = (
+            db.query(AnalysisSession)
+            .filter(AnalysisSession.project_id == project_id, AnalysisSession.id == DEMO_SESSION_ID)
+            .first()
+            or db.query(AnalysisSession).filter(AnalysisSession.project_id == project_id).first()
+        )
+        session_id = session.id if session else self._seed_conversation(db, project_id, now)
+
+        project.status = "report_ready"
+        project.current_stage = "report_ready"
+        project.updated_at = now
+        self._write_workspace_state(workspace_path, project_id, files, artifacts)
+        return session_id
+
+    def _ensure_demo_files(self, db, project: Project, workspace_path: Path, now: str) -> list[ProjectFile]:
+        mappings = [
+            ("data/raw/order_info.csv", "order_info"),
+            ("data/raw/exposure_info.csv", "exposure_info"),
+            ("data/raw/activity_timeline.csv", "activity_timeline"),
+            ("data/processed/category_date_panel.csv", "category_day_panel"),
+        ]
+        records: list[ProjectFile] = []
+        for rel_path, role in mappings:
+            source = FIXTURES_ROOT / rel_path
+            target = workspace_path / rel_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+            record = (
+                db.query(ProjectFile)
+                .filter(ProjectFile.project_id == project.id, ProjectFile.role == role)
+                .first()
+            )
+            if not record:
+                record = ProjectFile(
+                    id=f"file_{uuid.uuid4().hex[:12]}",
+                    project_id=project.id,
+                    role=role,
+                    original_name=source.name,
+                    current_path=rel_path,
+                    created_at=now,
+                )
+                db.add(record)
+            record.original_name = source.name
+            record.current_path = rel_path
+            record.size_bytes = target.stat().st_size
+            record.checksum = compute_file_checksum(target)
+            record.status = "validated" if role != "category_day_panel" else "generated"
+            record.updated_at = now
+            records.append(record)
+
+        technical = workspace_path / "reports" / "technical_analysis_report.md"
+        technical.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(FIXTURES_ROOT / "reports" / "technical_analysis_report.md", technical)
+        (workspace_path / "reports" / "report.md").write_text(_demo_report(project.id), encoding="utf-8")
+        return records
 
     def _copy_fixtures_and_create_records(self, db, project: Project, workspace_path: Path, now: str) -> list[ProjectFile]:
         mappings = [

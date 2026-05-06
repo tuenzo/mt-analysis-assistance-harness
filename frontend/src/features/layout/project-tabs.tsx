@@ -1,8 +1,10 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { Home, Database, Bot, Clock, LayoutDashboard, FileText, Brain } from 'lucide-react'
+import { preserveApiBaseParam, readApiBaseQueryFromLocation } from '@/lib/navigation'
 
 const overviewTab = { id: 'home', label: '概览', href: (projectId: string) => `/projects/${projectId}`, icon: Home }
 
@@ -24,6 +26,12 @@ interface ProjectTabsProps {
 
 export function ProjectTabs({ projectId }: ProjectTabsProps) {
   const pathname = usePathname()
+  const [apiBaseQuery, setApiBaseQuery] = useState('')
+  const hrefFor = (href: string) => preserveApiBaseParam(href, apiBaseQuery)
+
+  useEffect(() => {
+    setApiBaseQuery(readApiBaseQueryFromLocation())
+  }, [pathname])
 
   const isActive = (tabId: string) => {
     if (tabId === 'home') {
@@ -36,7 +44,7 @@ export function ProjectTabs({ projectId }: ProjectTabsProps) {
     <nav className="border-b bg-card px-2.5 py-1.5">
       <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
         <Link
-          href={overviewTab.href(projectId)}
+          href={hrefFor(overviewTab.href(projectId))}
           className={`flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
             isActive(overviewTab.id)
               ? 'bg-secondary text-secondary-foreground'
@@ -56,7 +64,7 @@ export function ProjectTabs({ projectId }: ProjectTabsProps) {
             return (
               <Link
                 key={tab.id}
-                href={tab.href(projectId)}
+                href={hrefFor(tab.href(projectId))}
                 className={`flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
                   active
                     ? 'border-[#d9af00] bg-primary text-primary-foreground shadow-sm'
@@ -80,7 +88,7 @@ export function ProjectTabs({ projectId }: ProjectTabsProps) {
             return (
               <Link
                 key={tab.id}
-                href={tab.href(projectId)}
+                href={hrefFor(tab.href(projectId))}
                 className={`flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
                   active
                     ? 'bg-secondary text-secondary-foreground ring-1 ring-primary/50'

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, usePathname } from 'next/navigation'
 import {
   ArrowRight,
   CheckCircle2,
@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkdownView } from '@/components/markdown-view'
+import { preserveApiBaseParam, readApiBaseQueryFromLocation } from '@/lib/navigation'
 
 type ReportSection = {
   heading: string
@@ -41,7 +42,10 @@ type ExportState = {
 
 export default function ReportsPage() {
   const params = useParams<{ project_id: string }>()
+  const pathname = usePathname()
   const projectId = params.project_id
+  const [apiBaseQuery, setApiBaseQuery] = useState('')
+  const hrefFor = (href: string) => preserveApiBaseParam(href, apiBaseQuery)
   const [report, setReport] = useState<LatestReport | null>(null)
   const [state, setState] = useState<ProjectState | null>(null)
   const [artifacts, setArtifacts] = useState<Artifact[]>([])
@@ -53,6 +57,10 @@ export default function ReportsPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [exportState, setExportState] = useState<ExportState>(null)
   const [copiedValue, setCopiedValue] = useState<string | null>(null)
+
+  useEffect(() => {
+    setApiBaseQuery(readApiBaseQueryFromLocation())
+  }, [pathname])
 
   const loadReport = useCallback(async () => {
     setLoading(true)
@@ -166,7 +174,7 @@ export default function ReportsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href={`/projects/${projectId}/dashboard`}>
+          <Link href={hrefFor(`/projects/${projectId}/dashboard`)}>
             <Button type="button" variant="outline">
               <Gauge className="mr-2 h-4 w-4" />
               结果看板
@@ -316,7 +324,7 @@ export default function ReportsPage() {
                       <p className="mt-1 text-sm text-muted-foreground">
                         数据接入和 schema 映射完成后，可让 Agent 运行或刷新分析 pipeline。
                       </p>
-                      <Link href={`/projects/${projectId}/agent`} className="mt-3 inline-flex text-sm font-medium text-primary underline-offset-2 hover:underline">
+                      <Link href={hrefFor(`/projects/${projectId}/agent`)} className="mt-3 inline-flex text-sm font-medium text-primary underline-offset-2 hover:underline">
                         打开 Agent 指挥台
                       </Link>
                     </div>

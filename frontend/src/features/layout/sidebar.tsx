@@ -4,13 +4,20 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useProjectStore } from '@/store/project-store'
 import { useUIStore } from '@/store/ui-store'
+import { preserveApiBaseParam, readApiBaseQueryFromLocation } from '@/lib/navigation'
 import { ChevronLeft, ChevronRight, FolderOpen, Plus, Settings } from 'lucide-react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 export function Sidebar() {
   const pathname = usePathname()
   const { projects, loadProjects } = useProjectStore()
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
+  const [apiBaseQuery, setApiBaseQuery] = useState('')
+  const hrefFor = (href: string) => preserveApiBaseParam(href, apiBaseQuery)
+
+  useEffect(() => {
+    setApiBaseQuery(readApiBaseQueryFromLocation())
+  }, [pathname])
 
   useEffect(() => {
     loadProjects()
@@ -55,7 +62,7 @@ export function Sidebar() {
           {projects.map((project) => (
             <Link
               key={project.id}
-              href={`/projects/${project.id}`}
+              href={hrefFor(`/projects/${project.id}`)}
               className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
                 isProjectRoute && pathname.includes(project.id)
                   ? 'bg-[#fff7cc] text-[#1f2329] shadow-sm ring-1 ring-[#f2cf4a]'
@@ -80,7 +87,7 @@ export function Sidebar() {
 
       <div className="border-t border-[#e6e8eb] bg-white p-2">
         <Link
-          href="/projects"
+          href={hrefFor('/projects')}
           className="flex items-center gap-2 rounded-md border border-[#f2cf4a] bg-white px-3 py-2 text-sm font-semibold text-[#1f2329] transition-colors hover:bg-[#fff7cc]"
           title="新建项目"
         >
