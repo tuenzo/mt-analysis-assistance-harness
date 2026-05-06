@@ -1,21 +1,25 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
 from PIL import Image, ImageDraw, ImageFont
 
+from app.tools.schemas import ToolResult
+
 
 ChartId = str
 
-CHART_IDS: set[ChartId] = {
+DEFAULT_DASHBOARD_CHART_IDS: tuple[ChartId, ...] = (
     "gmv_trend",
     "pareto",
     "activity_comparison",
     "period_overview",
     "localgap",
     "uplift_quadrant",
-}
+)
+CHART_IDS: set[ChartId] = set(DEFAULT_DASHBOARD_CHART_IDS)
 
 WIDTH = 1000
 HEIGHT = 400
@@ -52,6 +56,61 @@ def render_dashboard_chart(workspace_path: str | Path, chart_id: ChartId) -> Pat
     image = renderers[chart_id]()
     image.save(output_path, format="PNG", optimize=True)
     return output_path
+
+
+def render_dashboard_chart_artifacts(
+    project_id: str,
+    workspace_path: str | Path,
+    chart_ids: list[str] | tuple[str, ...] | None = None,
+) -> ToolResult:
+    requested_chart_ids = list(chart_ids or DEFAULT_DASHBOARD_CHART_IDS)
+    if not requested_chart_ids:
+        requested_chart_ids = list(DEFAULT_DASHBOARD_CHART_IDS)
+
+    unknown_chart_ids = [chart_id for chart_id in requested_chart_ids if chart_id not in CHART_IDS]
+    if unknown_chart_ids:
+        return ToolResult(
+            ok=False,
+            action="chart.render_dashboard",
+            summary="",
+            error={
+                "code": "UNKNOWN_CHART_ID",
+                "message": f"Unknown dashboard chart(s): {', '.join(unknown_chart_ids)}",
+            },
+        )
+
+    workspace = Path(workspace_path)
+    generated_at = datetime.now().isoformat(timespec="seconds")
+    artifacts = []
+    for chart_id in requested_chart_ids:
+        output_path = render_dashboard_chart(workspace, chart_id)
+        artifacts.append(
+            {
+                "type": "dashboard_chart",
+                "title": f"{chart_id}.png",
+                "path": output_path.relative_to(workspace).as_posix(),
+                "mime_type": "image/png",
+                "chart_id": chart_id,
+                "project_id": project_id,
+                "generated_at": generated_at,
+                "metadata": {
+                    "method_status": "backend_rendered_dashboard_png",
+                    "chart_id": chart_id,
+                    "generated_at": generated_at,
+                },
+            }
+        )
+
+    return ToolResult(
+        ok=True,
+        action="chart.render_dashboard",
+        summary=f"Generated {len(artifacts)} dashboard chart image(s).",
+        artifacts=artifacts,
+        assistant_hint=(
+            "Dashboard PNGs are ready under artifacts/charts/dashboard. "
+            "Use these images for the result dashboard and regenerate them after analysis data changes."
+        ),
+    )
 
 
 def _canvas() -> tuple[Image.Image, ImageDraw.ImageDraw]:

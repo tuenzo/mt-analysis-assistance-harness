@@ -37,7 +37,7 @@ def _register_all_tools(registry: ToolRegistry):
         analysis_run_gps_uplift, analysis_run_full_pipeline
     )
     from app.tools.result_tools import result_get_latest, artifact_read
-    from app.tools.chart_tools import chart_render
+    from app.tools.chart_tools import chart_render, chart_render_dashboard
     from app.tools.report_tools import report_generate
     from app.tools.memory_tools import memory_propose_update
     from app.tools.strategy_tools import (
@@ -62,6 +62,7 @@ def _register_all_tools(registry: ToolRegistry):
     registry.register(BusinessAnalysisAction.RESULT_GET_LATEST, result_get_latest, PermissionLevel.READ_STATE)
     registry.register(BusinessAnalysisAction.ARTIFACT_READ, artifact_read, PermissionLevel.READ_STATE)
     registry.register(BusinessAnalysisAction.CHART_RENDER, chart_render, PermissionLevel.WRITE_ARTIFACT)
+    registry.register(BusinessAnalysisAction.CHART_RENDER_DASHBOARD, chart_render_dashboard, PermissionLevel.WRITE_ARTIFACT)
     registry.register(BusinessAnalysisAction.REPORT_GENERATE, report_generate, PermissionLevel.WRITE_ARTIFACT)
     registry.register(BusinessAnalysisAction.MEMORY_PROPOSE_UPDATE, memory_propose_update, PermissionLevel.EXTERNAL_SYNC)
     registry.register(BusinessAnalysisAction.STRATEGY_DESIGN_BLUEPRINT, strategy_design_blueprint, PermissionLevel.WRITE_ARTIFACT)

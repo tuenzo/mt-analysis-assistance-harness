@@ -12,7 +12,7 @@ from app.tools.analysis_tools import (
     analysis_run_localgap,
     analysis_run_psm_did,
 )
-from app.tools.chart_tools import chart_render
+from app.tools.chart_tools import chart_render, chart_render_dashboard
 from app.tools.data_tools import data_validate
 from app.tools.panel_tools import panel_build_category_day
 from app.tools.report_tools import report_generate
@@ -32,6 +32,7 @@ PIPELINE_STEPS: list[tuple[str, str, StepFunc, dict]] = [
     ("GPS uplift", "analysis.run_gps_uplift", analysis_run_gps_uplift, {}),
     ("GMV trend chart", "chart.render", chart_render, {"type": "gmv_trend"}),
     ("LocalGap chart", "chart.render", chart_render, {"type": "localgap"}),
+    ("Dashboard PNG charts", "chart.render_dashboard", chart_render_dashboard, {"charts": "all"}),
     ("Latest result", "result.get_latest", result_get_latest, {}),
     ("Report generation", "report.generate", report_generate, {"format": "md"}),
 ]

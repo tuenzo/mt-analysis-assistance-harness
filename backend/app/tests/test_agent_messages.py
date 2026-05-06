@@ -86,6 +86,22 @@ def test_mock_full_pipeline_request_creates_approval_not_data_ingest(client, pro
     assert approval_events[0]["reason"] == "Run the approved end-to-end promotion analysis pipeline and generate outputs."
 
 
+def test_mock_dashboard_image_request_calls_render_dashboard(client, project):
+    from app.agent.message_runtime import get_message_runtime
+
+    r = client.post("/api/agent/messages", json={
+        "project_id": project["id"],
+        "message": "请重新生成看板图片",
+    })
+    assert r.status_code == 200
+    data = r.json()
+
+    events = get_message_runtime().get_events(data["session_id"], data["turn_id"])
+    actions = [event.get("action") for event in events if event.get("tool") == "business_analysis"]
+
+    assert "chart.render_dashboard" in actions
+
+
 def test_interrupt_session(client, project):
     r = client.post("/api/agent/messages", json={
         "project_id": project["id"],

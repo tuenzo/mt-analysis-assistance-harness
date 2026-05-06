@@ -81,8 +81,6 @@ class DemoSeedService:
                         raise RuntimeError(f"Refusing to delete workspace outside demo root: {workspace_path}")
                     shutil.rmtree(workspace_path)
             elif existing:
-                if not existing.is_test:
-                    raise RuntimeError(f"Refusing to repair non-test demo project {project_id}")
                 session_id = self._ensure_existing_demo_ready(db, existing)
                 db.commit()
                 return {"project_id": project_id, "session_id": session_id}

@@ -825,6 +825,8 @@ Before citing metrics or recommendations, call result.get_latest or artifact.rea
 Use observed/descriptive language for diagnostics-only claims, directional language for LocalGap or PSM-DID,
 and exploratory language for stub outputs. When generating reports, use report.generate and treat
 .analysis/report_plan.json as the evidence skeleton.
+When the user asks to refresh or regenerate result-dashboard images, call chart.render_dashboard with
+payload {{"charts": "all"}} or {{"chart_ids": [...]}} for a subset.
 
 When the user asks you to design or rethink the analysis strategy, you may lead that work through
 strategy-design actions instead of only running the fixed pipeline:

@@ -105,6 +105,8 @@ def analysis_run_full_pipeline(project_id: str, payload: dict) -> ToolResult:
     from app.tools.chart_tools import chart_render
     record(chart_render(project_id, {"type": "gmv_trend"}))
     record(chart_render(project_id, {"type": "localgap"}))
+    from app.tools.chart_tools import chart_render_dashboard
+    record(chart_render_dashboard(project_id, {"charts": "all"}))
 
     from app.tools.result_tools import result_get_latest
     record(result_get_latest(project_id, {}))

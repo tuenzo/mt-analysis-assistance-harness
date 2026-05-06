@@ -110,6 +110,20 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
                 "\u4e3b\u5bfc\u5206\u6790",
             ]
         )
+        is_dashboard_chart = any(
+            kw in msg_lower
+            for kw in [
+                "dashboard chart",
+                "dashboard image",
+                "regenerate chart",
+                "refresh chart",
+                "refresh image",
+                "\u91cd\u65b0\u751f\u6210\u56fe",
+                "\u5237\u65b0\u56fe",
+                "\u770b\u677f\u56fe",
+                "\u56fe\u7247",
+            ]
+        )
         is_analysis = any(
             kw in msg_lower
             for kw in [
@@ -233,6 +247,20 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
             }
             return
 
+        if is_dashboard_chart:
+            yield {
+                "type": "assistant_message_delta",
+                "turn_id": turn_id,
+                "delta": "I will regenerate the result dashboard images. ",
+            }
+            yield self._tool_started(turn_id, "chart.render_dashboard", {"charts": "all"})
+            yield {
+                "type": "final_answer",
+                "turn_id": turn_id,
+                "message": "Dashboard chart images have been requested from the backend renderer.",
+            }
+            return
+
         if is_analysis:
             yield {
                 "type": "assistant_message_delta",
@@ -306,6 +334,7 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
             "data.validate": "Check whether uploaded data satisfies the analysis contract.",
             "panel.build_category_day": "Generate the category-day panel required by downstream diagnostics and causal analysis.",
             "analysis.run_full_pipeline": "Run the approved end-to-end promotion analysis pipeline and generate outputs.",
+            "chart.render_dashboard": "Regenerate backend-rendered result dashboard PNG images.",
             "result.get_latest": "Read latest analysis outputs before report generation.",
             "report.generate": "Generate a report draft from the latest analysis artifacts.",
             "strategy.design_blueprint": "Create an isolated strategy blueprint artifact for review.",

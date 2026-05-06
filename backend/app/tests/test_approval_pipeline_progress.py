@@ -47,12 +47,19 @@ def test_full_pipeline_approval_emits_progress_and_persists_outputs():
             assert job.progress == 1
             steps = json.loads(job.output_json)["steps"]
             assert any(step["action"] == "analysis.run_gps_uplift" and step["ok"] for step in steps)
+            assert any(step["action"] == "chart.render_dashboard" and step["ok"] for step in steps)
             assert db.query(Artifact).filter(Artifact.project_id == project["id"]).count() >= 1
             assert (
                 db.query(Artifact)
                 .filter(Artifact.project_id == project["id"], Artifact.title == "uplift_result.json")
                 .count()
                 == 1
+            )
+            assert (
+                db.query(Artifact)
+                .filter(Artifact.project_id == project["id"], Artifact.type == "dashboard_chart")
+                .count()
+                >= 6
             )
             assert db.query(Report).filter(Report.project_id == project["id"], Report.status == "ready").count() == 1
             assert db.query(AgentEvent).filter(AgentEvent.turn_id == "turn_pipeline_test", AgentEvent.type == "job_progress").count() >= 1

@@ -159,6 +159,23 @@ def test_demo_seed_repairs_missing_artifact_file_without_reset(isolated_demo_env
     assert artifact_path.exists()
 
 
+def test_demo_seed_repairs_existing_demo_id_even_if_legacy_record_is_not_test(isolated_demo_env, monkeypatch):
+    monkeypatch.setenv("APP_DEMO_MODE", "true")
+    DemoSeedService().seed(reset=True)
+
+    db = get_session()
+    try:
+        project = db.query(Project).filter(Project.id == "proj_demo_test").one()
+        project.is_test = 0
+        db.commit()
+    finally:
+        db.close()
+
+    result = DemoSeedService().seed(reset=False)
+
+    assert result["project_id"] == "proj_demo_test"
+
+
 def test_demo_session_messages_returns_seeded_history(isolated_demo_env, monkeypatch, client):
     monkeypatch.setenv("APP_DEMO_MODE", "true")
     DemoSeedService().seed(reset=True)
