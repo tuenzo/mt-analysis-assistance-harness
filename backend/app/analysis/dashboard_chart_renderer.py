@@ -12,6 +12,7 @@ CHART_IDS: set[ChartId] = {
     "gmv_trend",
     "pareto",
     "activity_comparison",
+    "period_overview",
     "localgap",
     "uplift_quadrant",
 }
@@ -44,6 +45,7 @@ def render_dashboard_chart(workspace_path: str | Path, chart_id: ChartId) -> Pat
         "gmv_trend": _render_gmv_trend,
         "pareto": _render_pareto,
         "activity_comparison": _render_activity_comparison,
+        "period_overview": _render_period_overview,
         "localgap": _render_localgap,
         "uplift_quadrant": _render_uplift_quadrant,
     }
@@ -116,7 +118,7 @@ def _legend(draw: ImageDraw.ImageDraw, x: int, y: int, items: list[tuple[str, st
 
 def _render_gmv_trend() -> Image.Image:
     image, draw = _canvas()
-    _text(draw, (36, 26), "1. GMV趋势 + 活动/发薪日标记", 28, TEXT, bold=True)
+    _text(draw, (36, 26), "GMV趋势 + 活动/发薪日标记", 28, TEXT, bold=True)
     left, top, right, bottom = 82, 86, 940, 308
     _text(draw, (36, 70), "GMV（万元）", 20, MUTED)
     _grid(draw, left, top, right, bottom, [0, 300, 600, 900, 1200], 0, 1200)
@@ -142,7 +144,7 @@ def _render_gmv_trend() -> Image.Image:
 
 def _render_pareto() -> Image.Image:
     image, draw = _canvas()
-    _text(draw, (36, 26), "2. 品类GMV Pareto", 28, TEXT, bold=True)
+    _text(draw, (36, 26), "品类GMV Pareto", 28, TEXT, bold=True)
     left, top, right, bottom = 96, 88, 850, 304
     right_axis = 900
     _text(draw, (36, 72), "GMV（万元）", 20, MUTED)
@@ -174,7 +176,7 @@ def _render_pareto() -> Image.Image:
 
 def _render_activity_comparison() -> Image.Image:
     image, draw = _canvas()
-    _text(draw, (36, 26), "3. 活动期 vs 非活动期", 28, TEXT, bold=True)
+    _text(draw, (36, 26), "活动期 vs 非活动期", 28, TEXT, bold=True)
     left, top, right, bottom = 82, 92, 930, 306
     _grid(draw, left, top, right, bottom, [0, 40, 80, 120, 160], 0, 160)
     groups = [
@@ -198,9 +200,50 @@ def _render_activity_comparison() -> Image.Image:
     return image
 
 
+def _render_period_overview() -> Image.Image:
+    image, draw = _canvas()
+    _text(draw, (36, 24), "活动前中后：GMV趋势与活动期对比", 26, TEXT, bold=True)
+    left, top, right, bottom = 82, 76, 940, 260
+    _text(draw, (36, 60), "GMV（万元）", 18, MUTED)
+    _grid(draw, left, top, right, bottom, [0, 300, 600, 900, 1200], 0, 1200)
+
+    dates = ["04-01", "04-08", "04-15", "04-22", "04-29", "05-06", "05-13", "05-20", "05-27", "06-03"]
+    values = [300, 520, 610, 905, 480, 970, 580, 1110, 510, 780, 535]
+    xs = [_scale(i, 0, len(values) - 1, left, right) for i in range(len(values))]
+    for x in [left + 90, left + 240, left + 425, left + 625, left + 820]:
+        draw.rectangle((x, top, x + 34, bottom), fill=ORANGE_FILL, outline="#f2d4b8")
+    points = [(x, _scale(v, 0, 1200, bottom, top)) for x, v in zip(xs, values)]
+    draw.line(points, fill=BLUE, width=5, joint="curve")
+    for x in [left + 150, left + 360, left + 570, left + 780]:
+        draw.ellipse((x - 6, bottom - 10, x + 6, bottom + 2), fill="#d71920")
+    for i, label in enumerate(dates):
+        if i in {0, 2, 4, 5, 6, 7, 8, 9}:
+            x = _scale(i, 0, len(dates) - 1, left, right)
+            _text(draw, (x, bottom + 18), label, 17, MUTED, anchor="ma")
+
+    baseline_y = 342
+    _text(draw, (82, 296), "活动期 vs 非活动期", 20, TEXT, bold=True)
+    comparison = [
+        ("GMV", 112, 68),
+        ("订单", 98, 62),
+        ("转化", 62, 48),
+        ("曝光", 158, 90),
+    ]
+    for i, (label, active, non_active) in enumerate(comparison):
+        x = 260 + i * 150
+        active_top = _scale(active, 0, 160, baseline_y, 286)
+        non_top = _scale(non_active, 0, 160, baseline_y, 286)
+        draw.rectangle((x, active_top, x + 32, baseline_y), fill=BAR_BLUE, outline="#2f6fd6")
+        draw.rectangle((x + 42, non_top, x + 74, baseline_y), fill=GRAY_BAR, outline="#aeb4bd")
+        _text(draw, (x + 37, baseline_y + 18), label, 17, TEXT, anchor="ma")
+    draw.line((226, baseline_y, 890, baseline_y), fill=AXIS, width=2)
+    _legend(draw, 270, 364, [("line", BLUE, "GMV"), ("bar", ORANGE_FILL, "活动期"), ("dot", "#d71920", "发薪日"), ("bar", BAR_BLUE, "活动期对比")])
+    return image
+
+
 def _render_localgap() -> Image.Image:
     image, draw = _canvas()
-    _text(draw, (36, 26), "4. LocalGap增量分解瀑布图", 28, TEXT, bold=True)
+    _text(draw, (36, 26), "LocalGap增量分解瀑布图", 28, TEXT, bold=True)
     left, top, right, bottom = 92, 82, 930, 306
     _text(draw, (36, 70), "GMV（万元）", 20, MUTED)
     _grid(draw, left, top, right, bottom, [0, 400, 800, 1200, 1400], 0, 1500)
@@ -243,7 +286,7 @@ def _render_localgap() -> Image.Image:
 
 def _render_uplift_quadrant() -> Image.Image:
     image, draw = _canvas()
-    _text(draw, (36, 26), "5. 品类策略四象限", 28, TEXT, bold=True)
+    _text(draw, (36, 26), "品类策略四象限", 28, TEXT, bold=True)
     left, top, right, bottom = 90, 78, 930, 318
     mid_x = (left + right) / 2
     mid_y = (top + bottom) / 2

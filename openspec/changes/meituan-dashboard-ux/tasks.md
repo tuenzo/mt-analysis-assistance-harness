@@ -23,6 +23,7 @@
 - [x] 4.6 Reorganize the result dashboard into a stable responsive 2×2 quadrant layout with unified chart-left and summary-right card structure
 - [x] 4.7 Add business chart essentials: axis names, units, ticks, legends, category/date labels, and key values
 - [x] 4.8 Move the five core dashboard charts to backend-rendered PNGs and load them in the frontend as stable images
+- [x] 4.9 Remove chart title numbering, compress dashboard chrome, and combine the period charts into one readable backend image
 
 ## 5. Quality Checks
 

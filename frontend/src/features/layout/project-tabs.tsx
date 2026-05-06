@@ -33,18 +33,18 @@ export function ProjectTabs({ projectId }: ProjectTabsProps) {
   }
 
   return (
-    <nav className="border-b bg-card px-3 py-2">
-      <div className="flex min-w-0 items-center gap-2 overflow-x-auto">
+    <nav className="border-b bg-card px-2.5 py-1.5">
+      <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
         <Link
           href={overviewTab.href(projectId)}
-          className={`flex shrink-0 items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium transition-colors ${
+          className={`flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
             isActive(overviewTab.id)
               ? 'bg-secondary text-secondary-foreground'
               : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
           }`}
           title={overviewTab.label}
         >
-          <Home className="h-4 w-4" />
+          <Home className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">{overviewTab.label}</span>
         </Link>
 
@@ -57,20 +57,20 @@ export function ProjectTabs({ projectId }: ProjectTabsProps) {
               <Link
                 key={tab.id}
                 href={tab.href(projectId)}
-                className={`flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
+                className={`flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
                   active
                     ? 'border-[#d9af00] bg-primary text-primary-foreground shadow-sm'
                     : 'border-transparent text-foreground hover:border-primary/40 hover:bg-secondary'
                 }`}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="h-3.5 w-3.5" />
                 {tab.label}
               </Link>
             )
           })}
         </div>
 
-        <div className="h-6 w-px shrink-0 bg-border" />
+        <div className="h-5 w-px shrink-0 bg-border" />
 
         <div className="flex shrink-0 items-center gap-1">
           {reviewTabs.map((tab) => {
@@ -81,13 +81,13 @@ export function ProjectTabs({ projectId }: ProjectTabsProps) {
               <Link
                 key={tab.id}
                 href={tab.href(projectId)}
-                className={`flex shrink-0 items-center gap-2 rounded-md px-2.5 py-2 text-sm font-medium transition-colors ${
+                className={`flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
                   active
                     ? 'bg-secondary text-secondary-foreground ring-1 ring-primary/50'
                     : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                 }`}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="h-3.5 w-3.5" />
                 {tab.label}
               </Link>
             )

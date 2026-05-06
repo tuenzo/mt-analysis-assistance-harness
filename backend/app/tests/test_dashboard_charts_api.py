@@ -34,6 +34,18 @@ def test_dashboard_chart_endpoint_renders_png(isolated_backend):
     assert (Path(project.workspace_path) / "artifacts" / "charts" / "dashboard" / "pareto.png").exists()
 
 
+def test_dashboard_period_overview_chart_endpoint_renders_png(isolated_backend):
+    client = TestClient(app)
+    project = ProjectService().create_project("Dashboard Chart Test", is_test=True)
+
+    response = client.get(f"/api/projects/{project.id}/dashboard-charts/period_overview.png")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.content.startswith(b"\x89PNG\r\n\x1a\n")
+    assert (Path(project.workspace_path) / "artifacts" / "charts" / "dashboard" / "period_overview.png").exists()
+
+
 def test_dashboard_chart_endpoint_rejects_unknown_chart(isolated_backend):
     client = TestClient(app)
     project = ProjectService().create_project("Dashboard Chart Test", is_test=True)

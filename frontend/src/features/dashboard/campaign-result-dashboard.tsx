@@ -47,15 +47,15 @@ export function CampaignResultDashboard({
   const summary = snapshot.artifactSummary
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-158px)] min-h-[380px] max-w-none flex-col gap-2 px-4 py-2 max-[540px]:h-auto max-[540px]:min-h-0">
+    <div className="mx-auto flex h-[calc(100dvh-132px)] min-h-[420px] max-w-none flex-col gap-1.5 px-3 py-1.5 max-[540px]:h-auto max-[540px]:min-h-0">
       <div className="shrink-0">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-normal">{snapshot.title}</h1>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <h1 className="text-lg font-semibold tracking-normal">{snapshot.title}</h1>
             <Badge variant={latestReport ? 'default' : 'secondary'}>{snapshot.statusLabel}</Badge>
             {latestJob?.status && <Badge variant="outline">{humanize(latestJob.status)}</Badge>}
           </div>
-          <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
+          <div className="mt-0.5 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
             <span>{snapshot.stageLabel}</span>
             <span aria-hidden="true">/</span>
             <span>{snapshot.sourceLabel}</span>
@@ -74,7 +74,7 @@ export function CampaignResultDashboard({
       )}
 
       <Card className="min-h-0 flex-1 border-amber-200">
-        <CardContent className="grid h-full min-h-0 grid-cols-2 grid-rows-2 gap-2 p-2.5 max-[540px]:h-auto max-[540px]:grid-cols-1 max-[540px]:grid-rows-none">
+        <CardContent className="grid h-full min-h-0 grid-cols-2 grid-rows-2 gap-1.5 p-2 max-[540px]:h-auto max-[540px]:grid-cols-1 max-[540px]:grid-rows-none">
           <DecisionSection projectId={projectId} snapshot={snapshot} loading={loading} />
           <DidSection projectId={projectId} did={snapshot.did} latestReport={latestReport} totalArtifacts={summary.total} />
           <PeriodSection projectId={projectId} periods={snapshot.periods} metricLabel={snapshot.trend.metricLabel} />
@@ -95,9 +95,9 @@ function DecisionSection({
   loading: boolean
 }) {
   return (
-    <section className="relative flex min-h-0 flex-col rounded-md border bg-white p-2.5 shadow-sm">
+    <section className="relative flex min-h-0 flex-col rounded-md border bg-white p-2 shadow-sm">
       <SectionTitle
-        icon={<Target className="h-4 w-4" />}
+        icon={<Target className="h-3.5 w-3.5" />}
         tone="good"
         title="决策建议"
         subtitle={snapshot.decisionLabel}
@@ -112,13 +112,13 @@ function DecisionSection({
           />
         }
       />
-      <div className="mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.62fr)_minmax(78px,0.48fr)] gap-2 max-[720px]:grid-cols-[minmax(0,1.35fr)_minmax(74px,0.65fr)]">
+      <div className="mt-1.5 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(58px,0.2fr)] gap-1.5 max-[720px]:grid-cols-[minmax(0,1.35fr)_minmax(64px,0.45fr)]">
         <ParetoMiniChart projectId={projectId} />
         <div className="grid min-h-0 content-start gap-1.5 overflow-hidden">
           {snapshot.recommendations.slice(0, 1).map((recommendation, index) => (
             <div key={`${recommendation}-${index}`} className="flex gap-1.5 rounded border bg-amber-50/45 px-2 py-1.5">
-              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
-              <p className="line-clamp-2 text-xs leading-5">{recommendation}</p>
+              <CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-amber-700" />
+              <p className="line-clamp-2 text-[11px] leading-4">{recommendation}</p>
             </div>
           ))}
         </div>
@@ -139,9 +139,9 @@ function DidSection({
   totalArtifacts: number
 }) {
   return (
-    <section className="relative flex min-h-0 flex-col rounded-md border bg-white p-2.5 shadow-sm">
+    <section className="relative flex min-h-0 flex-col rounded-md border bg-white p-2 shadow-sm">
       <SectionTitle
-        icon={<Scale className="h-4 w-4" />}
+        icon={<Scale className="h-3.5 w-3.5" />}
         tone={did.tone}
         title="DID 评估"
         subtitle={did.verdict}
@@ -156,7 +156,7 @@ function DidSection({
           />
         }
       />
-      <div className="mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.62fr)_minmax(78px,0.48fr)] gap-2 max-[720px]:grid-cols-[minmax(0,1.35fr)_minmax(74px,0.65fr)]">
+      <div className="mt-1.5 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(58px,0.2fr)] gap-1.5 max-[720px]:grid-cols-[minmax(0,1.35fr)_minmax(64px,0.45fr)]">
         <LocalGapMiniChart projectId={projectId} />
         <div className="grid min-h-0 content-start gap-1 overflow-hidden">
           <MiniMetric label="净效应" value={did.effect} tone={did.tone} />
@@ -178,9 +178,9 @@ function PeriodSection({
   metricLabel: string
 }) {
   return (
-    <section className="relative flex min-h-0 flex-col rounded-md border bg-white p-2.5 shadow-sm">
+    <section className="relative flex min-h-0 flex-col rounded-md border bg-white p-2 shadow-sm">
       <SectionTitle
-        icon={<LineChart className="h-4 w-4" />}
+        icon={<LineChart className="h-3.5 w-3.5" />}
         tone="neutral"
         title="活动前中后"
         subtitle={metricLabel}
@@ -193,8 +193,8 @@ function PeriodSection({
           />
         }
       />
-      <div className="mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.62fr)_minmax(78px,0.48fr)] gap-2 max-[720px]:grid-cols-[minmax(0,1.35fr)_minmax(74px,0.65fr)]">
-        <PeriodChartStack projectId={projectId} />
+      <div className="mt-1.5 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(58px,0.2fr)] gap-1.5 max-[720px]:grid-cols-[minmax(0,1.35fr)_minmax(64px,0.45fr)]">
+        <PeriodOverviewChart projectId={projectId} />
         <div className="grid min-h-0 content-start gap-1 overflow-hidden">
           {periods.map((period) => {
             const Icon = period.id === 'before' ? Database : period.id === 'during' ? Activity : TrendingUp
@@ -221,9 +221,9 @@ function PeriodSection({
 
 function UpliftSection({ projectId, quadrants }: { projectId: string; quadrants: UpliftQuadrantSnapshot[] }) {
   return (
-    <section className="relative flex min-h-0 flex-col rounded-md border bg-white p-2.5 shadow-sm">
+    <section className="relative flex min-h-0 flex-col rounded-md border bg-white p-2 shadow-sm">
       <SectionTitle
-        icon={<Users className="h-4 w-4" />}
+        icon={<Users className="h-3.5 w-3.5" />}
         tone="good"
         title="Uplift 四象限"
         subtitle="分群含义与下一步动作"
@@ -233,7 +233,7 @@ function UpliftSection({ projectId, quadrants }: { projectId: string; quadrants:
           />
         }
       />
-      <div className="mt-2 grid min-h-0 flex-1 grid-cols-[minmax(0,1.62fr)_minmax(78px,0.48fr)] gap-2 max-[720px]:grid-cols-[minmax(0,1.35fr)_minmax(74px,0.65fr)]">
+      <div className="mt-1.5 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(58px,0.2fr)] gap-1.5 max-[720px]:grid-cols-[minmax(0,1.35fr)_minmax(64px,0.45fr)]">
         <UpliftBubbleMiniChart projectId={projectId} />
         <div className="grid min-h-0 content-start gap-1 overflow-hidden">
           {quadrants.slice(0, 2).map((quadrant) => (
@@ -256,7 +256,7 @@ function UpliftSection({ projectId, quadrants }: { projectId: string; quadrants:
   )
 }
 
-type DashboardChartId = 'gmv_trend' | 'pareto' | 'activity_comparison' | 'localgap' | 'uplift_quadrant'
+type DashboardChartId = 'gmv_trend' | 'pareto' | 'activity_comparison' | 'period_overview' | 'localgap' | 'uplift_quadrant'
 
 function ParetoMiniChart({ projectId }: { projectId: string }) {
   return (
@@ -274,16 +274,11 @@ function LocalGapMiniChart({ projectId }: { projectId: string }) {
   )
 }
 
-function PeriodChartStack({ projectId }: { projectId: string }) {
+function PeriodOverviewChart({ projectId }: { projectId: string }) {
   return (
-    <div className="grid min-h-0 grid-rows-2 gap-1.5">
-      <ChartFrame ariaLabel="GMV趋势后端图">
-        <BackendChartImage projectId={projectId} chartId="gmv_trend" alt="GMV 趋势，含活动期和发薪日标记" />
-      </ChartFrame>
-      <ChartFrame ariaLabel="活动期对比后端图">
-        <BackendChartImage projectId={projectId} chartId="activity_comparison" alt="活动期和非活动期指标对比" />
-      </ChartFrame>
-    </div>
+    <ChartFrame ariaLabel="活动前中后后端合成图">
+      <BackendChartImage projectId={projectId} chartId="period_overview" alt="活动前中后，含 GMV 趋势、活动期和活动期对比" />
+    </ChartFrame>
   )
 }
 
@@ -347,8 +342,8 @@ function SectionTitle({
       <div className="flex min-w-0 items-start gap-2">
         <IconTile tone={tone}>{icon}</IconTile>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">{title}</p>
-          <p className="max-h-8 overflow-hidden text-xs leading-4 text-muted-foreground">{subtitle}</p>
+          <p className="truncate text-[13px] font-semibold leading-4">{title}</p>
+          <p className="max-h-7 overflow-hidden text-[11px] leading-[14px] text-muted-foreground">{subtitle}</p>
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1">
@@ -365,7 +360,7 @@ function ChartFrame({ ariaLabel, children }: {
   children: ReactNode
 }) {
   return (
-    <div className="flex min-h-0 flex-col rounded border bg-background px-1.5 py-1" aria-label={ariaLabel}>
+    <div className="flex min-h-0 flex-col rounded border bg-background px-1 py-0.5" aria-label={ariaLabel}>
       <div className="min-h-0 flex-1">{children}</div>
     </div>
   )
@@ -381,12 +376,12 @@ function InfoPopover({ label, children }: { label: string; children: ReactNode }
         aria-label={`${label}说明`}
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-amber-200 bg-amber-50 text-amber-800 transition hover:bg-amber-100"
+        className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-amber-200 bg-amber-50 text-amber-800 transition hover:bg-amber-100"
       >
-        <Info className="h-3.5 w-3.5" />
+        <Info className="h-3 w-3" />
       </button>
       {open && (
-        <div className="absolute right-0 top-7 z-30 w-64 rounded-md border border-amber-200 bg-white p-2.5 text-xs leading-5 text-foreground shadow-lg">
+        <div className="absolute right-0 top-6 z-30 w-64 rounded-md border border-amber-200 bg-white p-2 text-xs leading-5 text-foreground shadow-lg">
           {children}
         </div>
       )}
@@ -406,29 +401,29 @@ function InfoCopy({ lines }: { lines: string[] }) {
 
 function MiniMetric({ label, value, tone }: { label: string; value: string; tone: MetricTone }) {
   return (
-    <div className="rounded border bg-background px-1.5 py-1">
-      <p className="truncate text-[10px] leading-3 text-muted-foreground">{label}</p>
-      <p className={`mt-0.5 line-clamp-2 text-[11px] font-semibold leading-[13px] ${toneTextClass(tone)}`}>{value}</p>
+    <div className="rounded border bg-background px-1 py-0.5">
+      <p className="truncate text-[9px] leading-3 text-muted-foreground">{label}</p>
+      <p className={`mt-0.5 line-clamp-2 text-[10px] font-semibold leading-3 ${toneTextClass(tone)}`}>{value}</p>
     </div>
   )
 }
 
 function MiniInsight({ primary, secondary }: { primary: string; secondary: string }) {
   return (
-    <div className="rounded border bg-secondary/25 px-1.5 py-1">
-      <p className="truncate text-[11px] font-semibold leading-4">{primary}</p>
-      <p className="truncate text-[10px] text-muted-foreground">{secondary}</p>
+    <div className="rounded border bg-secondary/25 px-1 py-0.5">
+      <p className="truncate text-[10px] font-semibold leading-3">{primary}</p>
+      <p className="truncate text-[9px] leading-3 text-muted-foreground">{secondary}</p>
     </div>
   )
 }
 
 function IconTile({ tone, children }: { tone: MetricTone; children: ReactNode }) {
-  return <div className={`rounded-md p-1.5 ${toneTileClass(tone)}`}>{children}</div>
+  return <div className={`rounded-md p-1 ${toneTileClass(tone)}`}>{children}</div>
 }
 
 function TonePill({ tone, children }: { tone: MetricTone; children: ReactNode }) {
   return (
-    <span className={`inline-flex max-w-[74px] shrink-0 truncate rounded-full px-2 py-0.5 text-[11px] font-semibold ${tonePillClass(tone)}`}>
+    <span className={`inline-flex max-w-[58px] shrink-0 truncate rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${tonePillClass(tone)}`}>
       {children}
     </span>
   )
