@@ -44,10 +44,10 @@ export function Sidebar() {
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto p-2">
+      <nav className="flex-1 overflow-y-auto bg-white p-2">
         <div className="space-y-1">
           {!sidebarCollapsed && (
-            <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-[#6f5600]">
+            <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-[#646a73]">
               最近项目
             </div>
           )}
@@ -58,8 +58,8 @@ export function Sidebar() {
               href={`/projects/${project.id}`}
               className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
                 isProjectRoute && pathname.includes(project.id)
-                  ? 'bg-white text-[#1f2329] shadow-sm ring-1 ring-black/5'
-                  : 'text-[#4f3a00] hover:bg-white/35 hover:text-[#1f2329]'
+                  ? 'bg-[#fff7cc] text-[#1f2329] shadow-sm ring-1 ring-[#f2cf4a]'
+                  : 'text-[#4f5560] hover:bg-[#fff7cc] hover:text-[#1f2329]'
               }`}
               title={project.name}
             >
@@ -71,24 +71,24 @@ export function Sidebar() {
           ))}
 
           {projects.length === 0 && !sidebarCollapsed && (
-            <div className="px-3 py-4 text-center text-xs text-[#6f5600]">
+            <div className="px-3 py-4 text-center text-xs text-[#8a8f99]">
               暂无项目
             </div>
           )}
         </div>
       </nav>
 
-      <div className="border-t border-[#e7b900] p-2">
+      <div className="border-t border-[#e6e8eb] bg-white p-2">
         <Link
           href="/projects"
-          className="flex items-center gap-2 rounded-md bg-[#241a00] px-3 py-2 text-sm font-medium text-[#ffd100] transition-colors hover:bg-[#352600]"
+          className="flex items-center gap-2 rounded-md border border-[#f2cf4a] bg-white px-3 py-2 text-sm font-semibold text-[#1f2329] transition-colors hover:bg-[#fff7cc]"
           title="新建项目"
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="h-4 w-4 text-[#d49700]" />
           {!sidebarCollapsed && <span>新建项目</span>}
         </Link>
         <button
-          className="mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-[#4f3a00] transition-colors hover:bg-white/35 hover:text-[#1f2329]"
+          className="mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-[#646a73] transition-colors hover:bg-[#f7f8fa] hover:text-[#1f2329]"
           title="设置"
         >
           <Settings className="h-4 w-4" />
