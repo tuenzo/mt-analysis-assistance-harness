@@ -52,6 +52,10 @@ def test_gps_uplift_produces_non_stub_outputs(isolated_backend):
     assert payload["method_status"] in {"implemented", "limited"}
     assert payload["method_status"] != "stub"
     assert payload["dose_response"]["exposure"]["curve"]
+    assert "supported_range" in payload["dose_response"]["exposure"]
+    assert "overlap_quality" in payload["dose_response"]["exposure"]["diagnostics"]
+    assert "uplift_model" in payload
+    assert payload["uplift_model"]["status"] in {"ok", "insufficient_support", "insufficient_treatment_split", "insufficient_estimable_folds"}
     assert payload["uplift_ranking"]
     assert payload["segments"]
     assert payload["recommended_actions"]

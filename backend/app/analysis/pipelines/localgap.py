@@ -1,125 +1,352 @@
+from __future__ import annotations
+
 import json
 from pathlib import Path
-from collections import defaultdict
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
 from app.tools.schemas import ToolResult
 
 
+DEFAULT_RECENT_WINDOW_DAYS = 56
+DEFAULT_FALLBACK_WINDOW_DAYS = 112
+DEFAULT_MIN_BASELINE_OBS = 2
+DEFAULT_RECOMMENDED_BASELINE_OBS = 4
+
+
 def run_localgap(project_id: str, workspace_path: str) -> ToolResult:
-    """
-    LocalGap 增量分解
-
-    分解公式:
-        LocalGap = actual - LocalBaseline
-        LocalBaseline = 非活动期的平均 GMV
-        分解:
-            - exposure_gap: exposure 差异贡献
-            - discount_gap: discount_rate 差异贡献
-            - payday_gap: 发薪日效应
-            - interaction: 交互效应
-            - residual: 残差
-
-    输入: category_day_panel.json
-    输出: localgap_result.json
-    """
-    workspace_path = Path(workspace_path)
-    panel_path = workspace_path / "data" / "processed" / "category_day_panel.json"
-
+    workspace = Path(workspace_path)
+    panel_path = workspace / "data" / "processed" / "category_day_panel.json"
     if not panel_path.exists():
         return ToolResult(
             ok=False,
             action="analysis.run_localgap",
             summary="",
-            error={"code": "PANEL_NOT_FOUND", "message": "请先运行 panel.build_category_day"},
+            error={"code": "PANEL_NOT_FOUND", "message": "Run panel.build_category_day before LocalGap."},
         )
 
-    with open(panel_path, "r", encoding="utf-8") as f:
-        panel_data = json.load(f)
-
-    if not panel_data:
+    panel = _load_panel(panel_path)
+    if panel.empty:
         return ToolResult(
             ok=False,
             action="analysis.run_localgap",
             summary="",
-            error={"code": "EMPTY_PANEL", "message": "Panel 数据为空"},
+            error={"code": "EMPTY_PANEL", "message": "Category-day panel is empty."},
         )
 
-    category_data = defaultdict(list)
-    for row in panel_data:
-        category = row.get("category", "")
-        if category:
-            category_data[category].append(row)
+    panel = _prepare_panel(panel)
+    enriched = compute_localgap_enriched_panel(panel)
+    result = summarize_localgap(enriched)
 
-    results = []
-    total_actual = 0
-    total_baseline = 0
+    output_dir = workspace / ".analysis"
+    processed_dir = workspace / "data" / "processed"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    processed_dir.mkdir(parents=True, exist_ok=True)
 
-    for category, rows in category_data.items():
-        activity_rows = [r for r in rows if r.get("is_activity")]
-        non_activity_rows = [r for r in rows if not r.get("is_activity")]
+    result_path = output_dir / "localgap_result.json"
+    enriched_csv_path = processed_dir / "localgap_enriched_panel.csv"
+    enriched_json_path = processed_dir / "localgap_enriched_panel.json"
 
-        if not non_activity_rows:
-            continue
+    result_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    enriched.to_csv(enriched_csv_path, index=False, encoding="utf-8-sig")
+    enriched.to_json(enriched_json_path, orient="records", force_ascii=False, indent=2, date_format="iso")
 
-        baseline_gmv = sum(r.get("gmv", 0) or 0 for r in non_activity_rows) / len(non_activity_rows)
-        baseline_exposure = sum(r.get("exposure", 0) or 0 for r in non_activity_rows) / len(non_activity_rows)
-        baseline_discount_rate = sum(r.get("discount_rate", 0) or 0 for r in non_activity_rows) / len(non_activity_rows)
-
-        actual_gmv = sum(r.get("gmv", 0) or 0 for r in activity_rows) if activity_rows else 0
-        actual_exposure = sum(r.get("exposure", 0) or 0 for r in activity_rows) if activity_rows else 0
-        actual_discount_rate = sum(r.get("discount_rate", 0) or 0 for r in activity_rows) / len(activity_rows) if activity_rows else 0
-
-        local_gap = actual_gmv - baseline_gmv
-
-        exposure_gap = (actual_exposure - baseline_exposure) * (baseline_gmv / baseline_exposure if baseline_exposure > 0 else 0)
-        discount_gap = (actual_discount_rate - baseline_discount_rate) * baseline_gmv * 0.01
-
-        payday_rows = [r for r in activity_rows if r.get("is_payday")]
-        payday_gap = (sum(r.get("gmv", 0) or 0 for r in payday_rows) / len(payday_rows) - baseline_gmv) if payday_rows else 0
-
-        interaction = local_gap - exposure_gap - discount_gap - payday_gap
-
-        total_actual += actual_gmv
-        total_baseline += baseline_gmv
-
-        results.append({
-            "category": category,
-            "baseline_gmv": round(baseline_gmv, 2),
-            "actual_gmv": round(actual_gmv, 2),
-            "local_gap": round(local_gap, 2),
-            "exposure_gap": round(exposure_gap, 2),
-            "discount_gap": round(discount_gap, 2),
-            "payday_gap": round(payday_gap, 2),
-            "interaction": round(interaction, 2),
-            "residual": round(local_gap - exposure_gap - discount_gap - payday_gap - interaction, 2),
-        })
-
-    results.sort(key=lambda x: x["local_gap"], reverse=True)
-
-    summary_result = {
-        "categories": results,
-        "total_actual_gmv": round(total_actual, 2),
-        "total_baseline_gmv": round(total_baseline, 2),
-        "total_local_gap": round(total_actual - total_baseline, 2),
-        "method": "localgap",
-        "method_status": "implemented",
-    }
-
-    output_path = workspace_path / ".analysis" / "localgap_result.json"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(summary_result, f, ensure_ascii=False, indent=2)
-
-    total_gap = total_actual - total_baseline
-    summary = f"LocalGap 分析完成: {len(results)} 品类, 总增量={round(total_gap, 2)}"
+    summary = (
+        f"LocalGap completed: {len(result['categories'])} category/categories, "
+        f"coverage={round(result['diagnostics']['coverage_rate'] * 100, 1)}%, "
+        f"total_gap={result['total_local_gap']}."
+    )
     return ToolResult(
         ok=True,
         action="analysis.run_localgap",
         summary=summary,
-        artifacts=[{
-            "type": "localgap_result",
-            "title": "localgap_result.json",
-            "path": str(output_path.relative_to(workspace_path)),
-            "total_gap": round(total_gap, 2),
-        }],
-        assistant_hint="增量分解完成，可查看各品类的 exposure_gap、discount_gap、payday_gap 贡献。"
+        artifacts=[
+            {
+                "type": "localgap_result",
+                "title": "localgap_result.json",
+                "path": str(result_path.relative_to(workspace)),
+                "method_status": result["method_status"],
+                "total_gap": result["total_local_gap"],
+                "coverage_rate": result["diagnostics"]["coverage_rate"],
+                "warnings": result["warnings"],
+            },
+            {
+                "type": "panel_data",
+                "title": "localgap_enriched_panel.csv",
+                "path": str(enriched_csv_path.relative_to(workspace)),
+                "rows": int(len(enriched)),
+            },
+            {
+                "type": "panel_data",
+                "title": "localgap_enriched_panel.json",
+                "path": str(enriched_json_path.relative_to(workspace)),
+                "rows": int(len(enriched)),
+            },
+        ],
+        assistant_hint=(
+            "Use LocalGap as the main increment accounting layer. GPS and uplift should consume "
+            "localgap_enriched_panel when available."
+        ),
     )
+
+
+def compute_localgap_enriched_panel(panel: pd.DataFrame) -> pd.DataFrame:
+    enriched = panel.sort_values(["category_key", "date"]).copy()
+    enriched["local_baseline"] = np.nan
+    enriched["baseline_obs"] = 0
+    enriched["baseline_quality"] = "unavailable"
+
+    for _, group in enriched.groupby("category_key", sort=False):
+        ordered = group.sort_values("date")
+        history_all = ordered[~ordered["is_activity"]].copy()
+        for idx, row in ordered.iterrows():
+            history = history_all[
+                (history_all["date"] < row["date"])
+                & (history_all["weekday"] == row["weekday"])
+                & (history_all["date"] >= row["date"] - pd.Timedelta(days=DEFAULT_RECENT_WINDOW_DAYS))
+            ]
+            if len(history) < DEFAULT_MIN_BASELINE_OBS:
+                history = history_all[
+                    (history_all["date"] < row["date"])
+                    & (history_all["weekday"] == row["weekday"])
+                    & (history_all["date"] >= row["date"] - pd.Timedelta(days=DEFAULT_FALLBACK_WINDOW_DAYS))
+                ]
+            if len(history) < DEFAULT_MIN_BASELINE_OBS:
+                history = history_all[
+                    (history_all["date"] < row["date"])
+                    & (history_all["date"] >= row["date"] - pd.Timedelta(days=DEFAULT_FALLBACK_WINDOW_DAYS))
+                ]
+
+            obs = int(len(history))
+            if obs >= DEFAULT_MIN_BASELINE_OBS:
+                enriched.loc[idx, "local_baseline"] = float(history["gmv"].mean())
+                enriched.loc[idx, "baseline_obs"] = obs
+                enriched.loc[idx, "baseline_quality"] = (
+                    "strong" if obs >= DEFAULT_RECOMMENDED_BASELINE_OBS else "weak"
+                )
+
+    enriched["local_gap"] = enriched["gmv"] - enriched["local_baseline"]
+    return _add_reference_terms(enriched)
+
+
+def summarize_localgap(enriched: pd.DataFrame) -> dict[str, Any]:
+    activity = enriched[enriched["is_activity"]].copy()
+    estimable = activity[activity["local_baseline"].notna()].copy()
+    warnings = _localgap_warnings(enriched, activity, estimable)
+    model = _fit_decomposition_model(estimable)
+
+    categories = _category_decomposition(estimable, model)
+    monthly = _monthly_decomposition(estimable)
+    total_actual = float(estimable["gmv"].sum()) if not estimable.empty else 0.0
+    total_baseline = float(estimable["local_baseline"].sum()) if not estimable.empty else 0.0
+    total_gap = float(estimable["local_gap"].sum()) if not estimable.empty else 0.0
+    coverage_rate = float(len(estimable) / max(len(activity), 1))
+    method_status = "implemented" if coverage_rate >= 0.5 and not _severe_warnings(warnings) else "limited"
+
+    return {
+        "method": "localgap",
+        "method_status": method_status,
+        "baseline_method": {
+            "match": "historical_non_activity_same_weekday_then_fallback",
+            "recent_window_days": DEFAULT_RECENT_WINDOW_DAYS,
+            "fallback_window_days": DEFAULT_FALLBACK_WINDOW_DAYS,
+            "min_local_baseline_obs": DEFAULT_MIN_BASELINE_OBS,
+            "recommended_local_baseline_obs": DEFAULT_RECOMMENDED_BASELINE_OBS,
+        },
+        "categories": categories,
+        "monthly_decomposition": monthly,
+        "total_actual_gmv": round(total_actual, 2),
+        "total_baseline_gmv": round(total_baseline, 2),
+        "total_local_gap": round(total_gap, 2),
+        "diagnostics": {
+            "activity_rows": int(len(activity)),
+            "estimable_rows": int(len(estimable)),
+            "coverage_rate": round(coverage_rate, 4),
+            "baseline_quality": {
+                str(key): int(value) for key, value in activity["baseline_quality"].value_counts().items()
+            },
+            "model_terms": model["terms"],
+            "r_squared": model["r_squared"],
+        },
+        "warnings": warnings,
+        "evidence_artifacts": [
+            "data/processed/category_day_panel.json",
+            "data/processed/localgap_enriched_panel.csv",
+        ],
+        "interpretation_rules": [
+            "LocalGap is the main increment accounting layer.",
+            "Channel attribution is conditional on the local baseline design and should be described directionally.",
+            "Rows without LocalBaseline are excluded from increment totals rather than imputed.",
+        ],
+    }
+
+
+def _load_panel(panel_path: Path) -> pd.DataFrame:
+    data = json.loads(panel_path.read_text(encoding="utf-8"))
+    return pd.DataFrame(data if isinstance(data, list) else [])
+
+
+def _prepare_panel(panel: pd.DataFrame) -> pd.DataFrame:
+    prepared = panel.copy()
+    if "category_key" not in prepared.columns:
+        prepared["category_key"] = prepared.get("category", prepared.get("category_name", "unknown"))
+    if "category_name" not in prepared.columns:
+        prepared["category_name"] = prepared.get("category", prepared["category_key"])
+    prepared["category_key"] = prepared["category_key"].astype(str)
+    prepared["category_name"] = prepared["category_name"].astype(str)
+    prepared["category"] = prepared.get("category", prepared["category_name"]).astype(str)
+    prepared["date"] = pd.to_datetime(prepared["date"], errors="coerce")
+    prepared = prepared.dropna(subset=["date", "category_key"]).copy()
+    for column in ["gmv", "view_uv", "exposure", "discount_rate", "discount_amount", "buy_uv"]:
+        if column not in prepared.columns:
+            prepared[column] = 0.0
+        prepared[column] = pd.to_numeric(prepared[column], errors="coerce").fillna(0.0)
+    prepared["view_uv"] = np.where(prepared["view_uv"] > 0, prepared["view_uv"], prepared["exposure"])
+    if "is_activity" not in prepared.columns:
+        prepared["is_activity"] = False
+    if "is_payday" not in prepared.columns:
+        prepared["is_payday"] = False
+    prepared["is_activity"] = prepared["is_activity"].astype(bool)
+    prepared["is_payday"] = prepared["is_payday"].astype(bool)
+    prepared["weekday"] = prepared["date"].dt.weekday
+    prepared["month"] = prepared["date"].dt.to_period("M").astype(str)
+    prepared["days_to_payday"] = pd.to_numeric(
+        prepared.get("days_to_payday", prepared["date"].dt.day - 27), errors="coerce"
+    ).fillna(0.0)
+    return prepared
+
+
+def _add_reference_terms(panel: pd.DataFrame) -> pd.DataFrame:
+    output = panel.copy()
+    output["log_view_uv"] = np.log1p(output["view_uv"].clip(lower=0))
+    non_activity = output[~output["is_activity"]].copy()
+    refs = (
+        non_activity.groupby("category_key", as_index=False)
+        .agg(ref_log_view=("log_view_uv", "median"), ref_discount=("discount_rate", "median"))
+    )
+    output = output.merge(refs, on="category_key", how="left")
+    output["ref_log_view"] = output["ref_log_view"].fillna(output["log_view_uv"].median())
+    output["ref_discount"] = output["ref_discount"].fillna(output["discount_rate"].median())
+    output["excess_view"] = output["log_view_uv"] - output["ref_log_view"]
+    output["excess_discount"] = output["discount_rate"] - output["ref_discount"]
+    output["excess_inter"] = output["excess_view"] * output["excess_discount"]
+    output["dist2pay"] = output["days_to_payday"].astype(float)
+    output["dist2pay_sq"] = output["dist2pay"] ** 2
+    return output
+
+
+def _fit_decomposition_model(estimable: pd.DataFrame) -> dict[str, Any]:
+    candidate_terms = ["excess_discount", "excess_view", "excess_inter", "dist2pay", "dist2pay_sq"]
+    terms = [
+        term
+        for term in candidate_terms
+        if term in estimable.columns and estimable[term].notna().sum() >= 3 and estimable[term].nunique(dropna=True) > 1
+    ]
+    if estimable.empty or not terms or len(estimable) <= len(terms) + 1:
+        return {"terms": [], "beta": {}, "r_squared": None}
+
+    frame = estimable.dropna(subset=["local_gap", *terms]).copy()
+    if len(frame) <= len(terms) + 1:
+        return {"terms": [], "beta": {}, "r_squared": None}
+    X = np.column_stack([np.ones(len(frame)), *[frame[term].astype(float).to_numpy() for term in terms]])
+    y = frame["local_gap"].astype(float).to_numpy()
+    beta = _safe_lstsq(X, y)
+    pred = X @ beta
+    sst = float(np.sum((y - np.mean(y)) ** 2))
+    sse = float(np.sum((y - pred) ** 2))
+    r_squared = 1 - sse / sst if sst > 0 else None
+    return {
+        "terms": terms,
+        "beta": {"intercept": float(beta[0]), **{term: float(beta[index + 1]) for index, term in enumerate(terms)}},
+        "r_squared": round(float(r_squared), 4) if r_squared is not None else None,
+    }
+
+
+def _category_decomposition(estimable: pd.DataFrame, model: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    terms = model.get("terms") or []
+    beta = model.get("beta") or {}
+    for (category_key, category_name), group in estimable.groupby(["category_key", "category_name"], sort=False):
+        local_gap = float(group["local_gap"].sum())
+        exposure_gap = _term_contribution(group, beta, ["excess_view"])
+        discount_gap = _term_contribution(group, beta, ["excess_discount"])
+        interaction = _term_contribution(group, beta, ["excess_inter"])
+        payday_gap = _term_contribution(group, beta, ["dist2pay", "dist2pay_sq"])
+        explained = exposure_gap + discount_gap + interaction + payday_gap
+        rows.append(
+            {
+                "category_key": str(category_key),
+                "category": str(category_name),
+                "activity_rows": int(len(group)),
+                "baseline_quality": {str(k): int(v) for k, v in group["baseline_quality"].value_counts().items()},
+                "baseline_gmv": round(float(group["local_baseline"].sum()), 2),
+                "actual_gmv": round(float(group["gmv"].sum()), 2),
+                "local_gap": round(local_gap, 2),
+                "exposure_gap": round(exposure_gap, 2),
+                "discount_gap": round(discount_gap, 2),
+                "payday_gap": round(payday_gap, 2),
+                "interaction": round(interaction, 2),
+                "residual": round(local_gap - explained, 2),
+                "decomposition_terms": terms,
+            }
+        )
+    return sorted(rows, key=lambda item: item["local_gap"], reverse=True)
+
+
+def _monthly_decomposition(estimable: pd.DataFrame) -> list[dict[str, Any]]:
+    if estimable.empty:
+        return []
+    grouped = (
+        estimable.groupby("month", as_index=False)
+        .agg(actual_gmv=("gmv", "sum"), baseline_gmv=("local_baseline", "sum"), local_gap=("local_gap", "sum"), rows=("gmv", "size"))
+        .sort_values("month")
+    )
+    return [
+        {
+            "month": str(row.month),
+            "actual_gmv": round(float(row.actual_gmv), 2),
+            "baseline_gmv": round(float(row.baseline_gmv), 2),
+            "local_gap": round(float(row.local_gap), 2),
+            "rows": int(row.rows),
+        }
+        for row in grouped.itertuples(index=False)
+    ]
+
+
+def _term_contribution(group: pd.DataFrame, beta: dict[str, float], terms: list[str]) -> float:
+    value = 0.0
+    for term in terms:
+        if term in group.columns and term in beta:
+            value += float((group[term].fillna(0.0) * beta[term]).sum())
+    return value
+
+
+def _localgap_warnings(enriched: pd.DataFrame, activity: pd.DataFrame, estimable: pd.DataFrame) -> list[str]:
+    warnings: list[str] = []
+    if activity.empty:
+        warnings.append("No activity rows are available for LocalGap.")
+    coverage = len(estimable) / max(len(activity), 1)
+    if coverage < 0.5:
+        warnings.append("Less than half of activity rows have enough historical non-activity baseline support.")
+    if (activity["baseline_quality"] == "weak").mean() > 0.5:
+        warnings.append("Most estimable activity rows have weak baseline support.")
+    if enriched["category_key"].nunique() < 2:
+        warnings.append("Only one category is available; category-level decomposition is limited.")
+    if estimable["excess_view"].nunique(dropna=True) < 2 and estimable["excess_discount"].nunique(dropna=True) < 2:
+        warnings.append("Exposure and discount variation are too thin for channel attribution.")
+    return warnings
+
+
+def _severe_warnings(warnings: list[str]) -> bool:
+    severe_markers = ["No activity rows", "Less than half"]
+    return any(any(marker in warning for marker in severe_markers) for warning in warnings)
+
+
+def _safe_lstsq(X: np.ndarray, y: np.ndarray) -> np.ndarray:
+    try:
+        beta, *_ = np.linalg.lstsq(X, y, rcond=None)
+    except np.linalg.LinAlgError:
+        beta = np.zeros(X.shape[1])
+    return np.nan_to_num(beta, nan=0.0, posinf=0.0, neginf=0.0)

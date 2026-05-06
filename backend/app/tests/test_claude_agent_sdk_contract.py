@@ -9,7 +9,7 @@ import pytest
 
 from app.agent.claude_adapter import MockClaudeRuntimeAdapter
 from app.agent.session_store import SessionStore
-from app.core.database import get_session, init_db
+from app.core.database import get_session, init_db, reset_engine
 from app.projects.models import AnalysisSession
 
 
@@ -18,10 +18,12 @@ def isolated_db():
     old_cwd = os.getcwd()
     tmp = tempfile.mkdtemp()
     os.chdir(tmp)
+    reset_engine()
     init_db()
     try:
         yield tmp
     finally:
+        reset_engine()
         os.chdir(old_cwd)
         shutil.rmtree(tmp)
 
@@ -288,7 +290,7 @@ def test_sdk_event_mapping_includes_expected_stream_events(monkeypatch):
     assert "final_answer" in event_types
 
 
-def test_sdk_event_mapping_overrides_hallucinated_project_id(monkeypatch):
+def test_sdk_event_mapping_overrides_hallucinated_project_id(monkeypatch, isolated_db):
     import app.agent.claude_agent_sdk_adapter as sdk_adapter
 
     class FakeToolUseBlock:

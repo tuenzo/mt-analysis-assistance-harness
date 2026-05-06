@@ -12,18 +12,19 @@ import pandas as pd
 from app.tools.schemas import ToolResult
 
 
+DEFAULT_FEATURES = ["local_baseline", "gmv", "view_uv", "discount_rate", "buy_uv", "dist2pay"]
+
+
 def run_gps_uplift(project_id: str, workspace_path: str, payload: dict | None = None) -> ToolResult:
     workspace = Path(workspace_path)
-    panel_path = workspace / "data" / "processed" / "category_day_panel.json"
-    if not panel_path.exists():
+    panel = _load_best_panel(workspace)
+    if panel is None:
         return ToolResult(
             ok=False,
             action="analysis.run_gps_uplift",
             summary="",
             error={"code": "PANEL_NOT_FOUND", "message": "Run panel.build_category_day before GPS/uplift analysis."},
         )
-
-    panel = _load_panel(panel_path)
     if panel.empty:
         return ToolResult(
             ok=False,
@@ -34,12 +35,12 @@ def run_gps_uplift(project_id: str, workspace_path: str, payload: dict | None = 
 
     config = payload or {}
     panel = _prepare_panel(panel, config)
-    localgap_by_category = _load_localgap_by_category(workspace)
     warnings = _support_warnings(panel)
+    working = _analysis_sample(panel)
 
     dose_response = {
-        "exposure": _estimate_dose_response(panel, "exposure_intensity"),
-        "discount": _estimate_dose_response(panel, "discount_intensity"),
+        "exposure": _estimate_dose_response(working, "exposure_intensity"),
+        "discount": _estimate_dose_response(working, "discount_intensity"),
     }
     warnings = _dedupe(
         [
@@ -51,16 +52,28 @@ def run_gps_uplift(project_id: str, workspace_path: str, payload: dict | None = 
             ],
         ]
     )
-    ranking = _build_uplift_ranking(panel, dose_response, localgap_by_category)
+
+    uplift = _run_time_safe_uplift(working, treatment_col="combined_intensity", outcome_col="local_gap")
+    warnings = _dedupe([*warnings, *uplift.get("warnings", [])])
+    ranking = _build_ranking(panel, working, dose_response, uplift)
     recommendations = _build_recommendations(ranking, dose_response)
 
-    method_status = "limited" if warnings or any(item.get("status") == "limited" for item in dose_response.values()) else "implemented"
+    limited = bool(warnings) or any(item.get("status") == "limited" for item in dose_response.values())
+    if uplift.get("status") != "ok":
+        limited = True
     result = {
         "method": "gps_uplift",
-        "method_status": method_status,
+        "method_status": "limited" if limited else "implemented",
         "status": "completed",
         "outcome": "local_gap",
+        "sample": {
+            "row_count": int(len(panel)),
+            "analysis_rows": int(len(working)),
+            "category_count": int(panel["category_key"].nunique()),
+            "activity_rows": int(panel["is_activity"].sum()),
+        },
         "dose_response": dose_response,
+        "uplift_model": uplift,
         "uplift_ranking": ranking,
         "segments": [
             {
@@ -68,6 +81,7 @@ def run_gps_uplift(project_id: str, workspace_path: str, payload: dict | None = 
                 "category": item["category"],
                 "recommendation": item["action"],
                 "uplift_score": item["uplift_score"],
+                "stability": item.get("stability"),
                 "evidence": item["evidence"],
             }
             for item in recommendations
@@ -77,17 +91,20 @@ def run_gps_uplift(project_id: str, workspace_path: str, payload: dict | None = 
             "row_count": int(len(panel)),
             "category_count": int(panel["category_key"].nunique()),
             "activity_rows": int(panel["is_activity"].sum()),
-            "treatments": ["exposure", "discount"],
-            "baseline_quality": {str(key): int(value) for key, value in panel["baseline_quality"].value_counts().items()},
+            "treatments": ["exposure", "discount", "combined_intensity"],
+            "baseline_quality": {
+                str(key): int(value) for key, value in panel["baseline_quality"].value_counts().items()
+            },
+            "fold_count": int(uplift.get("fold_count") or 0),
         },
         "method_assumptions": [
-            "Dose-response uses a deterministic generalized-propensity approximation on category-day panel data.",
-            "Uplift ranking uses LocalGap as the primary increment accounting layer and treats GPS curves as directional support.",
-            "Recommendations require business guardrails such as margin, stock, and channel capacity before rollout.",
+            "GPS estimates directional dose-response over supported treatment ranges.",
+            "Uplift uses time-safe folds when enough temporal support exists.",
+            "LocalGap remains the main increment accounting layer; uplift is prioritization logic.",
         ],
         "warnings": warnings,
         "evidence_artifacts": [
-            "data/processed/category_day_panel.json",
+            "data/processed/localgap_enriched_panel.csv",
             ".analysis/localgap_result.json",
         ],
     }
@@ -105,8 +122,8 @@ def run_gps_uplift(project_id: str, workspace_path: str, payload: dict | None = 
     _write_recommendations_csv(rec_path, recommendations)
 
     summary = (
-        f"GPS/uplift analysis completed: {len(ranking)} categories, "
-        f"{len(recommendations)} recommendations, status={method_status}."
+        f"GPS/uplift completed: {len(ranking)} category/categories, "
+        f"{len(recommendations)} recommendation(s), status={result['method_status']}."
     )
     return ToolResult(
         ok=True,
@@ -117,16 +134,18 @@ def run_gps_uplift(project_id: str, workspace_path: str, payload: dict | None = 
                 "type": "model_output",
                 "title": "gps_uplift_result.json",
                 "path": str(gps_path.relative_to(workspace)),
-                "method_status": method_status,
+                "method_status": result["method_status"],
                 "status": "completed",
+                "warnings": warnings,
             },
             {
                 "type": "model_output",
                 "title": "uplift_result.json",
                 "path": str(uplift_path.relative_to(workspace)),
-                "method_status": method_status,
+                "method_status": result["method_status"],
                 "status": "completed",
                 "segment_count": len(result["segments"]),
+                "fold_count": result["diagnostics"]["fold_count"],
             },
             {
                 "type": "table",
@@ -136,187 +155,311 @@ def run_gps_uplift(project_id: str, workspace_path: str, payload: dict | None = 
             },
         ],
         assistant_hint=(
-            "GPS/uplift is implemented as directional ranking evidence. Use recommended_actions for report planning, "
-            "but keep LocalGap as the main increment accounting layer."
+            "Treat GPS and uplift as dose-response and prioritization evidence. Keep LocalGap as the main increment layer."
         ),
     )
 
 
-def _load_panel(panel_path: Path) -> pd.DataFrame:
-    data = json.loads(panel_path.read_text(encoding="utf-8"))
-    if not isinstance(data, list):
-        return pd.DataFrame()
-    return pd.DataFrame(data)
+def _load_best_panel(workspace: Path) -> pd.DataFrame | None:
+    enriched_csv = workspace / "data" / "processed" / "localgap_enriched_panel.csv"
+    if enriched_csv.exists():
+        return pd.read_csv(enriched_csv)
+    panel_json = workspace / "data" / "processed" / "category_day_panel.json"
+    if not panel_json.exists():
+        return None
+    data = json.loads(panel_json.read_text(encoding="utf-8"))
+    return pd.DataFrame(data if isinstance(data, list) else [])
 
 
 def _prepare_panel(panel: pd.DataFrame, config: dict) -> pd.DataFrame:
     prepared = panel.copy()
     if "category_key" not in prepared.columns:
-        prepared["category_key"] = prepared.get("category", prepared.get("category_name", "unknown")).astype(str)
+        prepared["category_key"] = prepared.get("category", prepared.get("category_name", "unknown"))
     if "category_name" not in prepared.columns:
-        prepared["category_name"] = prepared.get("category", prepared["category_key"]).astype(str)
+        prepared["category_name"] = prepared.get("category", prepared["category_key"])
+    prepared["category_key"] = prepared["category_key"].astype(str)
+    prepared["category_name"] = prepared["category_name"].astype(str)
     prepared["date"] = pd.to_datetime(prepared["date"], errors="coerce")
     prepared = prepared.dropna(subset=["date", "category_key"]).copy()
 
-    for column in ["gmv", "view_uv", "exposure", "discount_rate", "discount_amount", "is_payday"]:
+    for column in ["gmv", "view_uv", "exposure", "discount_rate", "discount_amount", "buy_uv", "local_baseline", "local_gap"]:
         if column not in prepared.columns:
-            prepared[column] = 0
+            prepared[column] = np.nan if column in {"local_baseline", "local_gap"} else 0.0
+        prepared[column] = pd.to_numeric(prepared[column], errors="coerce")
+    prepared["view_uv"] = prepared["view_uv"].fillna(0.0)
+    prepared["exposure"] = prepared["exposure"].fillna(0.0)
+    prepared["view_uv"] = np.where(prepared["view_uv"] > 0, prepared["view_uv"], prepared["exposure"])
+    prepared["discount_rate"] = prepared["discount_rate"].fillna(0.0).clip(lower=0.0)
+    prepared["gmv"] = prepared["gmv"].fillna(0.0)
+    prepared["buy_uv"] = prepared["buy_uv"].fillna(0.0)
+
     if "is_activity" not in prepared.columns:
         prepared["is_activity"] = False
+    if "is_payday" not in prepared.columns:
+        prepared["is_payday"] = False
     prepared["is_activity"] = prepared["is_activity"].astype(bool)
     prepared["is_payday"] = prepared["is_payday"].astype(bool)
-    for column in ["gmv", "view_uv", "exposure", "discount_rate", "discount_amount"]:
-        prepared[column] = pd.to_numeric(prepared[column], errors="coerce").fillna(0.0)
-    prepared["view_uv"] = np.where(prepared["view_uv"] > 0, prepared["view_uv"], prepared["exposure"])
     prepared["weekday"] = prepared["date"].dt.weekday
+    prepared["month"] = prepared["date"].dt.to_period("M").astype(str)
+    prepared["dist2pay"] = pd.to_numeric(
+        prepared.get("dist2pay", prepared.get("days_to_payday", prepared["date"].dt.day - 27)), errors="coerce"
+    ).fillna(0.0)
+
+    if prepared["local_baseline"].isna().all():
+        prepared = _add_fallback_local_gap(prepared, int(config.get("baseline_window_days", 56)))
+    prepared["local_gap"] = prepared["local_gap"].fillna(prepared["gmv"] - prepared["local_baseline"])
+    prepared["baseline_quality"] = prepared.get("baseline_quality", "unavailable").fillna("unavailable").astype(str)
     prepared["exposure_intensity"] = np.log1p(prepared["view_uv"].clip(lower=0))
     prepared["discount_intensity"] = prepared["discount_rate"].clip(lower=0)
-    return _add_local_baseline(prepared, int(config.get("baseline_window_days", 56)))
+    prepared["combined_intensity"] = _standardize(prepared["exposure_intensity"]) + _standardize(prepared["discount_intensity"])
+    return prepared
 
 
-def _add_local_baseline(panel: pd.DataFrame, baseline_window_days: int) -> pd.DataFrame:
+def _add_fallback_local_gap(panel: pd.DataFrame, baseline_window_days: int) -> pd.DataFrame:
     output = panel.sort_values(["category_key", "date"]).copy()
-    output["local_baseline"] = 0.0
+    output["local_baseline"] = np.nan
     output["baseline_obs"] = 0
     output["baseline_quality"] = "unavailable"
-
-    for _, group in output.groupby("category_key"):
+    for _, group in output.groupby("category_key", sort=False):
         ordered = group.sort_values("date")
-        category_non_activity = ordered.loc[~ordered["is_activity"], "gmv"]
-        category_fallback = float(category_non_activity.mean()) if not category_non_activity.empty else 0.0
+        history_all = ordered[~ordered["is_activity"]]
         for idx, row in ordered.iterrows():
-            history = ordered[
-                (ordered["date"] < row["date"])
-                & (~ordered["is_activity"])
-                & (ordered["weekday"] == row["weekday"])
-                & (ordered["date"] >= row["date"] - pd.Timedelta(days=baseline_window_days))
+            history = history_all[
+                (history_all["date"] < row["date"])
+                & (history_all["weekday"] == row["weekday"])
+                & (history_all["date"] >= row["date"] - pd.Timedelta(days=baseline_window_days))
             ]
             if len(history) < 2:
-                history = ordered[(ordered["date"] < row["date"]) & (~ordered["is_activity"])]
-            baseline = float(history["gmv"].mean()) if len(history) >= 2 else category_fallback
-            obs = int(len(history))
-            quality = "strong" if obs >= 4 else "weak" if obs >= 2 else "fallback" if category_fallback else "unavailable"
-            output.loc[idx, "local_baseline"] = baseline
-            output.loc[idx, "baseline_obs"] = obs
-            output.loc[idx, "baseline_quality"] = quality
-
+                history = history_all[(history_all["date"] < row["date"])]
+            if len(history) >= 2:
+                output.loc[idx, "local_baseline"] = float(history["gmv"].mean())
+                output.loc[idx, "baseline_obs"] = int(len(history))
+                output.loc[idx, "baseline_quality"] = "strong" if len(history) >= 4 else "weak"
     output["local_gap"] = output["gmv"] - output["local_baseline"]
     return output
 
 
+def _analysis_sample(panel: pd.DataFrame) -> pd.DataFrame:
+    sample = panel[panel["is_activity"] & panel["local_gap"].notna()].copy()
+    if len(sample) < 6:
+        sample = panel[panel["local_gap"].notna()].copy()
+    return sample.dropna(subset=["local_gap", "combined_intensity"]).copy()
+
+
 def _estimate_dose_response(panel: pd.DataFrame, treatment_col: str) -> dict[str, Any]:
-    frame = panel.copy()
-    support = int(frame[treatment_col].nunique())
-    if len(frame) < 4 or support < 2:
+    support = int(panel[treatment_col].nunique(dropna=True)) if treatment_col in panel.columns else 0
+    if panel.empty or len(panel) < 6 or support < 3:
         return {
             "status": "limited",
             "treatment": treatment_col,
             "curve": [],
-            "diagnostics": {"support": support, "row_count": int(len(frame))},
-            "warnings": [f"{treatment_col} has insufficient support for a dose-response curve."],
+            "diagnostics": {"support": support, "row_count": int(len(panel)), "overlap_quality": "insufficient"},
+            "warnings": [f"{treatment_col} has insufficient sample support for GPS dose-response."],
         }
 
+    frame = panel.dropna(subset=[treatment_col, "local_gap"]).copy()
     treatment = frame[treatment_col].astype(float).to_numpy()
     outcome = frame["local_gap"].astype(float).to_numpy()
-    gps = _estimate_gps(frame, treatment_col)
-    X = np.column_stack([np.ones(len(frame)), treatment, treatment**2, gps, treatment * gps, frame["is_activity"].astype(float)])
+    gps_current, predicted_treatment, sigma = _estimate_gps(frame, treatment_col)
+    X = np.column_stack(
+        [
+            np.ones(len(frame)),
+            treatment,
+            treatment**2,
+            gps_current,
+            gps_current**2,
+            treatment * gps_current,
+        ]
+    )
     beta = _safe_lstsq(X, outcome)
 
-    quantiles = np.linspace(0.05, 0.95, min(7, max(3, support)))
-    doses = np.unique(np.quantile(treatment, quantiles))
+    lower = float(np.quantile(treatment, 0.05))
+    upper = float(np.quantile(treatment, 0.95))
+    if lower == upper:
+        lower = float(np.min(treatment))
+        upper = float(np.max(treatment))
+    grid = np.linspace(lower, upper, min(9, max(5, support)))
+
     curve: list[dict[str, Any]] = []
-    for dose in doses:
-        gps_at_dose = float(np.median(gps))
-        predicted = float(np.array([1.0, dose, dose**2, gps_at_dose, dose * gps_at_dose, 1.0]) @ beta)
-        nearest = frame.iloc[np.argsort(np.abs(treatment - dose))[: max(1, min(5, len(frame)))]]
+    for dose in grid:
+        gps_for_dose = _normal_density(np.full(len(frame), dose), predicted_treatment, sigma)
+        design = np.column_stack(
+            [
+                np.ones(len(frame)),
+                np.full(len(frame), dose),
+                np.full(len(frame), dose**2),
+                gps_for_dose,
+                gps_for_dose**2,
+                np.full(len(frame), dose) * gps_for_dose,
+            ]
+        )
+        predicted = design @ beta
+        nearest = frame.iloc[np.argsort(np.abs(treatment - dose))[: max(1, min(8, len(frame)))]]
         curve.append(
             {
                 "dose": round(float(dose), 4),
-                "predicted_local_gap": round(predicted, 4),
+                "predicted_local_gap": round(float(np.mean(predicted)), 4),
                 "observed_mean_local_gap": round(float(nearest["local_gap"].mean()), 4),
-                "row_count": int(len(nearest)),
+                "nearest_row_count": int(len(nearest)),
             }
         )
 
     shape = _curve_shape([row["predicted_local_gap"] for row in curve])
+    gps_q = np.quantile(gps_current, [0.05, 0.5, 0.95])
+    overlap_quality = "strong" if gps_q[0] > 1e-4 and support >= 5 else "thin"
     warnings = []
-    if support < 4:
-        warnings.append(f"{treatment_col} support is thin; interpret the curve directionally.")
+    if overlap_quality == "thin":
+        warnings.append(f"{treatment_col} overlap is thin; interpret GPS curve directionally.")
     if shape == "unstable":
         warnings.append(f"{treatment_col} response curve is unstable across supported doses.")
 
     return {
         "status": "limited" if warnings else "implemented",
         "treatment": treatment_col,
+        "supported_range": {"lower": round(lower, 4), "upper": round(upper, 4)},
         "curve": curve,
         "diagnostics": {
             "support": support,
             "row_count": int(len(frame)),
-            "gps_mean": round(float(np.mean(gps)), 6),
+            "sigma": round(float(sigma), 6),
+            "gps_quantiles": [round(float(value), 6) for value in gps_q],
+            "overlap_quality": overlap_quality,
             "response_shape": shape,
         },
         "warnings": warnings,
     }
 
 
-def _estimate_gps(frame: pd.DataFrame, treatment_col: str) -> np.ndarray:
+def _estimate_gps(frame: pd.DataFrame, treatment_col: str) -> tuple[np.ndarray, np.ndarray, float]:
     y = frame[treatment_col].astype(float).to_numpy()
     covariates = pd.DataFrame(
         {
             "intercept": 1.0,
             "weekday": frame["weekday"].astype(float),
             "is_payday": frame["is_payday"].astype(float),
-            "baseline": frame["local_baseline"].astype(float),
+            "local_baseline": frame["local_baseline"].fillna(frame["gmv"].mean()).astype(float),
             "category_avg_gmv": frame.groupby("category_key")["gmv"].transform("mean").astype(float),
+            "dist2pay": frame["dist2pay"].astype(float),
         }
     ).to_numpy()
     beta = _safe_lstsq(covariates, y)
     predicted = covariates @ beta
     residual = y - predicted
-    sigma = max(float(np.std(residual)), 1e-6)
-    density = np.exp(-0.5 * ((residual / sigma) ** 2)) / (sigma * math.sqrt(2 * math.pi))
-    return np.clip(density, 1e-9, None)
+    sigma = max(float(np.std(residual, ddof=1)), 1e-6)
+    return _normal_density(y, predicted, sigma), predicted, sigma
 
 
-def _build_uplift_ranking(
+def _run_time_safe_uplift(panel: pd.DataFrame, treatment_col: str, outcome_col: str) -> dict[str, Any]:
+    if panel.empty or len(panel) < 8 or panel[treatment_col].nunique(dropna=True) < 3:
+        return {
+            "status": "insufficient_support",
+            "warnings": ["Insufficient rows or treatment variation for time-safe uplift folds."],
+            "scores": [],
+            "fold_count": 0,
+        }
+    frame = panel.dropna(subset=[treatment_col, outcome_col, "date"]).sort_values("date").copy()
+    threshold = float(frame[treatment_col].quantile(0.75))
+    frame["treated"] = (frame[treatment_col] >= threshold).astype(int)
+    if frame["treated"].nunique() < 2:
+        return {
+            "status": "insufficient_treatment_split",
+            "warnings": ["High-treatment split has no variation."],
+            "scores": [],
+            "fold_count": 0,
+        }
+
+    features = [column for column in DEFAULT_FEATURES if column in frame.columns and column not in {treatment_col, outcome_col}]
+    folds = _build_time_folds(frame)
+    fold_rows: list[pd.DataFrame] = []
+    for fold_id, (train_index, test_index) in enumerate(folds, start=1):
+        train = frame.loc[train_index].copy()
+        test = frame.loc[test_index].copy()
+        if train.empty or test.empty or train["treated"].nunique() < 2:
+            continue
+        beta = _fit_linear_uplift(train, features, outcome_col)
+        test["predicted_uplift"] = _predict_uplift(test, beta, features)
+        test["fold_id"] = fold_id
+        fold_rows.append(test[["category_key", "category_name", "predicted_uplift", "fold_id"]])
+
+    if not fold_rows:
+        return {
+            "status": "insufficient_estimable_folds",
+            "warnings": ["Time-safe folds could not estimate uplift with both treatment levels."],
+            "scores": [],
+            "fold_count": 0,
+            "threshold": threshold,
+            "features": features,
+        }
+
+    scores = pd.concat(fold_rows, ignore_index=True)
+    category_scores = (
+        scores.groupby(["category_key", "category_name"], as_index=False)
+        .agg(
+            mean_uplift=("predicted_uplift", "mean"),
+            fold_count=("fold_id", "nunique"),
+            positive_fold_share=("predicted_uplift", lambda values: float((values > 0).mean())),
+        )
+    )
+    category_scores["stability"] = category_scores["positive_fold_share"].apply(lambda value: max(value, 1 - value))
+    category_scores["bucket"] = category_scores.apply(
+        lambda row: _assign_bucket(float(row["mean_uplift"]), float(row["stability"])),
+        axis=1,
+    )
+    rows = [
+        {
+            "category_key": str(row.category_key),
+            "category": str(row.category_name),
+            "mean_uplift": round(float(row.mean_uplift), 4),
+            "fold_count": int(row.fold_count),
+            "positive_fold_share": round(float(row.positive_fold_share), 4),
+            "stability": round(float(row.stability), 4),
+            "bucket": str(row.bucket),
+        }
+        for row in category_scores.itertuples(index=False)
+    ]
+    return {
+        "status": "ok",
+        "threshold": round(threshold, 4),
+        "features": features,
+        "fold_count": int(scores["fold_id"].nunique()),
+        "scores": rows,
+        "warnings": [],
+    }
+
+
+def _build_ranking(
     panel: pd.DataFrame,
+    working: pd.DataFrame,
     dose_response: dict[str, dict[str, Any]],
-    localgap_by_category: dict[str, float],
+    uplift: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    uplift_by_category = {item["category_key"]: item for item in uplift.get("scores", [])}
     rows: list[dict[str, Any]] = []
-    for (category_key, category_name), group in panel.groupby(["category_key", "category_name"]):
-        exposure_uplift = _dose_uplift(group, "exposure_intensity")
-        discount_uplift = _dose_uplift(group, "discount_intensity")
-        local_gap_total = float(localgap_by_category.get(str(category_key), group.loc[group["is_activity"], "local_gap"].sum()))
-        baseline_gmv = float(group["local_baseline"].mean())
-        uplift_score = exposure_uplift + 0.6 * discount_uplift + 0.2 * local_gap_total
-        bucket = _classify_bucket(uplift_score, local_gap_total, baseline_gmv)
+    for (category_key, category_name), group in panel.groupby(["category_key", "category_name"], sort=False):
+        work_group = working[working["category_key"] == category_key]
+        local_gap = float(work_group["local_gap"].sum()) if not work_group.empty else 0.0
+        dose_signal = _dose_uplift(work_group, "combined_intensity") if not work_group.empty else 0.0
+        uplift_score_record = uplift_by_category.get(str(category_key), {})
+        model_uplift = float(uplift_score_record.get("mean_uplift", dose_signal) or 0.0)
+        stability = uplift_score_record.get("stability")
+        uplift_score = model_uplift + 0.2 * local_gap
+        bucket = uplift_score_record.get("bucket") or _assign_bucket(uplift_score, stability)
         rows.append(
             {
                 "category_key": str(category_key),
                 "category": str(category_name),
                 "bucket": bucket,
                 "uplift_score": round(float(uplift_score), 4),
-                "exposure_uplift": round(float(exposure_uplift), 4),
-                "discount_uplift": round(float(discount_uplift), 4),
-                "local_gap": round(float(local_gap_total), 4),
-                "baseline_gmv": round(float(baseline_gmv), 4),
-                "evidence": _ranking_evidence(dose_response),
+                "model_uplift": round(float(model_uplift), 4),
+                "dose_uplift": round(float(dose_signal), 4),
+                "local_gap": round(float(local_gap), 4),
+                "fold_count": int(uplift_score_record.get("fold_count", 0) or 0),
+                "positive_fold_share": uplift_score_record.get("positive_fold_share"),
+                "stability": stability,
+                "evidence": _ranking_evidence(dose_response, uplift.get("status")),
             }
         )
     return sorted(rows, key=lambda item: item["uplift_score"], reverse=True)
-
-
-def _dose_uplift(group: pd.DataFrame, treatment_col: str) -> float:
-    if group[treatment_col].nunique() < 2:
-        return 0.0
-    low_cut = float(group[treatment_col].quantile(0.35))
-    high_cut = float(group[treatment_col].quantile(0.65))
-    low = group.loc[group[treatment_col] <= low_cut, "local_gap"]
-    high = group.loc[group[treatment_col] >= high_cut, "local_gap"]
-    if low.empty or high.empty:
-        return 0.0
-    return float(high.mean() - low.mean())
 
 
 def _build_recommendations(ranking: list[dict[str, Any]], dose_response: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -331,19 +474,77 @@ def _build_recommendations(ranking: list[dict[str, Any]], dose_response: dict[st
                 "action": action,
                 "reason": (
                     f"bucket={item['bucket']}; uplift_score={item['uplift_score']}; "
-                    f"LocalGap={item['local_gap']}; exposure_uplift={item['exposure_uplift']}; "
-                    f"discount_uplift={item['discount_uplift']}"
+                    f"model_uplift={item['model_uplift']}; LocalGap={item['local_gap']}; "
+                    f"fold_count={item['fold_count']}; stability={item.get('stability')}"
                 ),
                 "guardrail": _guardrail_for_bucket(item["bucket"]),
                 "evidence": item["evidence"],
                 "bucket": item["bucket"],
                 "uplift_score": item["uplift_score"],
                 "local_gap": item["local_gap"],
-                "exposure_uplift": item["exposure_uplift"],
-                "discount_uplift": item["discount_uplift"],
+                "model_uplift": item["model_uplift"],
+                "dose_uplift": item["dose_uplift"],
+                "fold_count": item["fold_count"],
+                "stability": item.get("stability"),
             }
         )
     return recommendations
+
+
+def _fit_linear_uplift(train: pd.DataFrame, features: list[str], outcome_col: str) -> np.ndarray:
+    frame = train.copy()
+    for column in features:
+        frame[column] = pd.to_numeric(frame[column], errors="coerce").fillna(frame[column].median())
+    x_base = frame[features].to_numpy(dtype=float) if features else np.empty((len(frame), 0))
+    treated = frame["treated"].to_numpy(dtype=float).reshape(-1, 1)
+    interaction = x_base * treated if features else np.empty((len(frame), 0))
+    design = np.column_stack([np.ones(len(frame)), treated, x_base, interaction])
+    target = frame[outcome_col].to_numpy(dtype=float)
+    return _safe_lstsq(design, target)
+
+
+def _predict_uplift(df: pd.DataFrame, beta: np.ndarray, features: list[str]) -> np.ndarray:
+    frame = df.copy()
+    for column in features:
+        frame[column] = pd.to_numeric(frame[column], errors="coerce").fillna(frame[column].median())
+    x_base = frame[features].to_numpy(dtype=float) if features else np.empty((len(frame), 0))
+    ones = np.ones((len(frame), 1))
+    treated_one = np.ones((len(frame), 1))
+    treated_zero = np.zeros((len(frame), 1))
+    design_one = np.column_stack([ones, treated_one, x_base, x_base * treated_one if features else np.empty((len(frame), 0))])
+    design_zero = np.column_stack([ones, treated_zero, x_base, x_base * treated_zero if features else np.empty((len(frame), 0))])
+    return design_one @ beta - design_zero @ beta
+
+
+def _build_time_folds(frame: pd.DataFrame) -> list[tuple[pd.Index, pd.Index]]:
+    periods = [value for value in sorted(frame["month"].dropna().unique())]
+    if len(periods) >= 3:
+        folds = []
+        for index in range(1, len(periods)):
+            train_periods = periods[:index]
+            test_period = periods[index]
+            train_index = frame.index[frame["month"].isin(train_periods)]
+            test_index = frame.index[frame["month"] == test_period]
+            if len(train_index) and len(test_index):
+                folds.append((train_index, test_index))
+        return folds
+    ordered = frame.sort_values("date")
+    cutoff = max(int(len(ordered) * 0.7), 1)
+    if cutoff >= len(ordered):
+        return []
+    return [(ordered.index[:cutoff], ordered.index[cutoff:])]
+
+
+def _dose_uplift(group: pd.DataFrame, treatment_col: str) -> float:
+    if group.empty or group[treatment_col].nunique(dropna=True) < 2:
+        return 0.0
+    low_cut = float(group[treatment_col].quantile(0.35))
+    high_cut = float(group[treatment_col].quantile(0.65))
+    low = group.loc[group[treatment_col] <= low_cut, "local_gap"]
+    high = group.loc[group[treatment_col] >= high_cut, "local_gap"]
+    if low.empty or high.empty:
+        return 0.0
+    return float(high.mean() - low.mean())
 
 
 def _action_for_bucket(item: dict[str, Any], exposure_shape: str, discount_shape: str) -> str:
@@ -351,10 +552,8 @@ def _action_for_bucket(item: dict[str, Any], exposure_shape: str, discount_shape
         return "scale_exposure_selectively"
     if item["bucket"] == "Prioritize":
         return "protect_high_response_category"
-    if item["bucket"] == "Selective" and item["discount_uplift"] > item["exposure_uplift"] and discount_shape != "unstable":
-        return "target_discount_test"
-    if item["bucket"] == "Selective":
-        return "controlled_exposure_test"
+    if item["bucket"] == "Selective" and discount_shape != "unstable":
+        return "controlled_discount_or_exposure_test"
     if item["bucket"] == "Do Not Disturb":
         return "avoid_extra_subsidy"
     return "observe_and_refresh"
@@ -364,42 +563,35 @@ def _guardrail_for_bucket(bucket: str) -> str:
     if bucket == "Prioritize":
         return "Check margin, stock, and channel capacity before scaling."
     if bucket == "Selective":
-        return "Run a narrow holdout or event-study before broad rollout."
+        return "Use a narrow holdout or event-study before broad rollout."
     if bucket == "Do Not Disturb":
         return "Avoid incremental discount pressure unless new evidence appears."
     return "Keep monitoring; do not present as causal proof."
 
 
-def _classify_bucket(uplift_score: float, local_gap: float, baseline_gmv: float) -> str:
-    if uplift_score > 0 and local_gap > 0:
+def _assign_bucket(mean_uplift: float, stability: float | None) -> str:
+    if stability is None:
+        if mean_uplift > 0:
+            return "Selective"
+        if mean_uplift < 0:
+            return "Do Not Disturb"
+        return "Observe"
+    if mean_uplift > 0 and stability >= 0.67:
         return "Prioritize"
-    if uplift_score > 0:
+    if mean_uplift > 0:
         return "Selective"
-    if uplift_score < 0 and baseline_gmv > 0:
+    if mean_uplift < 0 and stability >= 0.67:
         return "Do Not Disturb"
     return "Observe"
 
 
-def _ranking_evidence(dose_response: dict[str, dict[str, Any]]) -> str:
+def _ranking_evidence(dose_response: dict[str, dict[str, Any]], uplift_status: str | None) -> str:
     exposure_shape = dose_response.get("exposure", {}).get("diagnostics", {}).get("response_shape", "unknown")
     discount_shape = dose_response.get("discount", {}).get("diagnostics", {}).get("response_shape", "unknown")
-    return f"GPS exposure curve={exposure_shape}; discount curve={discount_shape}; ranked by category local_gap response."
-
-
-def _load_localgap_by_category(workspace: Path) -> dict[str, float]:
-    path = workspace / ".analysis" / "localgap_result.json"
-    if not path.exists():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-    values: dict[str, float] = {}
-    for item in payload.get("categories", []):
-        category = item.get("category")
-        if category is not None:
-            values[str(category)] = float(item.get("local_gap") or 0)
-    return values
+    return (
+        f"GPS exposure curve={exposure_shape}; discount curve={discount_shape}; "
+        f"time_safe_uplift_status={uplift_status or 'unknown'}."
+    )
 
 
 def _support_warnings(panel: pd.DataFrame) -> list[str]:
@@ -408,8 +600,8 @@ def _support_warnings(panel: pd.DataFrame) -> list[str]:
         warnings.append("Only one category is available; uplift ranking cannot compare categories.")
     if int(panel["is_activity"].sum()) < 2:
         warnings.append("Fewer than two activity rows are available; recommendations are directional.")
-    if panel["exposure_intensity"].nunique() < 3 and panel["discount_intensity"].nunique() < 3:
-        warnings.append("Treatment dose support is thin for both exposure and discount.")
+    if panel["combined_intensity"].nunique(dropna=True) < 3:
+        warnings.append("Treatment intensity support is thin.")
     if (panel["baseline_quality"] == "unavailable").mean() > 0.5:
         warnings.append("More than half of rows lack a reliable local baseline.")
     return warnings
@@ -428,6 +620,20 @@ def _curve_shape(values: list[float]) -> str:
     return "unstable"
 
 
+def _standardize(series: pd.Series) -> pd.Series:
+    values = pd.to_numeric(series, errors="coerce").fillna(0.0)
+    std = float(values.std(ddof=0))
+    if not np.isfinite(std) or std <= 1e-9:
+        return values * 0.0
+    return (values - float(values.mean())) / std
+
+
+def _normal_density(values: np.ndarray, means: np.ndarray, sigma: float) -> np.ndarray:
+    sigma = max(float(sigma), 1e-6)
+    z = (values - means) / sigma
+    return np.clip((1.0 / (sigma * math.sqrt(2 * math.pi))) * np.exp(-0.5 * np.square(z)), 1e-12, None)
+
+
 def _safe_lstsq(X: np.ndarray, y: np.ndarray) -> np.ndarray:
     try:
         beta, *_ = np.linalg.lstsq(X, y, rcond=None)
@@ -437,7 +643,20 @@ def _safe_lstsq(X: np.ndarray, y: np.ndarray) -> np.ndarray:
 
 
 def _write_recommendations_csv(path: Path, recommendations: list[dict[str, Any]]) -> None:
-    fieldnames = ["category", "action", "reason", "guardrail", "evidence", "bucket"]
+    fieldnames = [
+        "category",
+        "action",
+        "reason",
+        "guardrail",
+        "evidence",
+        "bucket",
+        "uplift_score",
+        "local_gap",
+        "model_uplift",
+        "dose_uplift",
+        "fold_count",
+        "stability",
+    ]
     with path.open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()

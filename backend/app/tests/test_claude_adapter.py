@@ -4,19 +4,24 @@ import shutil
 import os
 from fastapi.testclient import TestClient
 from app.main import app
-from app.core.database import init_db
+from app.core.database import init_db, reset_engine
 from app.agent.claude_adapter import MockClaudeRuntimeAdapter, ClaudeRuntimeAdapter
 from app.agent.claude_agent_sdk_adapter import get_claude_adapter, ClaudeAgentSDKAdapter
 
 
 @pytest.fixture
 def test_db():
+    old_cwd = os.getcwd()
     tmp = tempfile.mkdtemp()
     os.chdir(tmp)
+    reset_engine()
     init_db()
-    yield
-    os.chdir("..")
-    shutil.rmtree(tmp)
+    try:
+        yield
+    finally:
+        reset_engine()
+        os.chdir(old_cwd)
+        shutil.rmtree(tmp)
 
 
 @pytest.fixture
@@ -35,7 +40,7 @@ def test_mock_adapter_implements_interface():
     assert hasattr(adapter, "interrupt")
 
 
-def test_get_claude_adapter_returns_mock_when_no_api_key(monkeypatch):
+def test_get_claude_adapter_requires_key_when_sdk_provider_requested(monkeypatch):
     """当没有 API key 时，返回 mock adapter"""
     import app.agent.claude_agent_sdk_adapter as sdk_adapter
     from app.core.config import settings as app_settings
@@ -44,9 +49,8 @@ def test_get_claude_adapter_returns_mock_when_no_api_key(monkeypatch):
     monkeypatch.setattr(app_settings, "anthropic_api_key", "")
     monkeypatch.setattr(sdk_adapter, "HAS_CLAUDE_AGENT_SDK", True)
 
-    adapter = get_claude_adapter({"provider": "claude_agent_sdk"})
-
-    assert isinstance(adapter, MockClaudeRuntimeAdapter)
+    with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
+        get_claude_adapter({"provider": "claude_agent_sdk"})
 
 
 def test_get_claude_adapter_returns_mock_when_provider_is_mock():
