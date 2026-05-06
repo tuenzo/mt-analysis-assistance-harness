@@ -20,9 +20,11 @@
 - [x] 4.3 Render DID evaluation with effect, confidence/significance cue, and interpretation
 - [x] 4.4 Render uplift quadrants with segment counts, meanings, and recommended actions
 - [x] 4.5 Render executive recommendations, conclusions, and caveats above supporting detail
+- [x] 4.6 Reorganize the result dashboard into a stable responsive 2×2 quadrant layout with unified chart-left and summary-right card structure
 
 ## 5. Quality Checks
 
 - [x] 5.1 Run frontend build and relevant lint/type checks available in the project
 - [x] 5.2 Use browser-based visual checks for dashboard and agent pages at desktop and mobile widths
 - [x] 5.3 Review git diff for secrets, unrelated churn, and OpenSpec/task consistency
+- [x] 5.4 Re-run build and browser checks after responsive quadrant layout refinement
