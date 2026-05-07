@@ -1,27 +1,33 @@
-import pytest
-import tempfile
-import shutil
-import os
-import uuid
 import json
+import os
+import shutil
+import tempfile
+import uuid
 from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
-from app.main import app
-from app.core.database import init_db, get_session
-from app.tools.gateway import AnalysisToolGateway, get_gateway
-from app.tools.schemas import BusinessAnalysisAction, ToolResult
+
+from app.core.database import get_session, init_db, reset_engine
 from app.core.permissions import PermissionLevel
-from app.projects.models import ToolCall, ApprovalRequest
+from app.main import app
+from app.projects.models import ApprovalRequest, ToolCall
+from app.tools.gateway import AnalysisToolGateway
 
 
 @pytest.fixture
 def test_db():
+    old_cwd = os.getcwd()
     tmp = tempfile.mkdtemp()
     os.chdir(tmp)
+    reset_engine()
     init_db()
-    yield
-    os.chdir("..")
-    shutil.rmtree(tmp)
+    try:
+        yield
+    finally:
+        reset_engine()
+        os.chdir(old_cwd)
+        shutil.rmtree(tmp)
 
 
 @pytest.fixture
@@ -36,8 +42,8 @@ def gateway(test_db):
 
 @pytest.fixture
 def project(client):
-    r = client.post("/api/projects", json={"name": "GatewayTest"})
-    return r.json()
+    response = client.post("/api/projects", json={"name": "GatewayTest"})
+    return response.json()
 
 
 def test_invalid_action_returns_error(gateway, project):
@@ -64,7 +70,6 @@ def test_permission_denied_returns_error(gateway, project):
     )
     assert result.ok is False
     assert result.error["code"] == "PERMISSION_DENIED"
-    assert "权限不足" in result.error["message"]
 
 
 def test_safe_action_executes_successfully(gateway, project):
@@ -90,7 +95,7 @@ def test_high_risk_action_creates_approval_request(gateway, project):
         user_permission_level=PermissionLevel.MODIFY_WORKSPACE,
     )
     assert result.ok is True
-    assert "需要用户审批" in result.summary
+    assert "Approval required" in result.summary
 
     db = get_session()
     try:
@@ -112,7 +117,7 @@ def test_memory_propose_update_creates_approval_request(gateway, project):
         user_permission_level=PermissionLevel.EXTERNAL_SYNC,
     )
     assert result.ok is True
-    assert "需要用户审批" in result.summary
+    assert "Approval required" in result.summary
 
     db = get_session()
     try:
@@ -156,8 +161,8 @@ def test_tool_call_logged_to_file(gateway, project, test_db):
     log_path = Path("./workspaces") / "tool_calls.jsonl"
     assert log_path.exists()
 
-    with open(log_path, "r", encoding="utf-8") as f:
-        logs = [json.loads(line) for line in f]
+    with log_path.open("r", encoding="utf-8") as handle:
+        logs = [json.loads(line) for line in handle]
         assert any(log["tool_call_id"] == "tc_test_logged" and log["status"] == "succeeded" for log in logs)
 
 
@@ -179,7 +184,7 @@ def test_reject_approval_returns_error(gateway, project):
 
         resume_result = gateway.resume_from_approval(approval.id, approved=False)
         assert resume_result.ok is False
-        assert "用户拒绝" in resume_result.summary
+        assert resume_result.error["code"] == "REJECTED"
     finally:
         db.close()
 

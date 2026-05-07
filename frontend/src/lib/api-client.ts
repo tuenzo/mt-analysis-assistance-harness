@@ -28,14 +28,50 @@ import type {
   MemorySummaryResponse,
   ProjectTimeline,
 } from './api-types'
+import { API_BASE_QUERY_KEYS, API_BASE_STORAGE_KEY } from './navigation'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:18081'
+
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.trim().replace(/\/+$/, '')
+}
 
 class ApiClient {
-  private baseUrl: string
+  private defaultBaseUrl: string
 
   constructor(baseUrl: string) {
-    this.baseUrl = baseUrl
+    this.defaultBaseUrl = normalizeBaseUrl(baseUrl)
+  }
+
+  getBaseUrl(): string {
+    if (typeof window === 'undefined') {
+      return this.defaultBaseUrl
+    }
+
+    const params = new URLSearchParams(window.location.search)
+    for (const key of API_BASE_QUERY_KEYS) {
+      const override = params.get(key)
+      if (override?.trim()) {
+        const normalized = normalizeBaseUrl(override)
+        try {
+          window.sessionStorage.setItem(API_BASE_STORAGE_KEY, normalized)
+        } catch {
+          // Ignore storage failures and keep using the query override.
+        }
+        return normalized
+      }
+    }
+
+    try {
+      const stored = window.sessionStorage.getItem(API_BASE_STORAGE_KEY)
+      if (stored?.trim()) {
+        return normalizeBaseUrl(stored)
+      }
+    } catch {
+      // Ignore storage failures and fall back to the configured default.
+    }
+
+    return this.defaultBaseUrl
   }
 
   private async request<T>(
@@ -43,7 +79,7 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> {
     try {
-      const response = await fetch(`${this.baseUrl}${path}`, {
+      const response = await fetch(`${this.getBaseUrl()}${path}`, {
         ...options,
         headers: {
           'Content-Type': 'application/json',
@@ -108,7 +144,7 @@ class ApiClient {
     formData.append('file', file)
     formData.append('role', role)
 
-    const response = await fetch(`${this.baseUrl}/api/projects/${projectId}/files`, {
+    const response = await fetch(`${this.getBaseUrl()}/api/projects/${projectId}/files`, {
       method: 'POST',
       body: formData,
     })
@@ -190,7 +226,7 @@ class ApiClient {
   }
 
   getSessionEventsUrl(sessionId: string, afterTurnId?: string | null): string {
-    const url = `${this.baseUrl}/api/agent/sessions/${sessionId}/events`
+    const url = `${this.getBaseUrl()}/api/agent/sessions/${sessionId}/events`
     if (afterTurnId) {
       return `${url}?after_turn_id=${encodeURIComponent(afterTurnId)}`
     }

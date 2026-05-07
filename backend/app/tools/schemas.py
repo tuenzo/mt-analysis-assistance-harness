@@ -19,8 +19,12 @@ class BusinessAnalysisAction(str, Enum):
     RESULT_GET_LATEST = "result.get_latest"
     ARTIFACT_READ = "artifact.read"
     CHART_RENDER = "chart.render"
+    CHART_RENDER_DASHBOARD = "chart.render_dashboard"
     REPORT_GENERATE = "report.generate"
     MEMORY_PROPOSE_UPDATE = "memory.propose_update"
+    STRATEGY_DESIGN_BLUEPRINT = "strategy.design_blueprint"
+    STRATEGY_DESIGN_FLOW = "strategy.design_flow"
+    STRATEGY_PROPOSE_BACKEND_CHANGE = "strategy.propose_backend_change"
 
 
 class ToolResult(BaseModel):

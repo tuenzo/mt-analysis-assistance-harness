@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkdownView } from '@/components/markdown-view'
+import { useApiBaseHref } from '@/lib/use-api-base-href'
 
 type ReportSection = {
   heading: string
@@ -42,6 +43,7 @@ type ExportState = {
 export default function ReportsPage() {
   const params = useParams<{ project_id: string }>()
   const projectId = params.project_id
+  const hrefFor = useApiBaseHref()
   const [report, setReport] = useState<LatestReport | null>(null)
   const [state, setState] = useState<ProjectState | null>(null)
   const [artifacts, setArtifacts] = useState<Artifact[]>([])
@@ -166,7 +168,7 @@ export default function ReportsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href={`/projects/${projectId}/dashboard`}>
+          <Link href={hrefFor(`/projects/${projectId}/dashboard`)}>
             <Button type="button" variant="outline">
               <Gauge className="mr-2 h-4 w-4" />
               结果看板
@@ -316,7 +318,7 @@ export default function ReportsPage() {
                       <p className="mt-1 text-sm text-muted-foreground">
                         数据接入和 schema 映射完成后，可让 Agent 运行或刷新分析 pipeline。
                       </p>
-                      <Link href={`/projects/${projectId}/agent`} className="mt-3 inline-flex text-sm font-medium text-primary underline-offset-2 hover:underline">
+                      <Link href={hrefFor(`/projects/${projectId}/agent`)} className="mt-3 inline-flex text-sm font-medium text-primary underline-offset-2 hover:underline">
                         打开 Agent 指挥台
                       </Link>
                     </div>

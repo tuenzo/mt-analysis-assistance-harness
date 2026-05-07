@@ -2,7 +2,6 @@ import uuid
 import json
 from datetime import datetime
 from typing import Optional
-from pathlib import Path
 from app.tools.schemas import ToolResult
 from app.projects.service import ProjectService
 from app.core.database import get_session
@@ -25,16 +24,19 @@ class JobOrchestrator:
         project = service.get_project(project_id)
         if not project:
             return {"ok": False, "error": "Project not found"}
+        if pipeline_name == "full_pipeline":
+            return self._run_full_pipeline(project_id, kwargs)
 
         db = get_session()
         try:
             job = Job(
                 id=f"job_{uuid.uuid4().hex[:12]}",
                 project_id=project_id,
-                pipeline=pipeline_name,
                 action=pipeline_name,
-                status="queued",
-                input_payload=json.dumps(kwargs),
+                status="running",
+                progress=0,
+                input_json=json.dumps(kwargs, ensure_ascii=False),
+                started_at=datetime.now().isoformat(),
                 created_at=datetime.now().isoformat(),
             )
             db.add(job)
@@ -44,13 +46,36 @@ class JobOrchestrator:
             result = self._execute_pipeline(project_id, pipeline_name, kwargs)
 
             job.status = "succeeded" if result.ok else "failed"
-            job.result_json = json.dumps(result.model_dump(), ensure_ascii=False)
-            job.completed_at = datetime.now().isoformat()
+            job.progress = 1
+            job.output_json = json.dumps(result.model_dump(), ensure_ascii=False)
+            job.finished_at = datetime.now().isoformat()
             db.commit()
 
             return {
                 "ok": result.ok,
                 "job_id": job.id,
+                "result": result.model_dump(),
+            }
+        finally:
+            db.close()
+
+    def _run_full_pipeline(self, project_id: str, kwargs: dict) -> dict:
+        db = get_session()
+        try:
+            from app.jobs.pipeline_runner import run_approved_full_pipeline
+
+            result, events = run_approved_full_pipeline(
+                db,
+                project_id=project_id,
+                session_id=str(kwargs.get("session_id") or ""),
+                turn_id=str(kwargs.get("turn_id") or ""),
+                tool_call=None,
+                payload=kwargs,
+            )
+            job_id = next((event.get("job_id") for event in events if event.get("type") == "job_started"), "")
+            return {
+                "ok": result.ok,
+                "job_id": job_id,
                 "result": result.model_dump(),
             }
         finally:
@@ -89,11 +114,11 @@ class JobOrchestrator:
             return {
                 "id": job.id,
                 "project_id": job.project_id,
-                "pipeline": job.pipeline,
+                "pipeline": job.action,
                 "status": job.status,
                 "created_at": job.created_at,
-                "completed_at": job.completed_at,
-                "result": json.loads(job.result_json) if job.result_json else None,
+                "completed_at": job.finished_at,
+                "result": json.loads(job.output_json) if job.output_json else None,
             }
         finally:
             db.close()

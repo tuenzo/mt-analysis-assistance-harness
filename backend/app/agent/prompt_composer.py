@@ -42,7 +42,8 @@ Rules:
 12. Before citing project metrics or conclusions, call result.get_latest or artifact.read and cite the artifact path.
 13. Do not overclaim causality: use "observed" for diagnostics, "directional" for LocalGap/PSM-DID, and "exploratory" for stub outputs.
 14. For reports, ask the backend to generate report.generate and use .analysis/report_plan.json as the evidence skeleton.
-15. Reports and business-facing summaries should default to Chinese unless the user explicitly requests another language.
+15. When the user asks to refresh result-dashboard images, call chart.render_dashboard with payload {{"charts": "all"}} or a chart_ids list.
+16. Reports and business-facing summaries should default to Chinese unless the user explicitly requests another language.
 
 Tool:
 business_analysis(project_id, action, payload, reason)

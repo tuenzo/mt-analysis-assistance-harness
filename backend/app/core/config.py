@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     agent_permission_mode: str = "dontAsk"
     agent_enable_user_settings: bool = True
     agent_allow_builtin_read_tools: bool = False
+    agent_skills: str = "business-analysis"
     test_mode: bool = False
     demo_mode: bool = False
     demo_project_id: str = "proj_demo_keemart_full_showcase"
@@ -72,5 +73,15 @@ def get_agent_runtime_config() -> dict:
         "permission_mode": settings.agent_permission_mode,
         "enable_user_setting_sources": settings.agent_enable_user_settings,
         "allow_builtin_read_tools": settings.agent_allow_builtin_read_tools,
+        "skills": _parse_csv_or_all(settings.agent_skills),
         "workspace_root": str(settings.workspace_root),
     }
+
+
+def _parse_csv_or_all(value: str):
+    text = (value or "").strip()
+    if not text:
+        return []
+    if text.lower() == "all":
+        return "all"
+    return [item.strip() for item in text.split(",") if item.strip()]

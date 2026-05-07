@@ -1,9 +1,9 @@
 import base64
 import json
-import mimetypes
 from pathlib import Path
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi.responses import FileResponse
 from typing import Any, Optional
 from app.projects.schemas import (
     ProjectCreate, ProjectResponse,
@@ -14,6 +14,8 @@ from app.projects.schemas import (
 from app.projects.service import ProjectService
 from app.core.database import get_session
 from app.projects.models import AgentEvent, ApprovalRequest, Artifact, Job, ToolCall
+from app.analysis.dashboard_chart_renderer import CHART_IDS
+from app.artifacts.service import mime_type_for_path
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 service = ProjectService()
@@ -113,7 +115,7 @@ def read_artifact_content_by_path(project_id: str, path: str):
         "type": _artifact_type_for_path(path),
         "title": Path(path).name,
         "path": path,
-        "mime_type": _mime_type_for_path(path),
+        "mime_type": mime_type_for_path(path),
         "metadata_json": None,
         "checksum": None,
         "created_at": None,
@@ -148,6 +150,30 @@ def read_project_artifact_content(project_id: str, artifact_id: str):
         return {"ok": True, "data": _read_artifact_file(artifact_path, _serialize_artifact(artifact))}
     finally:
         db.close()
+
+
+@router.get("/{project_id}/dashboard-charts/{chart_id}.png")
+def read_dashboard_chart(project_id: str, chart_id: str):
+    project = service.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if chart_id not in CHART_IDS:
+        raise HTTPException(status_code=404, detail="Dashboard chart not found")
+
+    workspace = Path(project.workspace_path).resolve()
+    chart_path = (workspace / "artifacts" / "charts" / "dashboard" / f"{chart_id}.png").resolve()
+    try:
+        chart_path.relative_to(workspace)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Dashboard chart path must stay within the project workspace") from exc
+    if not chart_path.exists() or not chart_path.is_file():
+        raise HTTPException(status_code=404, detail="Dashboard chart has not been generated yet. Run chart.render_dashboard first.")
+
+    return FileResponse(
+        chart_path,
+        media_type="image/png",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.get("/{project_id}/timeline")
@@ -292,7 +318,7 @@ def _resolve_workspace_path(workspace_path: str, artifact_path: str) -> Path:
 
 
 def _read_artifact_file(path: Path, artifact: dict[str, Any]) -> dict[str, Any]:
-    content_type = artifact.get("mime_type") or _mime_type_for_path(str(path))
+    content_type = artifact.get("mime_type") or mime_type_for_path(str(path))
     size_bytes = path.stat().st_size
     if content_type == "application/json" or path.suffix.lower() == ".json":
         try:
@@ -314,15 +340,6 @@ def _read_artifact_file(path: Path, artifact: dict[str, Any]) -> dict[str, Any]:
         "data": data,
         "size_bytes": size_bytes,
     }
-
-
-def _mime_type_for_path(path: str) -> str:
-    guessed, _ = mimetypes.guess_type(path)
-    if guessed:
-        return guessed
-    if path.lower().endswith(".json"):
-        return "application/json"
-    return "application/octet-stream"
 
 
 def _artifact_type_for_path(path: str) -> str:

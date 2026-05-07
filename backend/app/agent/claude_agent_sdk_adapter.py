@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Generator, Optional
+from urllib.parse import urlparse
 
 try:
     from claude_agent_sdk import (
@@ -37,9 +38,10 @@ except ImportError:
 from app.agent.claude_adapter import ClaudeRuntimeAdapter
 from app.core.database import get_session
 from app.core.permissions import PermissionLevel, action_to_permission_level
-from app.projects.models import ApprovalRequest, ToolCall
+from app.projects.models import ApprovalRequest, Project, ToolCall
 from app.tools.gateway import get_gateway
 from app.tools.schemas import BusinessAnalysisAction, ToolResult
+from app.workspace.skills import ensure_project_skill_files, normalize_skill_names
 
 
 SDK_MCP_SERVER_NAME = "business_analysis"
@@ -139,6 +141,7 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
         self._gateway = get_gateway()
 
         self._api_key = os.environ.get("ANTHROPIC_API_KEY") or app_settings.anthropic_api_key
+        self._auth_token = os.environ.get("ANTHROPIC_AUTH_TOKEN") or self._api_key
         self._base_url = (
             os.environ.get("ANTHROPIC_API_BASE_URL")
             or app_settings.anthropic_api_base_url
@@ -152,6 +155,8 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
         self._permission_mode = self._settings.get("permission_mode", "dontAsk")
         self._enable_user_settings = self._settings.get("enable_user_setting_sources", True)
         self._allow_builtin_read_tools = self._settings.get("allow_builtin_read_tools", False)
+        self._skills = normalize_skill_names(self._settings.get("skills"))
+        self._isolate_claude_config = self._settings.get("isolate_claude_config", True)
         self._workspace_root = Path(self._settings.get("workspace_root", "./workspaces"))
         self._active_runtime_context: dict[str, str] = {}
         self._executed_tool_calls: list[dict[str, Any]] = []
@@ -160,31 +165,41 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
     def available(self) -> bool:
         return HAS_CLAUDE_AGENT_SDK and bool(self._api_key)
 
+    def _unavailable_reason(self) -> str:
+        if not HAS_CLAUDE_AGENT_SDK:
+            return "claude_agent_sdk is not installed or could not be imported."
+        if not self._api_key:
+            return "ANTHROPIC_API_KEY is not configured."
+        return "Claude Agent SDK adapter is unavailable."
+
     def create_session(self, project_id: str) -> str:
         if not self.available:
-            return self._create_mock_session(project_id)
+            raise RuntimeError(self._unavailable_reason())
 
         external_session_id = str(uuid.uuid4())
-        workspace_path = self._workspace_root / project_id
+        workspace_path = self._resolve_project_workspace_path(project_id)
         workspace_path.mkdir(parents=True, exist_ok=True)
+        config_dir = self._ensure_claude_config_dir(workspace_path, external_session_id)
         self._sessions[external_session_id] = {
             "project_id": project_id,
             "workspace_path": str(workspace_path),
+            "config_dir": str(config_dir),
+            "skills": self._ensure_workspace_skills(workspace_path),
             "has_started": False,
             "interrupted": False,
         }
         return external_session_id
 
-    def _create_mock_session(self, project_id: str) -> str:
-        session_id = f"mock_{uuid.uuid4().hex[:12]}"
-        self._sessions[session_id] = {"project_id": project_id, "interrupted": False}
-        return session_id
-
     def resume_session(self, session_id: str, project_id: str) -> None:
         if session_id not in self._sessions:
+            workspace_path = self._resolve_project_workspace_path(project_id)
+            workspace_path.mkdir(parents=True, exist_ok=True)
+            config_dir = self._ensure_claude_config_dir(workspace_path, session_id)
             self._sessions[session_id] = {
                 "project_id": project_id,
-                "workspace_path": str(self._workspace_root / project_id),
+                "workspace_path": str(workspace_path),
+                "config_dir": str(config_dir),
+                "skills": self._ensure_workspace_skills(workspace_path),
                 "has_started": True,
                 "interrupted": False,
             }
@@ -195,7 +210,7 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             return
 
         if not self.available or session_id.startswith("mock_"):
-            yield from self._mock_send_message(session_id, message, context)
+            yield {"type": "error", "error": self._unavailable_reason()}
             return
 
         try:
@@ -221,11 +236,15 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
 
     async def _send_message_async(self, session_id: str, message: str, context: dict) -> list[dict]:
         events: list[dict] = []
+        default_workspace_path = self._resolve_project_workspace_path(context.get("project_id", ""))
+        default_workspace_path.mkdir(parents=True, exist_ok=True)
         session = self._sessions.setdefault(
             session_id,
             {
                 "project_id": context.get("project_id", ""),
-                "workspace_path": str(self._workspace_root / context.get("project_id", "")),
+                "workspace_path": str(default_workspace_path),
+                "config_dir": str(self._ensure_claude_config_dir(default_workspace_path, session_id)),
+                "skills": self._ensure_workspace_skills(default_workspace_path),
                 "has_started": True,
                 "interrupted": False,
             },
@@ -237,6 +256,7 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
 
         options = self._build_options(session_id, session)
         prompt = self._build_prompt(context, message)
+        events.append(self._runtime_diagnostic_event(session))
 
         self._active_runtime_context = {
             "project_id": project_id,
@@ -272,9 +292,19 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
         env = {}
         if self._api_key:
             env["ANTHROPIC_API_KEY"] = self._api_key
+        if self._auth_token:
+            env["ANTHROPIC_AUTH_TOKEN"] = self._auth_token
         if self._base_url:
             env["ANTHROPIC_API_BASE_URL"] = self._base_url
             env["ANTHROPIC_BASE_URL"] = self._base_url
+        if self._isolate_claude_config:
+            workspace_path = Path(session.get("workspace_path") or self._workspace_root)
+            config_dir = session.get("config_dir") or str(
+                self._ensure_claude_config_dir(workspace_path, session_id)
+            )
+            session["config_dir"] = config_dir
+            env["CLAUDE_CONFIG_DIR"] = config_dir
+        env.setdefault("CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK", "1")
 
         kwargs = {
             "cwd": session.get("workspace_path"),
@@ -286,13 +316,72 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             "env": env,
             "max_turns": 8,
         }
+        if self._skills is not None:
+            kwargs["skills"] = session.get("skills", self._skills)
         if not self._enable_user_settings:
-            kwargs["setting_sources"] = []
+            kwargs["setting_sources"] = ["project"] if self._skills else []
         if session.get("has_started"):
             kwargs["resume"] = session_id
         else:
             kwargs["session_id"] = session_id
         return ClaudeAgentOptions(**kwargs)
+
+    def _runtime_diagnostic_event(self, session: dict[str, Any]) -> dict[str, Any]:
+        parsed_base_url = urlparse(self._base_url) if self._base_url else None
+        skills = session.get("skills", self._skills)
+        return {
+            "type": "runtime_diagnostic",
+            "runtime": "claude_agent_sdk",
+            "adapter": "ClaudeAgentSDKAdapter",
+            "sdk_available": HAS_CLAUDE_AGENT_SDK,
+            "api_key_present": bool(self._api_key),
+            "auth_token_present": bool(self._auth_token),
+            "model": self._model,
+            "base_url_host": parsed_base_url.netloc if parsed_base_url else "",
+            "mock_fallback": False,
+            "claude_config_dir_isolated": bool(self._isolate_claude_config),
+            "claude_config_dir": session.get("config_dir", ""),
+            "skills": skills,
+            "skill_allowed_tools": self._skill_allowed_tools(skills),
+            "workspace_path": session.get("workspace_path", ""),
+        }
+
+    def _resolve_project_workspace_path(self, project_id: str) -> Path:
+        if project_id:
+            db = None
+            try:
+                db = get_session()
+                project = db.query(Project).filter(Project.id == project_id).first()
+                if project and project.workspace_path:
+                    return Path(project.workspace_path)
+            except Exception:
+                pass
+            finally:
+                if db is not None:
+                    db.close()
+        return self._workspace_root / "projects" / project_id
+
+    def _ensure_claude_config_dir(self, workspace_path: Path, session_id: str) -> Path:
+        safe_session_id = "".join(
+            char if char.isalnum() or char in {"-", "_"} else "_" for char in session_id
+        )
+        config_dir = workspace_path / ".analysis" / "claude-sdk-config" / safe_session_id
+        config_dir.mkdir(parents=True, exist_ok=True)
+        return config_dir
+
+    def _ensure_workspace_skills(self, workspace_path: Path) -> list[str] | str:
+        if self._skills == "all":
+            ensure_project_skill_files(workspace_path, self._skills)
+            return self._skills
+        return ensure_project_skill_files(workspace_path, self._skills)
+
+    @staticmethod
+    def _skill_allowed_tools(skills: Any) -> list[str]:
+        if skills == "all":
+            return ["Skill"]
+        if not skills:
+            return []
+        return [f"Skill({name})" for name in skills]
 
     def _create_business_analysis_mcp_server(self):
         server = BusinessAnalysisMCPServer(self._gateway)
@@ -316,15 +405,22 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
         )
         async def business_analysis(args: dict[str, Any]) -> dict[str, Any]:
             tool_call_id = args.get("_runtime_tool_call_id") or f"tc_{uuid.uuid4().hex[:12]}"
-            project_id = args["project_id"]
+            runtime_context = self._active_runtime_context
+            project_id = runtime_context.get("project_id") or args["project_id"]
+            args["project_id"] = project_id
             action = args["action"]
             payload = args.get("payload") or {}
             reason = args.get("reason") or ""
-            runtime_context = self._active_runtime_context
             runtime_session_id = args.get("_runtime_session_id") or runtime_context.get("runtime_session_id", "")
             runtime_turn_id = args.get("_runtime_turn_id") or runtime_context.get("runtime_turn_id", "")
             if not args.get("_runtime_tool_call_id") and runtime_session_id and runtime_turn_id:
-                tool_call_id = self._persist_sdk_tool_call(
+                tool_call_id = self._claim_pending_sdk_tool_call(
+                    project_id=project_id,
+                    action=action,
+                    payload=payload,
+                    runtime_session_id=runtime_session_id,
+                    runtime_turn_id=runtime_turn_id,
+                ) or self._persist_sdk_tool_call(
                     project_id=project_id,
                     action=action,
                     payload=payload,
@@ -378,6 +474,8 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             for block in sdk_message.content:
                 if ToolUseBlock is not None and isinstance(block, ToolUseBlock):
                     tool_input = dict(block.input or {})
+                    if project_id:
+                        tool_input["project_id"] = project_id
                     runtime_tool_call_id = self._claim_executed_tool_call(
                         action=tool_input.get("action", SDK_TOOL_NAME),
                         payload=tool_input.get("payload") or {},
@@ -430,6 +528,7 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             return events
 
         if ResultMessage is not None and isinstance(sdk_message, ResultMessage):
+            events.append(self._result_usage_event(sdk_message))
             if sdk_message.is_error:
                 events.append(
                     {
@@ -449,6 +548,20 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             return events
 
         return events
+
+    @staticmethod
+    def _result_usage_event(message: Any) -> dict[str, Any]:
+        return {
+            "type": "runtime_usage",
+            "runtime": "claude_agent_sdk",
+            "external_session_id": getattr(message, "session_id", None),
+            "duration_ms": getattr(message, "duration_ms", None),
+            "duration_api_ms": getattr(message, "duration_api_ms", None),
+            "num_turns": getattr(message, "num_turns", None),
+            "total_cost_usd": getattr(message, "total_cost_usd", None),
+            "usage": getattr(message, "usage", None) or {},
+            "model_usage": getattr(message, "model_usage", None) or {},
+        }
 
     def _claim_executed_tool_call(self, action: str, payload: dict) -> str | None:
         for index, call in enumerate(self._executed_tool_calls):
@@ -495,6 +608,39 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
         finally:
             db.close()
         return tool_call_id
+
+    def _claim_pending_sdk_tool_call(
+        self,
+        project_id: str,
+        action: str,
+        payload: dict,
+        runtime_session_id: str,
+        runtime_turn_id: str,
+    ) -> str | None:
+        db = get_session()
+        try:
+            rows = (
+                db.query(ToolCall)
+                .filter(
+                    ToolCall.project_id == project_id,
+                    ToolCall.session_id == runtime_session_id,
+                    ToolCall.turn_id == runtime_turn_id,
+                    ToolCall.action == action,
+                    ToolCall.status == "pending",
+                )
+                .order_by(ToolCall.created_at.asc(), ToolCall.id.asc())
+                .all()
+            )
+            for row in rows:
+                try:
+                    row_payload = json.loads(row.payload_json or "{}")
+                except json.JSONDecodeError:
+                    row_payload = {}
+                if row_payload == payload:
+                    return row.id
+            return None
+        finally:
+            db.close()
 
     def _tool_result_event(self, block: Any, tool_uses: dict[str, dict[str, Any]]) -> dict | None:
         tool_use = tool_uses.get(block.tool_use_id)
@@ -629,18 +775,13 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             return "; ".join(str(error) for error in message.errors)
         return message.result or "Claude Agent SDK runtime failed."
 
-    def _mock_send_message(self, session_id: str, message: str, context: dict) -> Generator[dict, None, None]:
-        from app.agent.claude_adapter import MockClaudeRuntimeAdapter
-
-        mock = MockClaudeRuntimeAdapter()
-        yield from mock.send_message(session_id, message, context)
-
     def interrupt(self, session_id: str) -> None:
         self._interrupted.add(session_id)
         if session_id in self._sessions:
             self._sessions[session_id]["interrupted"] = True
 
     def _build_prompt(self, context: dict, message: str) -> str:
+        project_id = context.get("project_id", "unknown")
         project_name = context.get("project_name", "unknown project")
         current_stage = context.get("current_stage", "unknown")
         data_quality = context.get("data_quality", "unknown")
@@ -656,6 +797,7 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
         return f"""You are a business analysis assistant working in project "{project_name}".
 
 Project state:
+- project_id: {project_id}
 - current_stage: {current_stage}
 - data_quality: {data_quality}
 - project_facts: {json.dumps(project_facts, ensure_ascii=False)}
@@ -663,6 +805,9 @@ Project state:
 You may answer directly for discussion or clarification. When project state, data, analysis pipelines,
 artifacts, reports, or memory candidates are needed, use exactly this tool:
 business_analysis(project_id, action, payload, reason)
+
+When calling business_analysis, always pass exactly this project_id: "{project_id}".
+Do not use the route name, page name, project name, or any guessed identifier as project_id.
 
 Only use project facts from the backend workspace context and tool results. Do not read local source
 data files directly. For CSV directory ingest, first call business_analysis with action
@@ -680,6 +825,16 @@ Before citing metrics or recommendations, call result.get_latest or artifact.rea
 Use observed/descriptive language for diagnostics-only claims, directional language for LocalGap or PSM-DID,
 and exploratory language for stub outputs. When generating reports, use report.generate and treat
 .analysis/report_plan.json as the evidence skeleton.
+When the user asks to refresh or regenerate result-dashboard images, call chart.render_dashboard with
+payload {{"charts": "all"}} or {{"chart_ids": [...]}} for a subset.
+
+When the user asks you to design or rethink the analysis strategy, you may lead that work through
+strategy-design actions instead of only running the fixed pipeline:
+- strategy.design_blueprint creates objectives, decision questions, assumptions, methods, and success criteria.
+- strategy.design_flow creates ordered stages; each stage must include an existing action or proposed_backend_change.
+- strategy.propose_backend_change creates an isolated backend framework proposal artifact.
+These actions create review artifacts under .analysis/strategy_lab/. They do not edit backend source code directly.
+
 Reports and business-facing summaries should default to Chinese unless the user explicitly requests another language.
 
 User message:
@@ -693,6 +848,15 @@ def get_claude_adapter(settings: dict | None = None) -> ClaudeRuntimeAdapter:
     provider = (settings or {}).get("provider", "mock")
     api_key = os.environ.get("ANTHROPIC_API_KEY") or app_settings.anthropic_api_key
 
-    if provider == "claude_agent_sdk" and api_key and HAS_CLAUDE_AGENT_SDK:
+    if provider == "claude_agent_sdk":
+        if not HAS_CLAUDE_AGENT_SDK:
+            raise RuntimeError(
+                "APP_AGENT_RUNTIME_PROVIDER=claude_agent_sdk but claude_agent_sdk is not installed."
+            )
+        if not api_key:
+            raise RuntimeError(
+                "APP_AGENT_RUNTIME_PROVIDER=claude_agent_sdk but ANTHROPIC_API_KEY is not configured."
+            )
         return ClaudeAgentSDKAdapter(settings)
+
     return MockClaudeRuntimeAdapter()

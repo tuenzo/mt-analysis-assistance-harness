@@ -76,6 +76,16 @@ def test_diagnostics_produces_trend_data(project_with_panel):
 
     assert result.ok is True
     assert "gmv_trend" in result.summary or "诊断完成" in result.summary
+    output_path = workspace_path / ".analysis" / "diagnostics_result.json"
+    assert output_path.exists()
+
+    import json
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["method_status"] in {"implemented", "limited"}
+    assert "weekday_context" in payload
+    assert "quality" in payload
+    assert "warnings" in payload
 
 
 def test_diagnostics_without_panel(client):

@@ -5,14 +5,15 @@ from typing import Callable
 
 from sqlalchemy.orm import Session
 
-from app.projects.models import Artifact, Job, Project, Report, ToolCall
+from app.artifacts.service import persist_tool_result_artifacts
+from app.projects.models import Job, Project, ToolCall
 from app.tools.analysis_tools import (
     analysis_run_diagnostics,
     analysis_run_gps_uplift,
     analysis_run_localgap,
     analysis_run_psm_did,
 )
-from app.tools.chart_tools import chart_render
+from app.tools.chart_tools import chart_render, chart_render_dashboard
 from app.tools.data_tools import data_validate
 from app.tools.panel_tools import panel_build_category_day
 from app.tools.report_tools import report_generate
@@ -32,6 +33,7 @@ PIPELINE_STEPS: list[tuple[str, str, StepFunc, dict]] = [
     ("GPS uplift", "analysis.run_gps_uplift", analysis_run_gps_uplift, {}),
     ("GMV trend chart", "chart.render", chart_render, {"type": "gmv_trend"}),
     ("LocalGap chart", "chart.render", chart_render, {"type": "localgap"}),
+    ("Dashboard PNG charts", "chart.render_dashboard", chart_render_dashboard, {"charts": "all"}),
     ("Latest result", "result.get_latest", result_get_latest, {}),
     ("Report generation", "report.generate", report_generate, {"format": "md"}),
 ]
@@ -115,7 +117,13 @@ def run_approved_full_pipeline(
         all_artifacts.extend(result.artifacts or [])
         all_ok = all_ok and result.ok
 
-        artifact_events = _persist_artifacts(db, project_id, job.id, tool_call.id if tool_call else None, result)
+        artifact_events = persist_tool_result_artifacts(
+            db,
+            project_id=project_id,
+            job_id=job.id,
+            tool_call_id=tool_call.id if tool_call else None,
+            result=result,
+        )
         events.extend(
             {
                 "type": "artifact_created",
@@ -188,6 +196,18 @@ def run_approved_full_pipeline(
 
     events.append(
         {
+            "type": "tool_call_finished" if all_ok else "tool_call_failed",
+            "turn_id": turn_id,
+            "tool": "business_analysis",
+            "action": "analysis.run_full_pipeline",
+            "ok": all_ok,
+            "summary": summary,
+            "tool_call_id": tool_call.id if tool_call else None,
+            "sdk_executed": True,
+        }
+    )
+    events.append(
+        {
             "type": "job_finished",
             "turn_id": turn_id,
             "job_id": job.id,
@@ -197,65 +217,3 @@ def run_approved_full_pipeline(
     )
     events.append({"type": "final_answer", "turn_id": turn_id, "message": summary})
     return final_result, events
-
-
-def _persist_artifacts(
-    db: Session,
-    project_id: str,
-    job_id: str,
-    tool_call_id: str | None,
-    result: ToolResult,
-) -> list[Artifact]:
-    persisted: list[Artifact] = []
-    for item in result.artifacts or []:
-        path = item.get("path")
-        if not path:
-            continue
-        artifact = Artifact(
-            id=f"art_{uuid.uuid4().hex[:12]}",
-            project_id=project_id,
-            job_id=job_id,
-            tool_call_id=tool_call_id,
-            type=str(item.get("type") or "artifact"),
-            title=str(item.get("title") or path),
-            path=str(path),
-            mime_type=_mime_type_for_path(str(path)),
-            metadata_json=json.dumps(
-                {key: value for key, value in item.items() if key not in {"type", "title", "path"}},
-                ensure_ascii=False,
-            ),
-            created_at=datetime.now().isoformat(),
-        )
-        db.add(artifact)
-        persisted.append(artifact)
-
-        if artifact.type == "report":
-            report = Report(
-                id=f"rep_{uuid.uuid4().hex[:12]}",
-                project_id=project_id,
-                job_id=job_id,
-                status="ready",
-                title=artifact.title,
-                source_md_path=artifact.path,
-                metadata_json=json.dumps({"artifact_id": artifact.id}, ensure_ascii=False),
-                created_at=datetime.now().isoformat(),
-                updated_at=datetime.now().isoformat(),
-            )
-            db.add(report)
-
-    db.commit()
-    for artifact in persisted:
-        db.refresh(artifact)
-    return persisted
-
-
-def _mime_type_for_path(path: str) -> str | None:
-    if path.endswith(".json"):
-        return "application/json"
-    if path.endswith(".md"):
-        return "text/markdown"
-    if path.endswith(".csv"):
-        return "text/csv"
-    if path.endswith(".png"):
-        return "image/png"
-    return None

@@ -1,25 +1,25 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f8fa;
+  --foreground: #1f2329;
   --card: #ffffff;
-  --card-foreground: #171717;
+  --card-foreground: #1f2329;
   --popover: #ffffff;
-  --popover-foreground: #171717;
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
-  --secondary: #f3f4f6;
-  --secondary-foreground: #171717;
-  --muted: #f3f4f6;
-  --muted-foreground: #71717a;
-  --accent: #f3f4f6;
-  --accent-foreground: #171717;
+  --popover-foreground: #1f2329;
+  --primary: #ffd100;
+  --primary-foreground: #241a00;
+  --secondary: #fff7cc;
+  --secondary-foreground: #4f3a00;
+  --muted: #eef0f3;
+  --muted-foreground: #646a73;
+  --accent: #fff1a8;
+  --accent-foreground: #2f2500;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
-  --border: #e5e7eb;
-  --input: #e5e7eb;
-  --ring: #2563eb;
+  --border: #e6e8eb;
+  --input: #d9dde3;
+  --ring: #f5b800;
   --radius: 0.5rem;
 }
 
@@ -52,25 +52,25 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-    --card: #0a0a0a;
-    --card-foreground: #ededed;
-    --popover: #0a0a0a;
-    --popover-foreground: #ededed;
-    --primary: #3b82f6;
-    --primary-foreground: #ffffff;
-    --secondary: #27272a;
-    --secondary-foreground: #ededed;
-    --muted: #27272a;
-    --muted-foreground: #a1a1aa;
-    --accent: #27272a;
-    --accent-foreground: #ededed;
+    --background: #121417;
+    --foreground: #f7f8fa;
+    --card: #1a1d21;
+    --card-foreground: #f7f8fa;
+    --popover: #1a1d21;
+    --popover-foreground: #f7f8fa;
+    --primary: #ffd100;
+    --primary-foreground: #241a00;
+    --secondary: #3a3108;
+    --secondary-foreground: #ffe889;
+    --muted: #252a31;
+    --muted-foreground: #b8bec7;
+    --accent: #4a3d06;
+    --accent-foreground: #fff2a6;
     --destructive: #dc2626;
     --destructive-foreground: #ffffff;
-    --border: #27272a;
-    --input: #27272a;
-    --ring: #3b82f6;
+    --border: #2d333b;
+    --input: #343b44;
+    --ring: #f5b800;
   }
 }
 

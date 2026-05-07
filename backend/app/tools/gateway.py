@@ -1,14 +1,14 @@
 import json
-import hashlib
 import uuid
-from pathlib import Path
 from datetime import datetime
 from typing import Optional
+from app.artifacts.service import persist_tool_result_artifacts
 from app.core.database import get_session
-from app.projects.models import ToolCall, ApprovalRequest, Job
+from app.projects.models import ToolCall, ApprovalRequest
 from app.tools.registry import get_registry
-from app.tools.schemas import BusinessAnalysisAction, ToolResult, ToolError
-from app.core.permissions import action_to_permission_level, HIGH_RISK_ACTIONS, RISK_LEVEL_MAP, PermissionLevel
+from app.tools.schemas import BusinessAnalysisAction, ToolResult
+from app.core.permissions import HIGH_RISK_ACTIONS, RISK_LEVEL_MAP, PermissionLevel
+from app.core.config import settings
 
 
 class AnalysisToolGateway:
@@ -95,12 +95,30 @@ class AnalysisToolGateway:
                 return ToolResult(
                     ok=True,
                     action=action_str,
-                    summary="需要用户审批",
+                    summary="Approval required.",
                     state_patch={},
-                    assistant_hint="此操作需要用户审批，请在 UI 中确认。"
+                    assistant_hint="This action requires user approval in the UI before execution.",
                 )
 
-            result = tool_func(project_id, payload)
+            execution_payload = payload
+            if action_str.startswith("strategy."):
+                execution_payload = dict(payload or {})
+                execution_payload["_tool_context"] = {
+                    "tool_call_id": tool_call_id,
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "reason": reason,
+                }
+
+            result = tool_func(project_id, execution_payload)
+            if result.ok and result.artifacts and required_level >= PermissionLevel.WRITE_ARTIFACT:
+                persist_tool_result_artifacts(
+                    db,
+                    project_id=project_id,
+                    tool_call_id=tc.id if tc else None,
+                    result=result,
+                    commit=False,
+                )
 
             if tc:
                 tc.status = "succeeded"
@@ -143,7 +161,7 @@ class AnalysisToolGateway:
 
     def _write_tool_call_log(self, log_entry: dict):
         try:
-            log_path = Path("./workspaces") / "tool_calls.jsonl"
+            log_path = settings.workspace_root / "tool_calls.jsonl"
             log_path.parent.mkdir(parents=True, exist_ok=True)
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")

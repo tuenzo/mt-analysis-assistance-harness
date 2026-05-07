@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app.analysis.dashboard_chart_renderer import DEFAULT_DASHBOARD_CHART_IDS
 from app.core import config
 from app.core.database import get_session, init_db, reset_engine
 from app.demo.seed import DemoSeedService, seed_demo_if_enabled
@@ -121,6 +122,89 @@ def test_demo_seed_writes_workspace_manifest_context_latest_result(isolated_demo
     assert manifest["current_stage"] == "report_ready"
     assert len(manifest["files"]) == 4
     assert len(manifest["derived_assets"]) >= 8
+
+
+def test_demo_seed_repairs_missing_workspace_without_reset(isolated_demo_env, monkeypatch):
+    monkeypatch.setenv("APP_DEMO_MODE", "true")
+    DemoSeedService().seed(reset=True)
+
+    workspace = Path(isolated_demo_env) / "projects" / "proj_demo_test"
+    manifest_path = workspace / ".analysis" / "project_manifest.json"
+    manifest_path.unlink()
+
+    result = DemoSeedService().seed(reset=False)
+
+    assert result["project_id"] == "proj_demo_test"
+    assert manifest_path.exists()
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["current_stage"] == "report_ready"
+    assert (workspace / "reports" / "report.md").exists()
+
+
+def test_demo_seed_repairs_missing_artifact_file_without_reset(isolated_demo_env, monkeypatch):
+    monkeypatch.setenv("APP_DEMO_MODE", "true")
+    DemoSeedService().seed(reset=True)
+
+    workspace = Path(isolated_demo_env) / "projects" / "proj_demo_test"
+    db = get_session()
+    try:
+        artifact = db.query(Artifact).filter(Artifact.project_id == "proj_demo_test").first()
+        artifact_path = workspace / artifact.path
+    finally:
+        db.close()
+
+    artifact_path.unlink()
+
+    DemoSeedService().seed(reset=False)
+
+    assert artifact_path.exists()
+
+
+def test_demo_seed_repairs_existing_demo_id_even_if_legacy_record_is_not_test(isolated_demo_env, monkeypatch):
+    monkeypatch.setenv("APP_DEMO_MODE", "true")
+    DemoSeedService().seed(reset=True)
+
+    db = get_session()
+    try:
+        project = db.query(Project).filter(Project.id == "proj_demo_test").one()
+        project.is_test = 0
+        db.commit()
+    finally:
+        db.close()
+
+    result = DemoSeedService().seed(reset=False)
+
+    assert result["project_id"] == "proj_demo_test"
+
+
+def test_demo_seed_repairs_legacy_artifacts_without_dashboard_pngs(isolated_demo_env, monkeypatch):
+    monkeypatch.setenv("APP_DEMO_MODE", "true")
+    DemoSeedService().seed(reset=True)
+
+    db = get_session()
+    try:
+        db.query(Artifact).filter(
+            Artifact.project_id == "proj_demo_test",
+            Artifact.type == "dashboard_chart",
+        ).delete()
+        db.commit()
+    finally:
+        db.close()
+
+    DemoSeedService().seed(reset=False)
+
+    db = get_session()
+    try:
+        dashboard_artifacts = (
+            db.query(Artifact)
+            .filter(Artifact.project_id == "proj_demo_test", Artifact.type == "dashboard_chart")
+            .all()
+        )
+        assert len(dashboard_artifacts) == len(DEFAULT_DASHBOARD_CHART_IDS)
+        for artifact in dashboard_artifacts:
+            assert (Path(isolated_demo_env) / "projects" / "proj_demo_test" / artifact.path).exists()
+    finally:
+        db.close()
 
 
 def test_demo_session_messages_returns_seeded_history(isolated_demo_env, monkeypatch, client):

@@ -142,6 +142,35 @@ export interface AgentMessage {
 
 // SSE Event types
 export type SSEEvent =
+  | {
+      type: 'runtime_diagnostic'
+      turn_id: string
+      runtime: string
+      adapter: string
+      sdk_available: boolean
+      api_key_present: boolean
+      auth_token_present?: boolean
+      model: string
+      base_url_host: string
+      mock_fallback: boolean
+      claude_config_dir_isolated?: boolean
+      claude_config_dir?: string
+      skills?: string[] | 'all'
+      skill_allowed_tools?: string[]
+      workspace_path?: string
+    }
+  | {
+      type: 'runtime_usage'
+      turn_id: string
+      runtime: string
+      external_session_id?: string | null
+      duration_ms?: number | null
+      duration_api_ms?: number | null
+      num_turns?: number | null
+      total_cost_usd?: number | null
+      usage: Record<string, unknown>
+      model_usage: Record<string, unknown>
+    }
   | { type: 'assistant_message_delta'; turn_id: string; delta: string }
   | { type: 'tool_call_started'; turn_id: string; tool: string; action: string; payload?: Record<string, unknown>; tool_call_id?: string }
   | {

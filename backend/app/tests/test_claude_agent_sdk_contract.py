@@ -1,13 +1,15 @@
 import os
 import shutil
 import tempfile
+import uuid
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from app.agent.claude_adapter import MockClaudeRuntimeAdapter
 from app.agent.session_store import SessionStore
-from app.core.database import get_session, init_db
+from app.core.database import get_session, init_db, reset_engine
 from app.projects.models import AnalysisSession
 
 
@@ -16,15 +18,17 @@ def isolated_db():
     old_cwd = os.getcwd()
     tmp = tempfile.mkdtemp()
     os.chdir(tmp)
+    reset_engine()
     init_db()
     try:
         yield tmp
     finally:
+        reset_engine()
         os.chdir(old_cwd)
         shutil.rmtree(tmp)
 
 
-def test_adapter_factory_falls_back_to_mock_without_key(monkeypatch):
+def test_adapter_factory_requires_key_when_sdk_provider_requested(monkeypatch):
     import app.agent.claude_agent_sdk_adapter as sdk_adapter
     from app.core.config import settings as app_settings
 
@@ -32,9 +36,8 @@ def test_adapter_factory_falls_back_to_mock_without_key(monkeypatch):
     monkeypatch.setattr(sdk_adapter, "HAS_CLAUDE_AGENT_SDK", True)
     monkeypatch.setattr(app_settings, "anthropic_api_key", "")
 
-    adapter = sdk_adapter.get_claude_adapter({"provider": "claude_agent_sdk"})
-
-    assert isinstance(adapter, MockClaudeRuntimeAdapter)
+    with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
+        sdk_adapter.get_claude_adapter({"provider": "claude_agent_sdk"})
 
 
 def test_adapter_factory_falls_back_to_mock_when_provider_is_mock(monkeypatch):
@@ -64,6 +67,25 @@ def test_prompt_composer_guides_discover_first_data_load():
     assert "project.get_state -> data.discover_source_files -> data.ingest -> schema.infer -> data.validate" in prompt
     assert "selected_files" in prompt
     assert "Data load is complete only after data.validate succeeds" in prompt
+
+
+def test_sdk_prompt_includes_exact_project_id_instruction():
+    from app.agent.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
+
+    adapter = ClaudeAgentSDKAdapter({"provider": "claude_agent_sdk"})
+    prompt = adapter._build_prompt(
+        {
+            "project_id": "proj_exact_123",
+            "project_name": "Exact Project",
+            "current_stage": "created",
+            "data_quality": "unknown",
+        },
+        "Check state",
+    )
+
+    assert "- project_id: proj_exact_123" in prompt
+    assert 'always pass exactly this project_id: "proj_exact_123"' in prompt
+    assert "Do not use the route name" in prompt
 
 
 def test_mock_adapter_emits_autonomous_dataload_tool_sequence():
@@ -104,6 +126,103 @@ def test_adapter_factory_creates_real_sdk_adapter_when_sdk_and_key_available(mon
     assert isinstance(adapter, sdk_adapter.ClaudeAgentSDKAdapter)
     assert external_session_id
     assert adapter._sessions[external_session_id]["project_id"] == "proj_sdk"
+    assert adapter._sessions[external_session_id]["workspace_path"].replace("\\", "/").endswith(
+        "workspaces/projects/proj_sdk"
+    )
+    assert adapter._sessions[external_session_id]["skills"] == ["business-analysis"]
+
+
+def test_sdk_adapter_emits_runtime_diagnostic_without_mock_fallback(monkeypatch):
+    import app.agent.claude_agent_sdk_adapter as sdk_adapter
+
+    async def fake_query(**_):
+        yield
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(sdk_adapter, "HAS_CLAUDE_AGENT_SDK", True)
+    monkeypatch.setattr(sdk_adapter, "ClaudeAgentOptions", lambda **kwargs: SimpleNamespace(**kwargs))
+    monkeypatch.setattr(sdk_adapter, "tool", lambda *_, **__: (lambda fn: fn))
+    monkeypatch.setattr(sdk_adapter, "create_sdk_mcp_server", lambda *_, **__: SimpleNamespace())
+    monkeypatch.setattr(sdk_adapter, "query", fake_query)
+    monkeypatch.setattr(sdk_adapter, "get_gateway", lambda: SimpleNamespace())
+
+    adapter = sdk_adapter.ClaudeAgentSDKAdapter(
+        {"provider": "claude_agent_sdk", "workspace_root": "./workspaces"}
+    )
+    session_id = adapter.create_session("proj_sdk")
+
+    events = list(adapter.send_message(session_id, "Check runtime", {"project_name": "Demo"}))
+
+    diagnostic = next(event for event in events if event["type"] == "runtime_diagnostic")
+    assert diagnostic["runtime"] == "claude_agent_sdk"
+    assert diagnostic["adapter"] == "ClaudeAgentSDKAdapter"
+    assert diagnostic["api_key_present"] is True
+    assert diagnostic["auth_token_present"] is True
+    assert diagnostic["mock_fallback"] is False
+    assert diagnostic["claude_config_dir_isolated"] is True
+    assert ".analysis" in diagnostic["claude_config_dir"]
+    assert diagnostic["skills"] == ["business-analysis"]
+    assert diagnostic["skill_allowed_tools"] == ["Skill(business-analysis)"]
+
+
+def test_sdk_options_include_project_skill(monkeypatch):
+    import app.agent.claude_agent_sdk_adapter as sdk_adapter
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(sdk_adapter, "HAS_CLAUDE_AGENT_SDK", True)
+    monkeypatch.setattr(sdk_adapter, "ClaudeAgentOptions", lambda **kwargs: SimpleNamespace(**kwargs))
+    monkeypatch.setattr(sdk_adapter, "tool", lambda *_, **__: (lambda fn: fn))
+    monkeypatch.setattr(sdk_adapter, "create_sdk_mcp_server", lambda *_, **__: SimpleNamespace())
+    monkeypatch.setattr(sdk_adapter, "get_gateway", lambda: SimpleNamespace())
+
+    adapter = sdk_adapter.ClaudeAgentSDKAdapter(
+        {"provider": "claude_agent_sdk", "workspace_root": "./workspaces", "skills": ["business-analysis"]}
+    )
+    session_id = adapter.create_session("proj_sdk")
+    options = adapter._build_options(session_id, adapter._sessions[session_id])
+
+    assert options.skills == ["business-analysis"]
+    assert "mcp__business_analysis__business_analysis" in options.allowed_tools
+    assert "Skill(business-analysis)" not in options.allowed_tools
+
+
+def test_sdk_options_isolate_claude_config_from_user_account(monkeypatch):
+    import app.agent.claude_agent_sdk_adapter as sdk_adapter
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_BASE_URL", "http://127.0.0.1:9/anthropic")
+    monkeypatch.setattr(sdk_adapter, "HAS_CLAUDE_AGENT_SDK", True)
+    monkeypatch.setattr(sdk_adapter, "ClaudeAgentOptions", lambda **kwargs: SimpleNamespace(**kwargs))
+    monkeypatch.setattr(sdk_adapter, "tool", lambda *_, **__: (lambda fn: fn))
+    monkeypatch.setattr(sdk_adapter, "create_sdk_mcp_server", lambda *_, **__: SimpleNamespace())
+    monkeypatch.setattr(sdk_adapter, "get_gateway", lambda: SimpleNamespace())
+
+    tmp = tempfile.mkdtemp()
+    try:
+        workspace_root = Path(tmp) / "workspaces"
+        adapter = sdk_adapter.ClaudeAgentSDKAdapter(
+            {
+                "provider": "claude_agent_sdk",
+                "workspace_root": str(workspace_root),
+                "skills": ["business-analysis"],
+            }
+        )
+        session_id = adapter.create_session("proj_sdk")
+        options = adapter._build_options(session_id, adapter._sessions[session_id])
+
+        config_dir = Path(options.env["CLAUDE_CONFIG_DIR"])
+        expected_workspace = workspace_root / "projects" / "proj_sdk"
+
+        assert config_dir.exists()
+        assert config_dir == expected_workspace / ".analysis" / "claude-sdk-config" / session_id
+        assert Path.home() / ".claude" not in config_dir.parents
+        assert options.env["ANTHROPIC_API_KEY"] == "test-key"
+        assert options.env["ANTHROPIC_AUTH_TOKEN"] == "test-key"
+        assert options.env["ANTHROPIC_API_BASE_URL"] == "http://127.0.0.1:9/anthropic"
+        assert options.env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:9/anthropic"
+        assert options.env["CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK"] == "1"
+    finally:
+        shutil.rmtree(tmp)
 
 
 def test_sdk_event_mapping_includes_expected_stream_events(monkeypatch):
@@ -169,6 +288,84 @@ def test_sdk_event_mapping_includes_expected_stream_events(monkeypatch):
     assert "tool_call_started" in event_types
     assert "tool_call_finished" in event_types
     assert "final_answer" in event_types
+
+
+def test_sdk_event_mapping_overrides_hallucinated_project_id(monkeypatch, isolated_db):
+    import app.agent.claude_agent_sdk_adapter as sdk_adapter
+
+    class FakeToolUseBlock:
+        id = "toolu_wrong_project"
+        name = "business_analysis"
+        input = {
+            "project_id": "agent-analysis-test",
+            "action": "project.get_state",
+            "payload": {},
+            "reason": "inspect state",
+        }
+
+    class FakeAssistantMessage:
+        content = [FakeToolUseBlock()]
+
+    monkeypatch.setattr(sdk_adapter, "AssistantMessage", FakeAssistantMessage)
+    monkeypatch.setattr(sdk_adapter, "ToolUseBlock", FakeToolUseBlock)
+    monkeypatch.setattr(sdk_adapter, "get_gateway", lambda: SimpleNamespace())
+
+    adapter = sdk_adapter.ClaudeAgentSDKAdapter(
+        {"provider": "claude_agent_sdk", "workspace_root": "./workspaces"}
+    )
+    events = adapter._map_sdk_message(
+        FakeAssistantMessage(),
+        tool_uses={},
+        project_id="proj_real_123",
+        runtime_session_id="sess_real",
+        runtime_turn_id="turn_real",
+    )
+
+    started = [event for event in events if event["type"] == "tool_call_started"]
+    assert started
+    assert started[0]["payload"]["project_id"] == "proj_real_123"
+
+
+def test_sdk_execution_reuses_pending_tool_call(isolated_db):
+    from app.agent.claude_agent_sdk_adapter import ClaudeAgentSDKAdapter
+    from app.projects.models import ToolCall
+
+    suffix = uuid.uuid4().hex[:8]
+    tool_call_id = f"tc_pending_sdk_{suffix}"
+    session_id = f"sess_claim_{suffix}"
+    turn_id = f"turn_claim_{suffix}"
+    project_id = f"proj_claim_{suffix}"
+
+    db = get_session()
+    try:
+        db.add(
+            ToolCall(
+                id=tool_call_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                project_id=project_id,
+                tool_name="business_analysis",
+                action="project.get_state",
+                payload_json="{}",
+                payload_hash="sha256:test",
+                status="pending",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    adapter = ClaudeAgentSDKAdapter({"provider": "claude_agent_sdk"})
+
+    claimed = adapter._claim_pending_sdk_tool_call(
+        project_id=project_id,
+        action="project.get_state",
+        payload={},
+        runtime_session_id=session_id,
+        runtime_turn_id=turn_id,
+    )
+
+    assert claimed == tool_call_id
 
 
 def test_sdk_event_mapping_emits_tool_call_failed_when_tool_result_is_not_ok(monkeypatch):

@@ -3,6 +3,7 @@ from datetime import datetime
 from .manifest import ProjectManifest, FileEntry, AssetEntry, compute_file_checksum
 from .context_summary import ContextSummaryWriter
 from .checkpoints import CheckpointManager, CheckpointInfo
+from .skills import DEFAULT_PROJECT_SKILLS, ensure_project_skill_files
 
 
 WORKSPACE_TEMPLATE = {
@@ -16,6 +17,7 @@ WORKSPACE_TEMPLATE = {
     "logs": [],
     ".analysis": [],
     ".claude": [],
+    ".claude/skills": [],
 }
 
 
@@ -60,6 +62,8 @@ class WorkspaceManager:
                 "需要真实数据、图表、模型、报告时，调用 business_analysis 工具。\n"
                 "当前项目状态以 .analysis/context_summary.md 和 project_manifest.json 为准。\n"
             )
+
+        ensure_project_skill_files(workspace_path, DEFAULT_PROJECT_SKILLS)
 
     def update_project_manifest(self, project_id: str) -> ProjectManifest:
         workspace_path = self.get_workspace_path(project_id)

@@ -45,27 +45,111 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
             self._interrupted.discard(session_id)
             return
 
-        msg_lower = message.lower()
+        intent_message = context.get("user_message") or self._extract_user_message(message)
+        msg_lower = intent_message.lower()
         turn_id = f"turn_{uuid.uuid4().hex[:8]}"
-        source_path = self._extract_source_path(message)
+        source_path = self._extract_source_path(intent_message)
 
         is_data_load = any(
             kw in msg_lower
-            for kw in ["dataload", "data load", "load data", "ingest", "csv", "加载", "导入", "数据加载"]
+            for kw in [
+                "dataload",
+                "data load",
+                "load data",
+                "ingest",
+                "csv",
+                "\u52a0\u8f7d",
+                "\u5bfc\u5165",
+                "\u6570\u636e\u52a0\u8f7d",
+            ]
+        )
+        is_full_pipeline = any(
+            kw in msg_lower
+            for kw in [
+                "full pipeline",
+                "full promotion analysis",
+                "run the full",
+                "end to end",
+                "end-to-end",
+                "\u5168\u6d41\u7a0b",
+                "\u5b8c\u6574\u5206\u6790",
+                "\u771f\u5b9e\u5206\u6790",
+            ]
+        )
+        is_panel_build = any(
+            kw in msg_lower
+            for kw in [
+                "build panel",
+                "panel build",
+                "category day panel",
+                "category-day panel",
+                "\u751f\u6210panel",
+                "\u6784\u5efapanel",
+            ]
+        )
+        is_report = any(
+            kw in msg_lower
+            for kw in [
+                "report",
+                "report draft",
+                "generate report",
+                "\u62a5\u544a",
+                "\u62a5\u544a\u8349\u7a3f",
+            ]
+        )
+        is_strategy_design = any(
+            kw in msg_lower
+            for kw in [
+                "strategy design",
+                "analysis strategy",
+                "design flow",
+                "pipeline design",
+                "\u7b56\u7565\u8bbe\u8ba1",
+                "\u5206\u6790\u7b56\u7565",
+                "\u6d41\u7a0b\u8bbe\u8ba1",
+                "\u4e3b\u5bfc\u5206\u6790",
+            ]
+        )
+        is_dashboard_chart = any(
+            kw in msg_lower
+            for kw in [
+                "dashboard chart",
+                "dashboard image",
+                "regenerate chart",
+                "refresh chart",
+                "refresh image",
+                "\u91cd\u65b0\u751f\u6210\u56fe",
+                "\u5237\u65b0\u56fe",
+                "\u770b\u677f\u56fe",
+                "\u56fe\u7247",
+            ]
         )
         is_analysis = any(
             kw in msg_lower
-            for kw in ["analysis", "analyze", "generate", "run", "pipeline", "diagnostic", "分析", "运行", "生成"]
+            for kw in [
+                "analysis",
+                "analyze",
+                "generate",
+                "run",
+                "pipeline",
+                "diagnostic",
+                "\u5206\u6790",
+                "\u8fd0\u884c",
+                "\u751f\u6210",
+            ]
         )
-        is_status = any(kw in msg_lower for kw in ["state", "status", "project", "current", "状态", "项目"])
+        is_status = any(
+            kw in msg_lower
+            for kw in ["state", "status", "project", "current", "\u72b6\u6001", "\u9879\u76ee"]
+        )
 
-        yield {"type": "assistant_message_delta", "turn_id": turn_id, "delta": "收到。"}
+        yield {"type": "assistant_message_delta", "turn_id": turn_id, "delta": "Received. "}
 
         if is_data_load:
             yield {
                 "type": "assistant_message_delta",
                 "turn_id": turn_id,
-                "delta": "我会先发现源文件，再导入、推断 schema 并校验数据。",
+                "delta": "I will discover source CSV files, ingest them, infer schema, and validate data. ",
             }
             yield self._tool_started(turn_id, "project.get_state", {})
             yield self._tool_started(
@@ -83,49 +167,145 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
                 "type": "final_answer",
                 "turn_id": turn_id,
                 "message": (
-                    "我已按 project.get_state -> data.discover_source_files -> data.ingest -> "
-                    "schema.infer -> data.validate 的顺序尝试完成数据加载。若校验仍为 partial，"
-                    "请查看工具结果中的缺失角色、跳过文件或字段问题，我会基于这些问题继续给出修正方案。"
+                    "Data loading has been attempted through project.get_state -> "
+                    "data.discover_source_files -> data.ingest -> schema.infer -> data.validate. "
+                    "If validation remains partial, inspect the failed tool result for missing roles, "
+                    "skipped files, or schema issues."
                 ),
             }
             return
 
-        if is_analysis:
-            yield {"type": "assistant_message_delta", "turn_id": turn_id, "delta": "我先检查当前项目状态。"}
+        if is_full_pipeline:
+            yield {
+                "type": "assistant_message_delta",
+                "turn_id": turn_id,
+                "delta": "I will request the approved full analysis pipeline now. ",
+            }
             yield self._tool_started(turn_id, "project.get_state", {})
-            yield {"type": "assistant_message_delta", "turn_id": turn_id, "delta": "接着检查数据文件。"}
-            yield self._tool_started(turn_id, "data.validate", {})
-            yield {"type": "assistant_message_delta", "turn_id": turn_id, "delta": "数据校验已执行。"}
+            yield self._tool_started(turn_id, "analysis.run_full_pipeline", {"format": "md"})
             yield {
                 "type": "final_answer",
                 "turn_id": turn_id,
                 "message": (
-                    f"项目 {context.get('project_name', 'unknown')} 当前处于 "
-                    f"{context.get('current_stage', 'unknown')} 阶段；"
-                    f"数据质量为 {context.get('data_quality', 'unknown')}。"
+                    "Full analysis pipeline has been requested. If approval is required, approve it "
+                    "in the UI to run validation, panel build, diagnostics, causal checks, charts, "
+                    "and report generation."
+                ),
+            }
+            return
+
+        if is_panel_build:
+            yield {
+                "type": "assistant_message_delta",
+                "turn_id": turn_id,
+                "delta": "I will request category-day panel generation. ",
+            }
+            yield self._tool_started(turn_id, "project.get_state", {})
+            yield self._tool_started(turn_id, "panel.build_category_day", {})
+            yield {
+                "type": "final_answer",
+                "turn_id": turn_id,
+                "message": (
+                    "Panel build has been requested. If approval is required, approve it in the UI "
+                    "to generate the category-day panel."
+                ),
+            }
+            return
+
+        if is_report:
+            yield {
+                "type": "assistant_message_delta",
+                "turn_id": turn_id,
+                "delta": "I will gather the latest result and request report generation. ",
+            }
+            yield self._tool_started(turn_id, "project.get_state", {})
+            yield self._tool_started(turn_id, "result.get_latest", {})
+            yield self._tool_started(turn_id, "report.generate", {"format": "md"})
+            yield {
+                "type": "final_answer",
+                "turn_id": turn_id,
+                "message": "Report generation has been requested from the latest available analysis artifacts.",
+            }
+            return
+
+        if is_strategy_design:
+            yield {
+                "type": "assistant_message_delta",
+                "turn_id": turn_id,
+                "delta": "I will create an isolated strategy blueprint and analysis flow draft. ",
+            }
+            yield self._tool_started(turn_id, "project.get_state", {})
+            yield self._tool_started(turn_id, "strategy.design_blueprint", self._build_mock_strategy_blueprint_payload())
+            yield self._tool_started(turn_id, "strategy.design_flow", self._build_mock_strategy_flow_payload())
+            yield {
+                "type": "final_answer",
+                "turn_id": turn_id,
+                "message": (
+                    "Strategy design artifacts have been requested under the isolated strategy lab. "
+                    "They are review artifacts and do not modify backend source code."
+                ),
+            }
+            return
+
+        if is_dashboard_chart:
+            yield {
+                "type": "assistant_message_delta",
+                "turn_id": turn_id,
+                "delta": "I will regenerate the result dashboard images. ",
+            }
+            yield self._tool_started(turn_id, "chart.render_dashboard", {"charts": "all"})
+            yield {
+                "type": "final_answer",
+                "turn_id": turn_id,
+                "message": "Dashboard chart images have been requested from the backend renderer.",
+            }
+            return
+
+        if is_analysis:
+            yield {
+                "type": "assistant_message_delta",
+                "turn_id": turn_id,
+                "delta": "I will inspect project state and validate the currently available data. ",
+            }
+            yield self._tool_started(turn_id, "project.get_state", {})
+            yield self._tool_started(turn_id, "data.validate", {})
+            yield {
+                "type": "final_answer",
+                "turn_id": turn_id,
+                "message": (
+                    f"Project {context.get('project_name', 'unknown')} is currently at "
+                    f"{context.get('current_stage', 'unknown')} with data quality "
+                    f"{context.get('data_quality', 'unknown')}."
                 ),
             }
             return
 
         if is_status:
-            yield {"type": "assistant_message_delta", "turn_id": turn_id, "delta": "正在获取项目状态。"}
+            yield {"type": "assistant_message_delta", "turn_id": turn_id, "delta": "I will fetch project state. "}
             yield self._tool_started(turn_id, "project.get_state", {})
             yield {
                 "type": "final_answer",
                 "turn_id": turn_id,
                 "message": (
-                    f"项目 {context.get('project_name', 'unknown')} 当前阶段："
-                    f"{context.get('current_stage', 'unknown')}；"
-                    f"文件数量：{len(context.get('files', []))}。"
+                    f"Project {context.get('project_name', 'unknown')} is at "
+                    f"{context.get('current_stage', 'unknown')}; file count: "
+                    f"{len(context.get('files', []))}."
                 ),
             }
             return
 
-        yield {"type": "assistant_message_delta", "turn_id": turn_id, "delta": "你好，我是商业分析助手。"}
+        yield {
+            "type": "assistant_message_delta",
+            "turn_id": turn_id,
+            "delta": "Hello, I am the business analysis assistant. ",
+        }
         yield {
             "type": "final_answer",
             "turn_id": turn_id,
-            "message": "我可以帮你加载文件、诊断数据、运行分析模型并生成报告。你想先做哪一步？",
+            "message": (
+                "I can help load files, diagnose data, run analysis models, and generate reports. "
+                "What would you like to test first?"
+            ),
         }
 
     def interrupt(self, session_id: str) -> None:
@@ -141,7 +321,27 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
             "tool": "business_analysis",
             "action": action,
             "payload": payload,
+            "reason": MockClaudeRuntimeAdapter._reason_for_action(action),
         }
+
+    @staticmethod
+    def _reason_for_action(action: str) -> str:
+        reasons = {
+            "project.get_state": "Read current project state before choosing the next analysis action.",
+            "data.discover_source_files": "Discover available CSV files before ingesting local data.",
+            "data.ingest": "Import selected CSV files into the project workspace for analysis.",
+            "schema.infer": "Infer source column mappings before validation.",
+            "data.validate": "Check whether uploaded data satisfies the analysis contract.",
+            "panel.build_category_day": "Generate the category-day panel required by downstream diagnostics and causal analysis.",
+            "analysis.run_full_pipeline": "Run the approved end-to-end promotion analysis pipeline and generate outputs.",
+            "chart.render_dashboard": "Regenerate backend-rendered result dashboard PNG images.",
+            "result.get_latest": "Read latest analysis outputs before report generation.",
+            "report.generate": "Generate a report draft from the latest analysis artifacts.",
+            "strategy.design_blueprint": "Create an isolated strategy blueprint artifact for review.",
+            "strategy.design_flow": "Create an isolated analysis flow artifact for review.",
+            "strategy.propose_backend_change": "Create a backend change proposal artifact without editing source code.",
+        }
+        return reasons.get(action, f"Run {action}.")
 
     @staticmethod
     def _extract_source_path(message: str) -> str | None:
@@ -151,7 +351,14 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
         match = re.search(r"([A-Za-z]:[\\/][^\s\r\n\"']+)", message)
         if not match:
             return None
-        return match.group(1).strip().rstrip(" .。；;,，")
+        return match.group(1).strip().rstrip(" .;,")
+
+    @staticmethod
+    def _extract_user_message(message: str) -> str:
+        marker = "User message:"
+        if marker not in message:
+            return message
+        return message.rsplit(marker, 1)[-1].strip()
 
     @staticmethod
     def _build_mock_selected_files(source_path: str | None) -> list[dict]:
@@ -170,3 +377,51 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
                 }
             )
         return selected
+
+    @staticmethod
+    def _build_mock_strategy_blueprint_payload() -> dict:
+        return {
+            "title": "Promotion strategy analysis blueprint",
+            "objective": "Design an evidence-backed promotion analysis strategy before running or changing pipelines.",
+            "decision_questions": [
+                "Which categories show reliable incremental impact?",
+                "Which analysis stages are needed before business recommendations?",
+            ],
+            "assumptions": [
+                "Uploaded order, exposure, and activity files remain the project fact source.",
+                "Causal claims must cite available evidence and limitations.",
+            ],
+            "success_criteria": [
+                "Each recommendation maps to a measurable artifact.",
+                "Every proposed new stage is isolated as a backend change proposal.",
+            ],
+            "candidate_methods": ["diagnostics", "PSM-DID", "LocalGap", "GPS-Uplift"],
+        }
+
+    @staticmethod
+    def _build_mock_strategy_flow_payload() -> dict:
+        return {
+            "title": "Promotion analysis strategy flow",
+            "objective": "Draft an ordered flow for strategy-led analysis.",
+            "stages": [
+                {
+                    "name": "Project state review",
+                    "purpose": "Inspect current data and artifact availability.",
+                    "action": "project.get_state",
+                    "outputs": ["project status", "data readiness"],
+                },
+                {
+                    "name": "Evidence pipeline",
+                    "purpose": "Run the approved end-to-end analysis when data is ready.",
+                    "action": "analysis.run_full_pipeline",
+                    "inputs": ["validated CSV files"],
+                    "outputs": ["diagnostics", "causal evidence", "report draft"],
+                },
+                {
+                    "name": "Strategy profile promotion",
+                    "purpose": "Convert approved strategy designs into selectable backend pipeline profiles.",
+                    "proposed_backend_change": "Add reviewed strategy profiles as executable pipeline configurations.",
+                    "outputs": ["backend change proposal"],
+                },
+            ],
+        }

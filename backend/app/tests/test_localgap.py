@@ -75,6 +75,18 @@ def test_localgap_produces_decomposition(project_with_panel):
 
     assert result.ok is True
     assert "artifacts" in result.model_dump()
+    output_path = workspace_path / ".analysis" / "localgap_result.json"
+    enriched_path = workspace_path / "data" / "processed" / "localgap_enriched_panel.csv"
+    assert output_path.exists()
+    assert enriched_path.exists()
+
+    import json
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["method_status"] in {"implemented", "limited"}
+    assert "baseline_method" in payload
+    assert "coverage_rate" in payload["diagnostics"]
+    assert "baseline_quality" in payload["diagnostics"]
 
 
 def test_localgap_without_panel(client):

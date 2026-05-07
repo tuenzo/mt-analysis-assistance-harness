@@ -79,53 +79,19 @@ def analysis_run_full_pipeline(project_id: str, payload: dict) -> ToolResult:
             error={"code": "NOT_FOUND", "message": "Project not found"},
         )
 
-    workspace_path = Path(project.workspace_path)
-    results: list[tuple[str, bool]] = []
-    artifacts: list[dict] = []
-    all_ok = True
+    from app.core.database import get_session
+    from app.jobs.pipeline_runner import run_approved_full_pipeline
 
-    def record(step_result: ToolResult) -> None:
-        nonlocal all_ok
-        results.append((step_result.action, step_result.ok))
-        artifacts.extend(step_result.artifacts)
-        if not step_result.ok:
-            all_ok = False
-
-    from app.tools.data_tools import data_validate
-    record(data_validate(project_id, {}))
-
-    from app.analysis.pipelines.build_panel import build_category_day_panel
-    record(build_category_day_panel(project_id, str(workspace_path)))
-
-    record(run_diagnostics(project_id, str(workspace_path)))
-    record(run_psm_did(project_id, str(workspace_path)))
-    record(run_localgap(project_id, str(workspace_path)))
-    record(analysis_run_gps_uplift(project_id, {}))
-
-    from app.tools.chart_tools import chart_render
-    record(chart_render(project_id, {"type": "gmv_trend"}))
-    record(chart_render(project_id, {"type": "localgap"}))
-
-    from app.tools.result_tools import result_get_latest
-    record(result_get_latest(project_id, {}))
-
-    from app.tools.report_tools import report_generate
-    record(report_generate(project_id, {"format": payload.get("format", "md")}))
-
-    failed = [name for name, ok in results if not ok]
-    summary = (
-        "Full pipeline completed: "
-        if all_ok
-        else "Full pipeline partially completed: "
-    )
-    summary += ", ".join(name for name, _ in results)
-    if failed:
-        summary += f"; failed: {', '.join(failed)}"
-
-    return ToolResult(
-        ok=all_ok,
-        action="analysis.run_full_pipeline",
-        summary=summary,
-        artifacts=[*artifacts, {"type": "pipeline_result", "steps": results}],
-        assistant_hint="Full pipeline finished. Open Dashboard or Reports to review outputs.",
-    )
+    db = get_session()
+    try:
+        result, _ = run_approved_full_pipeline(
+            db,
+            project_id=project_id,
+            session_id=str(payload.get("session_id") or ""),
+            turn_id=str(payload.get("turn_id") or ""),
+            tool_call=None,
+            payload=payload,
+        )
+        return result
+    finally:
+        db.close()

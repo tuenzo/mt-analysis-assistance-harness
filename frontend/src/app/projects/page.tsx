@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useProjectStore } from '@/store/project-store'
 import { api } from '@/lib/api-client'
 import type { DemoStatus } from '@/lib/api-types'
+import { useApiBaseHref } from '@/lib/use-api-base-href'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -26,6 +27,7 @@ export default function ProjectsPage() {
   const [newProjectName, setNewProjectName] = useState('')
   const [creating, setCreating] = useState(false)
   const [demoStatus, setDemoStatus] = useState<DemoStatus | null>(null)
+  const hrefFor = useApiBaseHref()
 
   useEffect(() => {
     loadProjects()
@@ -112,7 +114,7 @@ export default function ProjectsPage() {
                 <p className="text-sm text-muted-foreground">{demoStatus.project_name}</p>
               </div>
             </div>
-            <Link href={`/projects/${demoStatus.project_id}/agent`}>
+            <Link href={hrefFor(`/projects/${demoStatus.project_id}/agent`)}>
               <Button>
                 <Sparkles className="mr-2 h-4 w-4" />
                 Enter Demo Project
@@ -173,7 +175,7 @@ export default function ProjectsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {projects.map((project) => (
-            <Link key={project.id} href={`/projects/${project.id}`}>
+            <Link key={project.id} href={hrefFor(`/projects/${project.id}`)}>
               <Card className="hover:border-primary/50 transition-colors cursor-pointer h-full">
                 <CardHeader>
                   <div className="flex items-start justify-between">
