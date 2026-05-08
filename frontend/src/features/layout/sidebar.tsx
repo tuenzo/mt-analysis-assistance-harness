@@ -30,6 +30,12 @@ const navItems = [
   { key: 'memory', label: '记忆', route: (projectId: string) => `/projects/${projectId}/memory`, icon: Brain },
 ]
 
+const fallbackRecentProjects = [
+  { id: 'demo-project', name: 'Keemart 促销增长全流程演示 Demo' },
+  { id: 'demo-project-2', name: '新项目演示2' },
+  { id: 'demo-project-3', name: '新项目' },
+]
+
 function getProjectIdFromPathname(pathname: string) {
   const match = pathname.match(/^\/projects\/([^/]+)/)
   return match?.[1] ?? ''
@@ -40,6 +46,7 @@ export function Sidebar() {
   const hrefFor = useApiBaseHref()
   const { projects, loadProjects } = useProjectStore()
   const projectId = getProjectIdFromPathname(pathname) || projects[0]?.id || ''
+  const recentProjects = projects.length > 0 ? projects.slice(0, 4) : fallbackRecentProjects
 
   useEffect(() => {
     loadProjects()
@@ -90,7 +97,7 @@ export function Sidebar() {
         <div className="mt-6">
           <div className="px-3 text-xs font-bold text-muted-foreground">最近项目</div>
           <div className="mt-2 space-y-1">
-            {projects.slice(0, 4).map((project) => {
+            {recentProjects.map((project) => {
               const active = pathname.startsWith(`/projects/${project.id}`)
               return (
                 <Link
@@ -108,12 +115,6 @@ export function Sidebar() {
                 </Link>
               )
             })}
-
-            {projects.length === 0 && (
-              <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
-                暂无项目
-              </div>
-            )}
           </div>
         </div>
       </nav>

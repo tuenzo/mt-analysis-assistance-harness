@@ -1,32 +1,30 @@
 'use client'
 
 import { Bell, ChevronDown, CircleHelp, User } from 'lucide-react'
+import { usePathname } from 'next/navigation'
 import { useProjectStore } from '@/store/project-store'
 
 export function Header() {
+  const pathname = usePathname()
   const { currentProject } = useProjectStore()
+  const isProjectRoute = pathname.startsWith('/projects/')
+  const projectName =
+    currentProject?.name ?? (isProjectRoute ? 'Keemart 促销增长全流程演示 Demo' : '商业分析伴随式工作区')
   const projectStatus = currentProject
     ? [currentProject.status, currentProject.current_stage].filter(Boolean).join(' · ')
-    : '工作区'
+    : isProjectRoute
+      ? 'report_ready · report_ready'
+      : '工作区'
 
   return (
     <header className="flex min-h-[70px] min-w-0 items-center justify-between gap-4 border-b border-border bg-gradient-to-r from-white via-[#fffaf0] to-white px-4 py-3 md:px-7">
       <div className="flex min-w-0 items-center gap-4">
-        {currentProject ? (
-          <div className="min-w-0">
-            <h1 className="truncate text-lg font-bold tracking-normal">{currentProject.name}</h1>
-            <p className="mt-1 text-xs font-medium text-muted-foreground">
-              {projectStatus}
-            </p>
-          </div>
-        ) : (
-          <div className="min-w-0">
-            <h1 className="truncate text-lg font-bold tracking-normal">商业分析伴随式工作区</h1>
-            <p className="mt-1 text-xs font-medium text-muted-foreground">
-              {projectStatus}
-            </p>
-          </div>
-        )}
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-bold tracking-normal">{projectName}</h1>
+          <p className="mt-1 text-xs font-medium text-muted-foreground">
+            {projectStatus}
+          </p>
+        </div>
       </div>
 
       <div className="flex shrink-0 items-center gap-2">

@@ -66,12 +66,12 @@ export function ResultDashboardPage({ summary }: { summary: DashboardSummary }) 
   return (
     <div className="h-full bg-background">
       <ScaledPageFrame
-        designWidth={1680}
-        designHeight={1010}
+        designWidth={1620}
+        designHeight={940}
         minScale={0.25}
         contentClassName="h-full"
       >
-        <div className="flex h-full flex-col bg-background px-6 py-5">
+        <div className="flex h-full flex-col bg-background px-6 py-4">
           <DashboardFilterBar
             filters={filters}
             onChange={setFilters}
@@ -262,12 +262,16 @@ function KpiCard({ kpi, onClick }: { kpi: KpiCardData; onClick: () => void }) {
 
 function DashboardMainGrid({ summary, onOpen }: { summary: DashboardSummary; onOpen: (title: string) => void }) {
   return (
-    <section className="mt-4 grid items-stretch gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_340px]">
-      <ParetoChartCard data={summary.pareto} onOpen={onOpen} />
-      <LocalGapWaterfallCard data={summary.localGap} onOpen={onOpen} />
-      <RecommendationPanel groups={summary.recommendations} onOpen={onOpen} className="xl:row-span-2" />
-      <GmvTrendComparisonCard data={summary.trend} onOpen={onOpen} />
-      <StrategyQuadrantCard data={summary.quadrants} onOpen={onOpen} />
+    <section className="mt-3 grid flex-1 items-stretch gap-4 xl:grid-cols-[minmax(0,1.18fr)_minmax(0,1.18fr)_320px]">
+      <div className="grid content-start gap-4">
+        <ParetoChartCard data={summary.pareto} onOpen={onOpen} />
+        <GmvTrendComparisonCard data={summary.trend} onOpen={onOpen} />
+      </div>
+      <div className="grid content-start gap-4">
+        <LocalGapWaterfallCard data={summary.localGap} onOpen={onOpen} />
+        <StrategyQuadrantCard data={summary.quadrants} onOpen={onOpen} />
+      </div>
+      <RecommendationPanel groups={summary.recommendations} onOpen={onOpen} className="h-full" />
     </section>
   )
 }
@@ -294,15 +298,17 @@ function ChartCardHeader({ title }: { title: string }) {
 }
 
 function ParetoChartCard({ data, onOpen }: { data: ParetoDatum[]; onOpen: (title: string) => void }) {
-  const chartTop = 18
-  const chartBottom = 176
+  const chartTop = 16
+  const chartBottom = 154
   const chartHeight = chartBottom - chartTop
   const points = data
     .map((item, index) => `${45 + index * 62},${chartBottom - (item.cumulativeRatio / 100) * chartHeight}`)
     .join(' ')
   return (
     <ChartCard title="品类 GMV Pareto" footer={<InsightMiniPanel text="饮料和零食贡献接近 60% GMV，是活动资源优先验证对象。" />}>
-      <svg viewBox="0 0 620 215" className="h-56 w-full" role="img" aria-label="品类 GMV Pareto">
+      <svg viewBox="0 0 620 188" className="h-48 w-full" role="img" aria-label="品类 GMV Pareto">
+        <text x="5" y="8" fontSize="11" fill="#374151">GMV（万元）</text>
+        <text x="540" y="8" fontSize="11" fill="#374151">累计占比（%）</text>
         <line x1="35" y1={chartBottom} x2="590" y2={chartBottom} stroke="#d9e1ec" />
         {[0, 600, 1200, 1800, 2400].map((tick) => (
           <g key={tick}>
@@ -318,7 +324,7 @@ function ParetoChartCard({ data, onOpen }: { data: ParetoDatum[]; onOpen: (title
               <rect x={x} y={chartBottom - height} width="30" height={height} rx="4" fill="#60a5fa">
                 <title>{`${item.category}: ${item.gmv} 万元`}</title>
               </rect>
-              <text x={x + 15} y="201" textAnchor="middle" fontSize="11" fill="#374151">{item.category}</text>
+              <text x={x + 15} y="180" textAnchor="middle" fontSize="11" fill="#374151">{item.category}</text>
             </g>
           )
         })}
@@ -361,13 +367,15 @@ function LocalGapWaterfallCard({ data, onOpen }: { data: WaterfallDatum[]; onOpe
 function GmvTrendComparisonCard({ data, onOpen }: { data: TrendDatum[]; onOpen: (title: string) => void }) {
   const max = Math.max(...data.map((item) => item.gmv))
   const chartTop = 18
-  const chartBottom = 170
+  const chartBottom = 154
   const chartHeight = chartBottom - chartTop
   const points = data.map((item, index) => `${40 + index * 75},${chartBottom - (item.gmv / max) * chartHeight * 0.92}`).join(' ')
   return (
     <ChartCard title="活动前中后：GMV 趋势与活动期对比">
-      <div className="grid grid-cols-[minmax(0,1fr)_160px] gap-4">
-        <svg viewBox="0 0 540 210" className="h-56 w-full" role="img" aria-label="GMV 趋势">
+      <div className="grid grid-cols-[minmax(0,1fr)_150px] gap-3">
+        <svg viewBox="0 0 540 188" className="h-48 w-full" role="img" aria-label="GMV 趋势">
+          <text x="5" y="8" fontSize="11" fill="#374151">GMV（万元）</text>
+          <text x="176" y="12" fontSize="11" fill="#92400e">活动期</text>
           <rect x="190" y={chartTop} width="155" height={chartHeight} fill="#fed7aa" opacity="0.35" />
           {[0, 300, 600, 900, 1200].map((tick) => (
             <g key={tick}>
@@ -384,8 +392,8 @@ function GmvTrendComparisonCard({ data, onOpen }: { data: TrendDatum[]; onOpen: 
                 <circle cx={x} cy={y} r="5" fill="#3b82f6">
                   <title>{`${item.date}: GMV ${item.gmv} 万`}</title>
                 </circle>
-                {item.isPayday && <circle cx={x} cy="188" r="4" fill="#ef4444" />}
-                <text x={x} y="202" textAnchor="middle" fontSize="11" fill="#374151">{item.date}</text>
+                {item.isPayday && <circle cx={x} cy="170" r="4" fill="#ef4444" />}
+                <text x={x} y="181" textAnchor="middle" fontSize="11" fill="#374151">{item.date}</text>
               </g>
             )
           })}
@@ -396,7 +404,7 @@ function GmvTrendComparisonCard({ data, onOpen }: { data: TrendDatum[]; onOpen: 
             ['活动中', 'GMV 2,960', '+61.2%'],
             ['活动后', 'GMV 1,620', '+8.4%'],
           ].map(([label, value, delta]) => (
-            <button key={label} onClick={() => onOpen(label)} className="rounded-xl border border-border bg-[#fbfcfe] px-3 py-3 text-left">
+            <button key={label} onClick={() => onOpen(label)} className="rounded-xl border border-border bg-[#fbfcfe] px-3 py-2 text-left">
               <p className="text-xs text-muted-foreground">{label}</p>
               <p className="mt-1 text-sm font-bold">{value}</p>
               <p className="mt-1 text-xs font-semibold text-blue-600">{delta}</p>
@@ -411,7 +419,7 @@ function GmvTrendComparisonCard({ data, onOpen }: { data: TrendDatum[]; onOpen: 
 function StrategyQuadrantCard({ data, onOpen }: { data: QuadrantItem[]; onOpen: (title: string) => void }) {
   return (
     <ChartCard title="品类策略四象限（气泡图）">
-      <div className="relative h-56 overflow-hidden rounded-xl border border-border bg-[#fbfcfe]">
+      <div className="relative h-48 overflow-hidden rounded-xl border border-border bg-[#fbfcfe]">
         <div className="absolute left-1/2 top-0 h-full border-l border-dashed border-[#cbd5e1]" />
         <div className="absolute left-0 top-1/2 w-full border-t border-dashed border-[#cbd5e1]" />
         <QuadrantLabel className="left-4 top-4" text="小规模试验区" />
@@ -453,7 +461,7 @@ function RecommendationPanel({
   className?: string
 }) {
   return (
-    <aside className={`grid content-start gap-4 ${className}`}>
+    <aside className={`grid auto-rows-fr content-stretch gap-4 ${className}`}>
       {groups.map((group) => (
         <RecommendationCard key={group.key} group={group} onOpen={onOpen} />
       ))}
@@ -464,18 +472,18 @@ function RecommendationPanel({
 function RecommendationCard({ group, onOpen }: { group: RecommendationGroup; onOpen: (title: string) => void }) {
   const color = colorClass[group.color]
   return (
-    <article className={`rounded-2xl border ${color.border} bg-white p-3 shadow-[var(--shadow-soft)]`}>
+    <article className={`flex min-h-0 flex-col rounded-2xl border ${color.border} bg-white p-3 shadow-[var(--shadow-soft)]`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
+        <div className="flex min-w-0 items-start gap-3">
           <span className={`rounded-xl p-2 ${color.tile}`}>
             <ArrowUpRight className="h-4 w-4" />
           </span>
-          <div>
+          <div className="min-w-0">
             <h3 className="font-bold">{group.title}</h3>
-            <p className="mt-1 text-xs leading-4 text-muted-foreground">{group.description}</p>
+            <p className="mt-1 overflow-hidden text-xs leading-4 text-muted-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">{group.description}</p>
           </div>
         </div>
-        <Badge variant="outline" className={`${color.tile} ${color.border}`}>{group.countLabel}</Badge>
+        <Badge variant="outline" className={`shrink-0 ${color.tile} ${color.border}`}>{group.countLabel}</Badge>
       </div>
       <div className="mt-2 flex flex-wrap gap-2">
         {group.categories.map((category) => (
@@ -489,7 +497,7 @@ function RecommendationCard({ group, onOpen }: { group: RecommendationGroup; onO
           </button>
         ))}
       </div>
-      <button onClick={() => onOpen(group.title)} className="mt-3 text-xs font-bold text-blue-600">查看全部</button>
+      <button onClick={() => onOpen(group.title)} className="mt-auto pt-2 text-left text-xs font-bold text-blue-600">查看全部</button>
     </article>
   )
 }
