@@ -223,7 +223,7 @@ function CoreConclusionBanner({ conclusion, onExplain }: { conclusion: string; o
 
 function KpiSummaryStrip({ kpis, onOpen }: { kpis: KpiCardData[]; onOpen: (title: string) => void }) {
   return (
-    <section className="mt-4 grid grid-cols-4 gap-4">
+    <section className="mt-3 grid grid-cols-4 gap-3">
       {kpis.map((kpi) => (
         <KpiCard key={kpi.key} kpi={kpi} onClick={() => onOpen(kpi.label)} />
       ))}
@@ -237,33 +237,37 @@ function KpiCard({ kpi, onClick }: { kpi: KpiCardData; onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-2xl border ${color.border} bg-white p-3 text-left shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5 hover:shadow-lg`}
+      className={`rounded-2xl border ${color.border} bg-white px-3 py-2.5 text-left shadow-[var(--shadow-soft)] transition hover:-translate-y-0.5 hover:shadow-lg`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <span className={`rounded-xl p-2 ${color.tile}`}>
+      <div className="flex items-center gap-3">
+        <span className={`rounded-lg p-1.5 ${color.tile}`}>
           {kpi.color === 'green' ? <Zap className="h-4 w-4" /> : kpi.color === 'blue' ? <Eye className="h-4 w-4" /> : kpi.color === 'orange' ? <Tag className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}
         </span>
-        <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold">{kpi.label}</p>
+          <div className="mt-1 flex items-end gap-1">
+            <span className="text-2xl font-bold tracking-normal">{kpi.value}</span>
+            {kpi.unit && <span className="mb-1 text-sm font-semibold">{kpi.unit}</span>}
+          </div>
+          <p className="mt-0.5 truncate text-xs font-semibold text-muted-foreground">{kpi.subText}</p>
+        </div>
+        <div className="flex w-24 shrink-0 flex-col items-end gap-1">
+          <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+          <Sparkline values={kpi.sparkline} color={color.accent} />
+        </div>
       </div>
-      <p className="mt-3 text-sm font-bold">{kpi.label}</p>
-      <div className="mt-2 flex items-end gap-1">
-        <span className="text-2xl font-bold tracking-normal">{kpi.value}</span>
-        {kpi.unit && <span className="mb-1 text-sm font-semibold">{kpi.unit}</span>}
-      </div>
-      <p className="mt-1.5 text-xs font-semibold text-muted-foreground">{kpi.subText}</p>
-      <Sparkline values={kpi.sparkline} color={color.accent} />
     </button>
   )
 }
 
 function DashboardMainGrid({ summary, onOpen }: { summary: DashboardSummary; onOpen: (title: string) => void }) {
   return (
-    <section className="mt-4 grid min-h-0 flex-1 grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_340px] gap-4">
-      <div className="grid min-h-0 grid-rows-2 gap-4">
+    <section className="mt-4 grid grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_340px] gap-4">
+      <div className="grid content-start gap-4">
         <ParetoChartCard data={summary.pareto} onOpen={onOpen} />
         <GmvTrendComparisonCard data={summary.trend} onOpen={onOpen} />
       </div>
-      <div className="grid min-h-0 grid-rows-2 gap-4">
+      <div className="grid content-start gap-4">
         <LocalGapWaterfallCard data={summary.localGap} onOpen={onOpen} />
         <StrategyQuadrantCard data={summary.quadrants} onOpen={onOpen} />
       </div>
@@ -274,7 +278,7 @@ function DashboardMainGrid({ summary, onOpen }: { summary: DashboardSummary; onO
 
 function ChartCard({ title, children, footer }: { title: string; children: ReactNode; footer?: ReactNode }) {
   return (
-    <article className="flex h-full min-h-0 flex-col rounded-2xl border border-border bg-white p-3 shadow-[var(--shadow-soft)]">
+    <article className="rounded-2xl border border-border bg-white p-3 shadow-[var(--shadow-soft)]">
       <ChartCardHeader title={title} />
       {children}
       {footer}
@@ -440,7 +444,7 @@ function StrategyQuadrantCard({ data, onOpen }: { data: QuadrantItem[]; onOpen: 
 
 function RecommendationPanel({ groups, onOpen }: { groups: RecommendationGroup[]; onOpen: (title: string) => void }) {
   return (
-    <aside className="grid h-full min-h-0 grid-rows-4 gap-4">
+    <aside className="grid content-start gap-4">
       {groups.map((group) => (
         <RecommendationCard key={group.key} group={group} onOpen={onOpen} />
       ))}
@@ -451,7 +455,7 @@ function RecommendationPanel({ groups, onOpen }: { groups: RecommendationGroup[]
 function RecommendationCard({ group, onOpen }: { group: RecommendationGroup; onOpen: (title: string) => void }) {
   const color = colorClass[group.color]
   return (
-    <article className={`h-full rounded-2xl border ${color.border} bg-white p-3 shadow-[var(--shadow-soft)]`}>
+    <article className={`rounded-2xl border ${color.border} bg-white p-3 shadow-[var(--shadow-soft)]`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           <span className={`rounded-xl p-2 ${color.tile}`}>
@@ -588,7 +592,7 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
     })
     .join(' ')
   return (
-    <svg viewBox="0 0 120 42" className="mt-2 h-8 w-full">
+    <svg viewBox="0 0 120 42" className="h-7 w-full">
       <polyline points={points} fill="none" stroke={color} strokeWidth="3" />
     </svg>
   )
