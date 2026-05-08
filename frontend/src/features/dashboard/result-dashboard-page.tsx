@@ -500,49 +500,80 @@ function GmvTrendComparisonCard({ data, onOpen }: { data: TrendDatum[]; onOpen: 
 }
 
 function StrategyQuadrantCard({ data, onOpen }: { data: QuadrantItem[]; onOpen: (title: string) => void }) {
+  const visualLayout: Record<string, { x: number; y: number; size: number; color: string; textColor?: string }> = {
+    饮料: { x: 78, y: 64, size: 54, color: '#60a5fa', textColor: '#0f172a' },
+    零食: { x: 64, y: 60, size: 40, color: '#a3e635', textColor: '#1f2937' },
+    个护: { x: 88, y: 59, size: 36, color: '#bfdbfe', textColor: '#1e3a8a' },
+    母婴: { x: 28, y: 62, size: 36, color: '#bfdbfe', textColor: '#1e3a8a' },
+    酒水: { x: 40, y: 65, size: 32, color: '#ddd6fe', textColor: '#312e81' },
+    生鲜: { x: 57, y: 34, size: 34, color: '#fdba74', textColor: '#7c2d12' },
+    乳品: { x: 67, y: 28, size: 30, color: '#bbf7d0', textColor: '#14532d' },
+    家清: { x: 78, y: 31, size: 30, color: '#fde68a', textColor: '#713f12' },
+    粮油: { x: 27, y: 31, size: 30, color: '#fda4af', textColor: '#7f1d1d' },
+  }
+
+  const laidOutData = data.map((item) => {
+    const visual = visualLayout[item.category] ?? {
+      x: Math.min(88, Math.max(22, item.x)),
+      y: Math.min(72, Math.max(28, item.y)),
+      size: Math.max(30, item.size),
+      color: item.color,
+    }
+    return { ...item, visual }
+  })
+
   return (
     <ChartCard title="品类策略四象限（气泡图）">
-      <div className="relative h-48 overflow-hidden rounded-xl border border-border bg-[#fbfcfe]">
+      <div className="relative h-60 overflow-hidden rounded-xl border border-border bg-[#fbfcfe]">
         <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-          <line x1="10" y1="86" x2="94" y2="86" stroke="#64748b" strokeWidth="0.7" />
-          <polyline points="91,83 94,86 91,89" fill="none" stroke="#64748b" strokeWidth="0.7" />
-          <line x1="10" y1="86" x2="10" y2="10" stroke="#64748b" strokeWidth="0.7" />
-          <polyline points="7,13 10,10 13,13" fill="none" stroke="#64748b" strokeWidth="0.7" />
-          <line x1="52" y1="12" x2="52" y2="86" stroke="#cbd5e1" strokeDasharray="2 2" strokeWidth="0.5" />
-          <line x1="10" y1="50" x2="94" y2="50" stroke="#cbd5e1" strokeDasharray="2 2" strokeWidth="0.5" />
-          {[24, 38, 66, 80].map((x) => (
-            <line key={`x-tick-${x}`} x1={x} y1="84.5" x2={x} y2="87.5" stroke="#94a3b8" strokeWidth="0.4" />
+          <line x1="14" y1="84" x2="92" y2="84" stroke="#94a3b8" strokeWidth="0.6" />
+          <polyline points="89,81.5 92,84 89,86.5" fill="none" stroke="#94a3b8" strokeWidth="0.6" />
+          <line x1="14" y1="84" x2="14" y2="14" stroke="#94a3b8" strokeWidth="0.6" />
+          <polyline points="11.5,17 14,14 16.5,17" fill="none" stroke="#94a3b8" strokeWidth="0.6" />
+          <line x1="53" y1="16" x2="53" y2="84" stroke="#cbd5e1" strokeDasharray="2 2" strokeWidth="0.65" />
+          <line x1="14" y1="50" x2="92" y2="50" stroke="#cbd5e1" strokeDasharray="2 2" strokeWidth="0.65" />
+          {[28, 40, 66, 80].map((x) => (
+            <line key={`x-tick-${x}`} x1={x} y1="82.5" x2={x} y2="85.5" stroke="#cbd5e1" strokeWidth="0.45" />
           ))}
-          {[28, 42, 64, 78].map((y) => (
-            <line key={`y-tick-${y}`} x1="8.5" y1={y} x2="11.5" y2={y} stroke="#94a3b8" strokeWidth="0.4" />
+          {[28, 40, 62, 74].map((y) => (
+            <line key={`y-tick-${y}`} x1="12.5" y1={y} x2="15.5" y2={y} stroke="#cbd5e1" strokeWidth="0.45" />
           ))}
         </svg>
-        <QuadrantLabel className="left-4 top-4" text="小规模试验区" />
-        <QuadrantLabel className="right-4 top-4" text="优先加码区" />
-        <QuadrantLabel className="left-4 bottom-4" text="减少投入区" />
-        <QuadrantLabel className="right-4 bottom-4" text="保护基本盘区" />
-        <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-muted-foreground">增量贡献</span>
-        <span className="absolute bottom-2 left-9 text-xs text-muted-foreground">低</span>
-        <span className="absolute bottom-2 right-5 text-xs text-muted-foreground">高</span>
-        <span className="absolute left-2 top-1/2 -translate-y-1/2 -rotate-90 text-xs text-muted-foreground">效果改善</span>
-        <span className="absolute left-4 top-8 text-xs text-muted-foreground">高</span>
-        <span className="absolute bottom-9 left-4 text-xs text-muted-foreground">低</span>
-        {data.map((item) => (
+
+        <QuadrantLabel className="left-[18%] top-3" text="小规模试验区" />
+        <QuadrantLabel className="right-[5%] top-3" text="优先加码区" />
+        <QuadrantLabel className="bottom-[34px] left-[18%]" text="减少投入区" />
+        <QuadrantLabel className="bottom-[34px] right-[5%]" text="保护基本盘区" />
+
+        <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs font-medium text-muted-foreground">增量贡献</span>
+        <span className="absolute bottom-2 left-[14%] text-xs text-muted-foreground">低</span>
+        <span className="absolute bottom-2 right-[6%] text-xs text-muted-foreground">高</span>
+        <span className="absolute left-2 top-1/2 -translate-y-1/2 -rotate-90 text-xs font-medium text-muted-foreground">效果改善</span>
+        <span className="absolute left-[5%] top-[14%] text-xs text-muted-foreground">高</span>
+        <span className="absolute bottom-[14%] left-[5%] text-xs text-muted-foreground">低</span>
+
+        {laidOutData.map((item) => (
           <button
             key={item.category}
             type="button"
             onClick={() => onOpen(item.category)}
-            className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white text-[11px] font-bold shadow-md transition hover:z-10 hover:scale-110"
+            className="absolute z-[1] flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white text-[11px] font-bold leading-none shadow-[0_8px_18px_rgba(15,23,42,0.16)] transition hover:z-10 hover:scale-110"
             style={{
-              left: `${item.x}%`,
-              top: `${100 - item.y}%`,
-              width: item.size,
-              height: item.size,
-              backgroundColor: item.color,
+              left: `${item.visual.x}%`,
+              top: `${100 - item.visual.y}%`,
+              width: item.visual.size,
+              height: item.visual.size,
+              minWidth: item.visual.size,
+              backgroundColor: item.visual.color,
+              color: item.visual.textColor ?? '#111827',
+              boxShadow:
+                item.category === '饮料'
+                  ? '0 12px 24px rgba(37, 99, 235, 0.28)'
+                  : '0 8px 18px rgba(15, 23, 42, 0.16)',
             }}
             title={`${item.category}: ${item.suggestedAction}`}
           >
-            {item.category}
+            <span className="whitespace-nowrap">{item.category}</span>
           </button>
         ))}
       </div>
