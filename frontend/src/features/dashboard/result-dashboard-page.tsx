@@ -301,21 +301,32 @@ function ParetoChartCard({ data, onOpen }: { data: ParetoDatum[]; onOpen: (title
   const chartTop = 16
   const chartBottom = 154
   const chartHeight = chartBottom - chartTop
+  const rightAxisX = 598
   const points = data
     .map((item, index) => `${45 + index * 62},${chartBottom - (item.cumulativeRatio / 100) * chartHeight}`)
     .join(' ')
   return (
     <ChartCard title="品类 GMV Pareto" footer={<InsightMiniPanel text="饮料和零食贡献接近 60% GMV，是活动资源优先验证对象。" />}>
-      <svg viewBox="0 0 620 188" className="h-48 w-full" role="img" aria-label="品类 GMV Pareto">
+      <svg viewBox="0 0 650 188" className="h-48 w-full" role="img" aria-label="品类 GMV Pareto">
         <text x="5" y="8" fontSize="11" fill="#374151">GMV（万元）</text>
-        <text x="540" y="8" fontSize="11" fill="#374151">累计占比（%）</text>
+        <text x="586" y="8" fontSize="11" fill="#374151">累计占比（%）</text>
         <line x1="35" y1={chartBottom} x2="590" y2={chartBottom} stroke="#d9e1ec" />
+        <line x1={rightAxisX} y1={chartTop} x2={rightAxisX} y2={chartBottom} stroke="#d9e1ec" />
         {[0, 600, 1200, 1800, 2400].map((tick) => (
           <g key={tick}>
             <line x1="35" y1={chartBottom - (tick / 2400) * chartHeight} x2="590" y2={chartBottom - (tick / 2400) * chartHeight} stroke="#eef2f7" />
             <text x="5" y={chartBottom + 4 - (tick / 2400) * chartHeight} fontSize="10" fill="#6b7280">{tick}</text>
           </g>
         ))}
+        {[0, 25, 50, 75, 100].map((tick) => {
+          const y = chartBottom - (tick / 100) * chartHeight
+          return (
+            <g key={`ratio-${tick}`}>
+              <line x1={rightAxisX} y1={y} x2={rightAxisX + 5} y2={y} stroke="#d9e1ec" />
+              <text x={rightAxisX + 10} y={y + 4} fontSize="10" fill="#6b7280">{tick}%</text>
+            </g>
+          )
+        })}
         {data.map((item, index) => {
           const height = (item.gmv / 2400) * chartHeight
           const x = 30 + index * 62
@@ -340,6 +351,31 @@ function ParetoChartCard({ data, onOpen }: { data: ParetoDatum[]; onOpen: (title
 }
 
 function LocalGapWaterfallCard({ data, onOpen }: { data: WaterfallDatum[]; onOpen: (title: string) => void }) {
+  const chartTop = 14
+  const chartBottom = 150
+  const chartHeight = chartBottom - chartTop
+  const barWidth = 70
+  const step = 94
+  const startX = 42
+  let cumulative = 0
+  const bars = data.map((item, index) => {
+    const x = startX + index * step
+    const start = item.type === 'baseline' || item.type === 'total' ? 0 : cumulative
+    const end =
+      item.type === 'baseline' || item.type === 'total'
+        ? item.value
+        : cumulative + item.value
+
+    if (item.type !== 'total') {
+      cumulative = end
+    }
+
+    return { item, x, start, end }
+  })
+  const maxValue = Math.max(...bars.flatMap((bar) => [bar.start, bar.end]), 1)
+  const chartMax = Math.ceil(maxValue / 400) * 400
+  const scaleY = (value: number) => chartBottom - (value / chartMax) * chartHeight
+
   return (
     <ChartCard title="LocalGap 增量分解瀑布图" footer={<InsightMiniPanel text="曝光贡献是主要增量来源，交互/渠道项提示需要复盘触达质量。" />}>
       <div className="mb-2 flex justify-end gap-3 text-xs text-muted-foreground">
@@ -347,19 +383,61 @@ function LocalGapWaterfallCard({ data, onOpen }: { data: WaterfallDatum[]; onOpe
         <Legend color="#ef4444" label="负向贡献" />
         <Legend color="#9ca3af" label="基线/合计" />
       </div>
-      <div className="flex h-48 items-end gap-3 border-b border-border px-3">
-        {data.map((item) => {
-          const height = Math.max(26, Math.abs(item.value) / 1400 * 190)
-          const color = item.type === 'positive' ? '#22c55e' : item.type === 'negative' ? '#ef4444' : '#9ca3af'
+      <svg viewBox="0 0 635 188" className="h-48 w-full" role="img" aria-label="LocalGap 增量分解瀑布图">
+        <text x="5" y="8" fontSize="11" fill="#374151">GMV（万元）</text>
+        <line x1="34" y1={chartBottom} x2="610" y2={chartBottom} stroke="#d9e1ec" />
+        {[0, 400, 800, 1200, 1600].map((tick) => {
+          const y = scaleY(tick)
           return (
-            <button key={item.name} type="button" onClick={() => onOpen(item.name)} className="group flex min-w-0 flex-1 flex-col items-center gap-2">
-              <span className="text-xs font-bold">{item.value > 0 && item.type !== 'baseline' && item.type !== 'total' ? '+' : ''}{item.value}</span>
-              <span className="w-full rounded-t-md transition group-hover:opacity-80" style={{ height, backgroundColor: color }} title={`${item.name}: ${item.value}`} />
-              <span className="w-full truncate text-center text-[11px] text-muted-foreground">{item.name}</span>
-            </button>
+            <g key={tick}>
+              <line x1="34" y1={y} x2="610" y2={y} stroke="#eef2f7" />
+              <text x="5" y={y + 4} fontSize="10" fill="#6b7280">{tick}</text>
+            </g>
           )
         })}
-      </div>
+        {bars.slice(0, -1).map((bar, index) => {
+          const nextBar = bars[index + 1]
+          const y = scaleY(bar.end)
+          return (
+            <line
+              key={`${bar.item.name}-connector`}
+              x1={bar.x + barWidth}
+              y1={y}
+              x2={nextBar.x}
+              y2={y}
+              stroke="#94a3b8"
+              strokeDasharray="4 4"
+            />
+          )
+        })}
+        {bars.map(({ item, x, start, end }) => {
+          const top = Math.min(scaleY(start), scaleY(end))
+          const height = Math.max(6, Math.abs(scaleY(start) - scaleY(end)))
+          const color = item.type === 'positive' ? '#22c55e' : item.type === 'negative' ? '#ef4444' : '#9ca3af'
+          const label = item.type === 'positive' ? `+${item.value}` : `${item.value}`
+          return (
+            <g key={item.name} onClick={() => onOpen(item.name)} className="cursor-pointer">
+              <rect
+                x={x}
+                y={top}
+                width={barWidth}
+                height={height}
+                rx="6"
+                fill={color}
+                className="transition hover:opacity-80"
+              >
+                <title>{`${item.name}: ${item.value}`}</title>
+              </rect>
+              <text x={x + barWidth / 2} y={top - 7} textAnchor="middle" fontSize="12" fontWeight="700" fill="#111827">
+                {label}
+              </text>
+              <text x={x + barWidth / 2} y="177" textAnchor="middle" fontSize="11" fill="#374151">
+                {item.name}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
     </ChartCard>
   )
 }
@@ -372,6 +450,11 @@ function GmvTrendComparisonCard({ data, onOpen }: { data: TrendDatum[]; onOpen: 
   const points = data.map((item, index) => `${40 + index * 75},${chartBottom - (item.gmv / max) * chartHeight * 0.92}`).join(' ')
   return (
     <ChartCard title="活动前中后：GMV 趋势与活动期对比">
+      <div className="mb-2 flex justify-end gap-3 text-xs text-muted-foreground">
+        <Legend color="#3b82f6" label="GMV" />
+        <Legend color="#fed7aa" label="活动期窗口" />
+        <Legend color="#ef4444" label="发薪日" />
+      </div>
       <div className="grid grid-cols-[minmax(0,1fr)_150px] gap-3">
         <svg viewBox="0 0 540 188" className="h-48 w-full" role="img" aria-label="GMV 趋势">
           <text x="5" y="8" fontSize="11" fill="#374151">GMV（万元）</text>
@@ -420,14 +503,30 @@ function StrategyQuadrantCard({ data, onOpen }: { data: QuadrantItem[]; onOpen: 
   return (
     <ChartCard title="品类策略四象限（气泡图）">
       <div className="relative h-48 overflow-hidden rounded-xl border border-border bg-[#fbfcfe]">
-        <div className="absolute left-1/2 top-0 h-full border-l border-dashed border-[#cbd5e1]" />
-        <div className="absolute left-0 top-1/2 w-full border-t border-dashed border-[#cbd5e1]" />
+        <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <line x1="10" y1="86" x2="94" y2="86" stroke="#64748b" strokeWidth="0.7" />
+          <polyline points="91,83 94,86 91,89" fill="none" stroke="#64748b" strokeWidth="0.7" />
+          <line x1="10" y1="86" x2="10" y2="10" stroke="#64748b" strokeWidth="0.7" />
+          <polyline points="7,13 10,10 13,13" fill="none" stroke="#64748b" strokeWidth="0.7" />
+          <line x1="52" y1="12" x2="52" y2="86" stroke="#cbd5e1" strokeDasharray="2 2" strokeWidth="0.5" />
+          <line x1="10" y1="50" x2="94" y2="50" stroke="#cbd5e1" strokeDasharray="2 2" strokeWidth="0.5" />
+          {[24, 38, 66, 80].map((x) => (
+            <line key={`x-tick-${x}`} x1={x} y1="84.5" x2={x} y2="87.5" stroke="#94a3b8" strokeWidth="0.4" />
+          ))}
+          {[28, 42, 64, 78].map((y) => (
+            <line key={`y-tick-${y}`} x1="8.5" y1={y} x2="11.5" y2={y} stroke="#94a3b8" strokeWidth="0.4" />
+          ))}
+        </svg>
         <QuadrantLabel className="left-4 top-4" text="小规模试验区" />
         <QuadrantLabel className="right-4 top-4" text="优先加码区" />
         <QuadrantLabel className="left-4 bottom-4" text="减少投入区" />
         <QuadrantLabel className="right-4 bottom-4" text="保护基本盘区" />
         <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-muted-foreground">增量贡献</span>
+        <span className="absolute bottom-2 left-9 text-xs text-muted-foreground">低</span>
+        <span className="absolute bottom-2 right-5 text-xs text-muted-foreground">高</span>
         <span className="absolute left-2 top-1/2 -translate-y-1/2 -rotate-90 text-xs text-muted-foreground">效果改善</span>
+        <span className="absolute left-4 top-8 text-xs text-muted-foreground">高</span>
+        <span className="absolute bottom-9 left-4 text-xs text-muted-foreground">低</span>
         {data.map((item) => (
           <button
             key={item.category}
