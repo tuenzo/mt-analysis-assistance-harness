@@ -294,35 +294,37 @@ function ChartCardHeader({ title }: { title: string }) {
 }
 
 function ParetoChartCard({ data, onOpen }: { data: ParetoDatum[]; onOpen: (title: string) => void }) {
-  const max = Math.max(...data.map((item) => item.gmv))
+  const chartTop = 18
+  const chartBottom = 176
+  const chartHeight = chartBottom - chartTop
   const points = data
-    .map((item, index) => `${45 + index * 62},${185 - item.cumulativeRatio * 1.4}`)
+    .map((item, index) => `${45 + index * 62},${chartBottom - (item.cumulativeRatio / 100) * chartHeight}`)
     .join(' ')
   return (
     <ChartCard title="品类 GMV Pareto" footer={<InsightMiniPanel text="饮料和零食贡献接近 60% GMV，是活动资源优先验证对象。" />}>
-      <svg viewBox="0 0 620 240" className="h-48 w-full" role="img" aria-label="品类 GMV Pareto">
-        <line x1="35" y1="190" x2="590" y2="190" stroke="#d9e1ec" />
+      <svg viewBox="0 0 620 215" className="h-56 w-full" role="img" aria-label="品类 GMV Pareto">
+        <line x1="35" y1={chartBottom} x2="590" y2={chartBottom} stroke="#d9e1ec" />
         {[0, 600, 1200, 1800, 2400].map((tick) => (
           <g key={tick}>
-            <line x1="35" y1={190 - (tick / 2400) * 160} x2="590" y2={190 - (tick / 2400) * 160} stroke="#eef2f7" />
-            <text x="5" y={194 - (tick / 2400) * 160} fontSize="10" fill="#6b7280">{tick}</text>
+            <line x1="35" y1={chartBottom - (tick / 2400) * chartHeight} x2="590" y2={chartBottom - (tick / 2400) * chartHeight} stroke="#eef2f7" />
+            <text x="5" y={chartBottom + 4 - (tick / 2400) * chartHeight} fontSize="10" fill="#6b7280">{tick}</text>
           </g>
         ))}
         {data.map((item, index) => {
-          const height = (item.gmv / max) * 150
+          const height = (item.gmv / 2400) * chartHeight
           const x = 30 + index * 62
           return (
             <g key={item.category} onClick={() => onOpen(item.category)} className="cursor-pointer">
-              <rect x={x} y={190 - height} width="30" height={height} rx="4" fill="#60a5fa">
+              <rect x={x} y={chartBottom - height} width="30" height={height} rx="4" fill="#60a5fa">
                 <title>{`${item.category}: ${item.gmv} 万元`}</title>
               </rect>
-              <text x={x + 15} y="215" textAnchor="middle" fontSize="11" fill="#374151">{item.category}</text>
+              <text x={x + 15} y="201" textAnchor="middle" fontSize="11" fill="#374151">{item.category}</text>
             </g>
           )
         })}
         <polyline points={points} fill="none" stroke="#2563eb" strokeWidth="3" />
         {data.map((item, index) => (
-          <circle key={`${item.category}-line`} cx={45 + index * 62} cy={185 - item.cumulativeRatio * 1.4} r="4" fill="#2563eb">
+          <circle key={`${item.category}-line`} cx={45 + index * 62} cy={chartBottom - (item.cumulativeRatio / 100) * chartHeight} r="4" fill="#2563eb">
             <title>{`累计占比 ${item.cumulativeRatio}%`}</title>
           </circle>
         ))}
@@ -358,29 +360,32 @@ function LocalGapWaterfallCard({ data, onOpen }: { data: WaterfallDatum[]; onOpe
 
 function GmvTrendComparisonCard({ data, onOpen }: { data: TrendDatum[]; onOpen: (title: string) => void }) {
   const max = Math.max(...data.map((item) => item.gmv))
-  const points = data.map((item, index) => `${40 + index * 75},${180 - (item.gmv / max) * 140}`).join(' ')
+  const chartTop = 18
+  const chartBottom = 170
+  const chartHeight = chartBottom - chartTop
+  const points = data.map((item, index) => `${40 + index * 75},${chartBottom - (item.gmv / max) * chartHeight * 0.92}`).join(' ')
   return (
     <ChartCard title="活动前中后：GMV 趋势与活动期对比">
       <div className="grid grid-cols-[minmax(0,1fr)_160px] gap-4">
-        <svg viewBox="0 0 540 220" className="h-48 w-full" role="img" aria-label="GMV 趋势">
-          <rect x="190" y="20" width="155" height="165" fill="#fed7aa" opacity="0.35" />
+        <svg viewBox="0 0 540 210" className="h-56 w-full" role="img" aria-label="GMV 趋势">
+          <rect x="190" y={chartTop} width="155" height={chartHeight} fill="#fed7aa" opacity="0.35" />
           {[0, 300, 600, 900, 1200].map((tick) => (
             <g key={tick}>
-              <line x1="35" y1={185 - (tick / 1200) * 150} x2="510" y2={185 - (tick / 1200) * 150} stroke="#eef2f7" />
-              <text x="5" y={189 - (tick / 1200) * 150} fontSize="10" fill="#6b7280">{tick}</text>
+              <line x1="35" y1={chartBottom - (tick / 1200) * chartHeight} x2="510" y2={chartBottom - (tick / 1200) * chartHeight} stroke="#eef2f7" />
+              <text x="5" y={chartBottom + 4 - (tick / 1200) * chartHeight} fontSize="10" fill="#6b7280">{tick}</text>
             </g>
           ))}
           <polyline points={points} fill="none" stroke="#3b82f6" strokeWidth="3" />
           {data.map((item, index) => {
             const x = 40 + index * 75
-            const y = 180 - (item.gmv / max) * 140
+            const y = chartBottom - (item.gmv / max) * chartHeight * 0.92
             return (
               <g key={item.date} onClick={() => onOpen(item.date)} className="cursor-pointer">
                 <circle cx={x} cy={y} r="5" fill="#3b82f6">
                   <title>{`${item.date}: GMV ${item.gmv} 万`}</title>
                 </circle>
-                {item.isPayday && <circle cx={x} cy="198" r="4" fill="#ef4444" />}
-                <text x={x} y="215" textAnchor="middle" fontSize="11" fill="#374151">{item.date}</text>
+                {item.isPayday && <circle cx={x} cy="188" r="4" fill="#ef4444" />}
+                <text x={x} y="202" textAnchor="middle" fontSize="11" fill="#374151">{item.date}</text>
               </g>
             )
           })}
@@ -406,7 +411,7 @@ function GmvTrendComparisonCard({ data, onOpen }: { data: TrendDatum[]; onOpen: 
 function StrategyQuadrantCard({ data, onOpen }: { data: QuadrantItem[]; onOpen: (title: string) => void }) {
   return (
     <ChartCard title="品类策略四象限（气泡图）">
-      <div className="relative h-48 rounded-xl border border-border bg-[#fbfcfe]">
+      <div className="relative h-56 overflow-hidden rounded-xl border border-border bg-[#fbfcfe]">
         <div className="absolute left-1/2 top-0 h-full border-l border-dashed border-[#cbd5e1]" />
         <div className="absolute left-0 top-1/2 w-full border-t border-dashed border-[#cbd5e1]" />
         <QuadrantLabel className="left-4 top-4" text="小规模试验区" />
