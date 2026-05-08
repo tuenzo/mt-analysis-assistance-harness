@@ -60,16 +60,19 @@ class MessageRuntime:
             context = self.context_builder.build(project_id, ui_context)
             context["runtime_session_id"] = session_id
             context["runtime_turn_id"] = turn.id
+            context["runtime_provider"] = self.runtime_provider
             context["user_message"] = message
 
             prompt = self.prompt_composer.compose(context, message)
             context["composed_prompt"] = prompt
 
+            final_answer = ""
             for event in self.adapter.send_message(session.external_session_id or session_id, message, context):
                 if event.get("type") == "external_session_updated":
                     self.session_store.update_session(
                         session_id,
                         external_session_id=event.get("external_session_id"),
+                        runtime_provider=self.runtime_provider,
                     )
                     continue
 
@@ -77,6 +80,8 @@ class MessageRuntime:
                     continue
 
                 event["turn_id"] = turn.id
+                if event.get("type") == "final_answer":
+                    final_answer = event.get("message", "")
                 self._event_buffers[session_id].append(event)
 
                 if event["type"] == "tool_call_started" and not event.get("sdk_executed"):
@@ -95,6 +100,8 @@ class MessageRuntime:
                 )
 
             turn.status = "completed"
+            if final_answer:
+                turn.assistant_message = final_answer
             turn.completed_at = datetime.now().isoformat()
             db.commit()
 
@@ -282,10 +289,18 @@ class MessageRuntime:
                 external_session_id = session.external_session_id
                 if external_session_id:
                     self.adapter.resume_session(external_session_id, project_id)
+                    if session.runtime_provider != self.runtime_provider:
+                        self.session_store.update_session(session.id, runtime_provider=self.runtime_provider)
+                        session.runtime_provider = self.runtime_provider
                 else:
                     external_session_id = self.adapter.create_session(project_id)
-                    self.session_store.update_session(session.id, external_session_id=external_session_id)
+                    self.session_store.update_session(
+                        session.id,
+                        external_session_id=external_session_id,
+                        runtime_provider=self.runtime_provider,
+                    )
                     session.external_session_id = external_session_id
+                    session.runtime_provider = self.runtime_provider
                 return session
 
         external_session_id = self.adapter.create_session(project_id)

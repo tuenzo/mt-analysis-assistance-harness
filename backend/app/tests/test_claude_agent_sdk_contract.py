@@ -59,6 +59,7 @@ def test_prompt_composer_guides_discover_first_data_load():
             "project_id": "proj_prompt",
             "project_name": "Prompt",
             "current_stage": "created",
+            "runtime_provider": "claude_agent_sdk",
             "available_actions": ["data.discover_source_files", "data.ingest", "schema.infer", "data.validate"],
         },
         "加载 D:\\data\\hello 的数据",
@@ -67,6 +68,8 @@ def test_prompt_composer_guides_discover_first_data_load():
     assert "project.get_state -> data.discover_source_files -> data.ingest -> schema.infer -> data.validate" in prompt
     assert "selected_files" in prompt
     assert "Data load is complete only after data.validate succeeds" in prompt
+    assert "- runtime_provider: claude_agent_sdk" in prompt
+    assert "do not infer runtime from demo artifacts" in prompt
 
 
 def test_sdk_prompt_includes_exact_project_id_instruction():

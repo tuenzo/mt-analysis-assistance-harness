@@ -3,6 +3,7 @@ class PromptComposer:
         project_id = context.get("project_id", "unknown")
         project_name = context.get("project_name", "unknown project")
         current_stage = context.get("current_stage", "unknown")
+        runtime_provider = context.get("runtime_provider", "unknown")
         files = context.get("files", [])
         data_quality = context.get("data_quality", "unknown")
         latest_result = context.get("latest_result")
@@ -22,6 +23,7 @@ Current project:
 - project_id: {project_id}
 - project_name: {project_name}
 - current_stage: {current_stage}
+- runtime_provider: {runtime_provider}
 - uploaded_files:
 {files_str}
 - data_quality: {data_quality}
@@ -44,6 +46,7 @@ Rules:
 14. For reports, ask the backend to generate report.generate and use .analysis/report_plan.json as the evidence skeleton.
 15. When the user asks to refresh result-dashboard images, call chart.render_dashboard with payload {{"charts": "all"}} or a chart_ids list.
 16. Reports and business-facing summaries should default to Chinese unless the user explicitly requests another language.
+17. When asked whether the current agent runtime is real or mock, use runtime_provider from this prompt; do not infer runtime from demo artifacts or seeded pipeline outputs.
 
 Tool:
 business_analysis(project_id, action, payload, reason)

@@ -106,20 +106,19 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       if (response.ok && response.data) {
         const { session_id, turn_id } = response.data
 
-        // Update or create session
-        if (!get().sessions[session_id]) {
-          const sessionResponse = await api.getSession(session_id)
-          if (sessionResponse.ok && sessionResponse.data) {
-            const sessionData = sessionResponse.data as AgentSession
-            set((state) => ({
-              ...state,
-              sessions: {
-                ...state.sessions,
-                [session_id]: sessionData,
-              },
-              currentSession: sessionData,
-            }))
-          }
+        // Refresh the session every time because demo seed sessions can be
+        // promoted to the configured runtime provider on first live message.
+        const sessionResponse = await api.getSession(session_id)
+        if (sessionResponse.ok && sessionResponse.data) {
+          const sessionData = sessionResponse.data as AgentSession
+          set((state) => ({
+            ...state,
+            sessions: {
+              ...state.sessions,
+              [session_id]: sessionData,
+            },
+            currentSession: sessionData,
+          }))
         }
 
         // Add user message to queue

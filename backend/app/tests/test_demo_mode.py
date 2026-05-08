@@ -57,7 +57,7 @@ def test_demo_seed_enabled_creates_fixed_project(isolated_demo_env, monkeypatch,
     data = response.json()["data"]
     assert data["enabled"] is True
     assert data["project_id"] == "proj_demo_test"
-    assert data["session_id"] == "demo_session_keemart_full"
+    assert data["session_id"] is None
 
     db = get_session()
     try:
@@ -73,6 +73,33 @@ def test_demo_seed_enabled_creates_fixed_project(isolated_demo_env, monkeypatch,
         assert session.external_session_id is None
     finally:
         db.close()
+
+
+def test_demo_status_prefers_live_runtime_session(isolated_demo_env, monkeypatch, client):
+    monkeypatch.setenv("APP_DEMO_MODE", "true")
+    DemoSeedService().seed(reset=True)
+
+    db = get_session()
+    try:
+        live_session = AnalysisSession(
+            id="live_agent_session",
+            project_id="proj_demo_test",
+            runtime_provider="claude_agent_sdk",
+            external_session_id="external_live_agent_session",
+            status="active",
+            created_at="2026-05-08T00:00:00",
+            updated_at="2026-05-08T00:00:00",
+        )
+        db.add(live_session)
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.get("/api/demo/status")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["enabled"] is True
+    assert data["session_id"] == "live_agent_session"
 
 
 def test_demo_seed_resets_existing_project(isolated_demo_env, monkeypatch):

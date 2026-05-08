@@ -6,7 +6,7 @@ import { preserveApiBaseParam, readApiBaseQueryFromLocation } from './navigation
 
 export function useApiBaseHref(): (href: string) => string {
   const pathname = usePathname()
-  const [apiBaseQuery, setApiBaseQuery] = useState(() => readApiBaseQueryFromLocation())
+  const [apiBaseQuery, setApiBaseQuery] = useState('')
 
   useEffect(() => {
     const syncApiBase = () => setApiBaseQuery(readApiBaseQueryFromLocation())

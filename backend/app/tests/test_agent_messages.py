@@ -128,6 +128,21 @@ def test_get_session(client, project):
     assert data["runtime_provider"] == "mock"
 
 
+def test_session_messages_include_runtime_final_answer(client, project):
+    r = client.post("/api/agent/messages", json={
+        "project_id": project["id"],
+        "message": "hello",
+    })
+    assert r.status_code == 200
+    data = r.json()
+
+    r2 = client.get(f"/api/agent/sessions/{data['session_id']}/messages")
+    assert r2.status_code == 200
+    messages = r2.json()["data"]
+    assert messages[-1]["role"] == "assistant"
+    assert "load files" in messages[-1]["content"]
+
+
 def test_project_sessions_list(client, project):
     r = client.post("/api/agent/messages", json={"project_id": project["id"], "message": "hi"})
     session_id = r.json()["session_id"]

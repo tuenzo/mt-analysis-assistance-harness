@@ -226,7 +226,7 @@ export function AgentAnalysisTestHarness() {
   const [localError, setLocalError] = useState<string | null>(null)
   const [seenEventStream, setSeenEventStream] = useState(false)
   const [seenFinalAnswer, setSeenFinalAnswer] = useState(false)
-  const [apiBaseUrl, setApiBaseUrl] = useState(() => api.getBaseUrl())
+  const [apiBaseUrl, setApiBaseUrl] = useState('')
   const [fixtureLoading, setFixtureLoading] = useState(false)
   const [fixtureStatus, setFixtureStatus] = useState<string | null>(null)
 

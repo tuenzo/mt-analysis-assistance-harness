@@ -52,12 +52,20 @@ class DemoSeedService:
 
         db = get_session()
         try:
-            session = db.query(AnalysisSession).filter(AnalysisSession.project_id == project_id).first()
+            session = (
+                db.query(AnalysisSession)
+                .filter(
+                    AnalysisSession.project_id == project_id,
+                    AnalysisSession.runtime_provider != "demo",
+                )
+                .order_by(AnalysisSession.updated_at.desc(), AnalysisSession.created_at.desc())
+                .first()
+            )
             return {
                 "enabled": True,
                 "project_id": project_id,
                 "project_name": DEMO_PROJECT_NAME,
-                "session_id": session.id if session else DEMO_SESSION_ID,
+                "session_id": session.id if session else None,
             }
         finally:
             db.close()
