@@ -1,6 +1,87 @@
 import type { DashboardSummary } from '@/types/dashboard'
 import type { Artifact, LatestReport, ProjectState } from '@/lib/api-types'
 
+const dailyData = [
+  {
+    date: '05-06',
+    actualGmv: 480,
+    baselineGmv: 450,
+    exposureContribution: 20,
+    discountContribution: 5,
+    isActivityDay: false,
+    isPayday: false,
+    period: 'pre' as const,
+  },
+  {
+    date: '05-11',
+    actualGmv: 640,
+    baselineGmv: 600,
+    exposureContribution: 45,
+    discountContribution: -8,
+    isActivityDay: false,
+    isPayday: false,
+    period: 'pre' as const,
+  },
+  {
+    date: '05-16',
+    actualGmv: 1030,
+    baselineGmv: 720,
+    exposureContribution: 250,
+    discountContribution: 50,
+    isActivityDay: true,
+    isPayday: true,
+    period: 'during' as const,
+  },
+  {
+    date: '05-21',
+    actualGmv: 780,
+    baselineGmv: 680,
+    exposureContribution: 90,
+    discountContribution: 22,
+    isActivityDay: true,
+    isPayday: false,
+    period: 'during' as const,
+  },
+  {
+    date: '05-26',
+    actualGmv: 1150,
+    baselineGmv: 760,
+    exposureContribution: 310,
+    discountContribution: 74,
+    isActivityDay: true,
+    isPayday: true,
+    period: 'during' as const,
+  },
+  {
+    date: '05-31',
+    actualGmv: 700,
+    baselineGmv: 610,
+    exposureContribution: 80,
+    discountContribution: -4,
+    isActivityDay: false,
+    isPayday: false,
+    period: 'post' as const,
+  },
+  {
+    date: '06-04',
+    actualGmv: 920,
+    baselineGmv: 590,
+    exposureContribution: 185,
+    discountContribution: 41,
+    isActivityDay: false,
+    isPayday: false,
+    period: 'post' as const,
+  },
+]
+
+const analysisSnapshots = [
+  { date: '05-18', boostCategoryCount: 3 },
+  { date: '05-22', boostCategoryCount: 3 },
+  { date: '05-26', boostCategoryCount: 4 },
+  { date: '05-30', boostCategoryCount: 3 },
+  { date: '06-04', boostCategoryCount: 4 },
+]
+
 export function buildDashboardSummary(source: {
   state: ProjectState | null
   artifacts: Artifact[]
@@ -20,7 +101,12 @@ export function buildDashboardSummary(source: {
         trendText: '+61.2%',
         trendDirection: 'up',
         color: 'green',
-        sparkline: [42, 39, 47, 58, 64, 60, 66, 61, 69, 74],
+        chartType: 'line',
+        signed: true,
+        series: dailyData.map((item) => ({
+          label: item.date,
+          value: item.actualGmv - item.baselineGmv,
+        })),
       },
       {
         key: 'exposure_contribution',
@@ -31,7 +117,12 @@ export function buildDashboardSummary(source: {
         trendText: '75.9%',
         trendDirection: 'up',
         color: 'blue',
-        sparkline: [22, 31, 48, 45, 42, 58, 61, 57, 66, 72],
+        chartType: 'bar',
+        signed: false,
+        series: dailyData.map((item) => ({
+          label: item.date,
+          value: item.exposureContribution,
+        })),
       },
       {
         key: 'discount_contribution',
@@ -42,7 +133,12 @@ export function buildDashboardSummary(source: {
         trendText: '14.0%',
         trendDirection: 'flat',
         color: 'orange',
-        sparkline: [18, 16, 22, 19, 24, 21, 30, 22, 27, 38],
+        chartType: 'line',
+        signed: true,
+        series: dailyData.map((item) => ({
+          label: item.date,
+          value: item.discountContribution,
+        })),
       },
       {
         key: 'boost_categories',
@@ -53,7 +149,12 @@ export function buildDashboardSummary(source: {
         trendText: '+1',
         trendDirection: 'up',
         color: 'purple',
-        sparkline: [2, 3, 3, 2, 3, 3, 4, 3, 4, 5],
+        chartType: 'line',
+        signed: false,
+        series: analysisSnapshots.map((item) => ({
+          label: item.date,
+          value: item.boostCategoryCount,
+        })),
       },
     ],
     pareto: [
@@ -75,15 +176,16 @@ export function buildDashboardSummary(source: {
       { name: '交互/渠道', value: -110, type: 'negative' },
       { name: '实际GMV', value: 1290, type: 'total' },
     ],
-    trend: [
-      { date: '05-06', gmv: 280, exposure: 120, discount: 40 },
-      { date: '05-11', gmv: 520, exposure: 260, discount: 85 },
-      { date: '05-16', gmv: 890, exposure: 520, discount: 140, isActivityDay: true, isPayday: true },
-      { date: '05-21', gmv: 500, exposure: 330, discount: 88, isActivityDay: true },
-      { date: '05-26', gmv: 980, exposure: 610, discount: 155, isActivityDay: true, isPayday: true },
-      { date: '05-31', gmv: 560, exposure: 350, discount: 95 },
-      { date: '06-04', gmv: 760, exposure: 420, discount: 110 },
-    ],
+    trend: dailyData.map((item) => ({
+      date: item.date,
+      gmv: item.actualGmv,
+      baselineGmv: item.baselineGmv,
+      exposure: item.exposureContribution,
+      discount: item.discountContribution,
+      isActivityDay: item.isActivityDay,
+      isPayday: item.isPayday,
+      period: item.period,
+    })),
     quadrants: [
       { category: '饮料', x: 78, y: 70, size: 42, group: 'boost', color: '#60a5fa', suggestedAction: '优先加码曝光与排面' },
       { category: '零食', x: 62, y: 62, size: 30, group: 'boost', color: '#a3e635', suggestedAction: '维持曝光，加一点折扣' },

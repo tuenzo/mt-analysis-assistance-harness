@@ -5,6 +5,11 @@ export type DashboardFilters = {
   calendarType: 'all' | 'payday' | 'nonpayday'
 }
 
+export type SparklinePoint = {
+  label: string
+  value: number
+}
+
 export type KpiCardData = {
   key: string
   label: string
@@ -14,7 +19,9 @@ export type KpiCardData = {
   trendText?: string
   trendDirection?: 'up' | 'down' | 'flat'
   color: 'green' | 'blue' | 'orange' | 'purple'
-  sparkline: number[]
+  chartType: 'line' | 'bar'
+  signed?: boolean
+  series: SparklinePoint[]
 }
 
 export type ParetoDatum = {
@@ -32,10 +39,12 @@ export type WaterfallDatum = {
 export type TrendDatum = {
   date: string
   gmv: number
+  baselineGmv: number
   exposure?: number
   discount?: number
   isActivityDay?: boolean
   isPayday?: boolean
+  period: 'pre' | 'during' | 'post'
 }
 
 export type QuadrantItem = {

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
 import { AlertTriangle, BarChart3, LineChart, PieChart, RefreshCw } from 'lucide-react'
 import { api } from '@/lib/api-client'
 import type { Artifact, ChartArtifactData } from '@/lib/api-types'
@@ -158,8 +159,15 @@ function ChartArtifactCard({
             {error}
           </div>
         ) : imageSrc ? (
-          <div className="flex h-56 items-center justify-center rounded-md bg-secondary/20 p-3">
-            <img src={imageSrc} alt={artifact.title} className="max-h-full max-w-full rounded-sm object-contain" />
+          <div className="relative h-56 rounded-md bg-secondary/20 p-3">
+            <Image
+              src={imageSrc}
+              alt={artifact.title}
+              fill
+              unoptimized
+              sizes="(min-width: 1280px) 50vw, 100vw"
+              className="rounded-sm object-contain p-3"
+            />
           </div>
         ) : chart ? (
           <ChartRenderer chart={chart} />
