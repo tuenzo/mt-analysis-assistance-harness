@@ -1,7 +1,6 @@
 'use client'
 
 import {
-  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -34,13 +33,16 @@ export function ScaledPageFrame({
 }: ScaledPageFrameProps) {
   const frameRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
-  const scaleRef = useRef(1)
+  const hasMeasuredRef = useRef(false)
   const [scale, setScale] = useState(1)
   const [frameSize, setFrameSize] = useState({ width: designWidth, height: designHeight })
 
-  const updateScale = useCallback(() => {
+  useIsomorphicLayoutEffect(() => {
+    if (hasMeasuredRef.current) return
+
     const frame = frameRef.current
     if (!frame) return
+    hasMeasuredRef.current = true
 
     const rect = frame.getBoundingClientRect()
     const availableWidth = Math.max(rect.width, 1)
@@ -58,41 +60,11 @@ export function ScaledPageFrame({
     const baseScale = Math.min(maxScale, Math.max(minScale, Math.min(availableWidth / designWidth, availableHeight / designHeight)))
     const overflowScale = Math.min(availableWidth / Math.max(fitWidth, 1), availableHeight / Math.max(fitHeight, 1))
     const nextScale = Math.min(baseScale, Math.max(minScale, overflowScale))
+    const roundedScale = Number(nextScale.toFixed(3))
 
-    setFrameSize((current) =>
-      current.width === roundedFrame.width && current.height === roundedFrame.height
-        ? current
-        : roundedFrame,
-    )
-    setScale((current) => {
-      const rounded = Number(nextScale.toFixed(3))
-      if (Math.abs(current - rounded) > 0.005) {
-        scaleRef.current = rounded
-        return rounded
-      }
-      return current
-    })
+    setFrameSize(roundedFrame)
+    setScale(roundedScale)
   }, [designHeight, designWidth, maxScale, minScale])
-
-  useIsomorphicLayoutEffect(() => {
-    const frame = frameRef.current
-    if (!frame) return
-
-    updateScale()
-    const observer = new ResizeObserver(updateScale)
-    observer.observe(frame)
-    window.addEventListener('resize', updateScale)
-
-    return () => {
-      observer.disconnect()
-      window.removeEventListener('resize', updateScale)
-    }
-  }, [updateScale])
-
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(updateScale)
-    return () => window.cancelAnimationFrame(frame)
-  }, [scale, updateScale])
 
   const contentStyle: CSSProperties = {
     transform: `scale(${scale})`,

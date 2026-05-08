@@ -48,6 +48,10 @@ The frontend SHALL fit dense Agent and dashboard canvases to the available page 
 - **WHEN** a user opens the Agent analysis page or result dashboard using a wide, narrow, tall, or short desktop viewport
 - **THEN** the main content canvas scales according to the available page width-height ratio, fills the page content area, and remains fully visible
 
+#### Scenario: Stable scale after refresh
+- **WHEN** the page has calculated its scale after a user refresh or route entry
+- **THEN** subsequent content rendering, resize observer activity, or minor layout changes do not continuously recalculate the scale
+
 #### Scenario: Overlay usability
 - **WHEN** the dashboard drill-down drawer or export modal is opened
 - **THEN** the overlay renders outside the scaled canvas and keeps normal viewport-relative sizing
