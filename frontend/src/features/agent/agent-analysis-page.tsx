@@ -208,7 +208,7 @@ export function AgentAnalysisPage() {
       <ScaledPageFrame
         designWidth={1680}
         designHeight={1010}
-        minScale={0.4}
+        minScale={0.25}
         contentClassName="h-full"
       >
         <div className="flex h-full flex-col bg-background px-6 py-5">

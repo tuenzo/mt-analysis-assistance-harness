@@ -258,12 +258,12 @@ function KpiCard({ kpi, onClick }: { kpi: KpiCardData; onClick: () => void }) {
 
 function DashboardMainGrid({ summary, onOpen }: { summary: DashboardSummary; onOpen: (title: string) => void }) {
   return (
-    <section className="mt-4 grid grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_340px] gap-4">
-      <div className="grid gap-4">
+    <section className="mt-4 grid min-h-0 flex-1 grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_340px] gap-4">
+      <div className="grid min-h-0 grid-rows-2 gap-4">
         <ParetoChartCard data={summary.pareto} onOpen={onOpen} />
         <GmvTrendComparisonCard data={summary.trend} onOpen={onOpen} />
       </div>
-      <div className="grid gap-4">
+      <div className="grid min-h-0 grid-rows-2 gap-4">
         <LocalGapWaterfallCard data={summary.localGap} onOpen={onOpen} />
         <StrategyQuadrantCard data={summary.quadrants} onOpen={onOpen} />
       </div>
@@ -274,7 +274,7 @@ function DashboardMainGrid({ summary, onOpen }: { summary: DashboardSummary; onO
 
 function ChartCard({ title, children, footer }: { title: string; children: ReactNode; footer?: ReactNode }) {
   return (
-    <article className="rounded-2xl border border-border bg-white p-3 shadow-[var(--shadow-soft)]">
+    <article className="flex h-full min-h-0 flex-col rounded-2xl border border-border bg-white p-3 shadow-[var(--shadow-soft)]">
       <ChartCardHeader title={title} />
       {children}
       {footer}
@@ -440,7 +440,7 @@ function StrategyQuadrantCard({ data, onOpen }: { data: QuadrantItem[]; onOpen: 
 
 function RecommendationPanel({ groups, onOpen }: { groups: RecommendationGroup[]; onOpen: (title: string) => void }) {
   return (
-    <aside className="grid content-start gap-4">
+    <aside className="grid h-full min-h-0 grid-rows-4 gap-4">
       {groups.map((group) => (
         <RecommendationCard key={group.key} group={group} onOpen={onOpen} />
       ))}
@@ -451,7 +451,7 @@ function RecommendationPanel({ groups, onOpen }: { groups: RecommendationGroup[]
 function RecommendationCard({ group, onOpen }: { group: RecommendationGroup; onOpen: (title: string) => void }) {
   const color = colorClass[group.color]
   return (
-    <article className={`rounded-2xl border ${color.border} bg-white p-3 shadow-[var(--shadow-soft)]`}>
+    <article className={`h-full rounded-2xl border ${color.border} bg-white p-3 shadow-[var(--shadow-soft)]`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           <span className={`rounded-xl p-2 ${color.tile}`}>

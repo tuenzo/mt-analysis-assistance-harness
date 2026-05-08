@@ -19,4 +19,4 @@
 
 ## 5. Viewport Fit Scaling
 
-- [x] 5.1 Add ratio-aware desktop scaling so Agent and dashboard content can fit within one page without vertical scrolling.
+- [x] 5.1 Add ratio-aware desktop scaling so Agent and dashboard content can fill arbitrary page proportions within one page without vertical scrolling.

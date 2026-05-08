@@ -34,7 +34,9 @@ export function ScaledPageFrame({
 }: ScaledPageFrameProps) {
   const frameRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  const scaleRef = useRef(1)
   const [scale, setScale] = useState(1)
+  const [frameSize, setFrameSize] = useState({ width: designWidth, height: designHeight })
 
   const updateScale = useCallback(() => {
     const frame = frameRef.current
@@ -43,24 +45,32 @@ export function ScaledPageFrame({
     const rect = frame.getBoundingClientRect()
     const availableWidth = Math.max(rect.width, 1)
     const availableHeight = Math.max(rect.height, 1)
+    const roundedFrame = {
+      width: Math.round(availableWidth),
+      height: Math.round(availableHeight),
+    }
 
     const content = contentRef.current?.firstElementChild as HTMLElement | null
-    const measuredWidth = content?.scrollWidth || designWidth
-    const measuredHeight = content?.scrollHeight || designHeight
-    const fitWidth = Math.max(designWidth, measuredWidth)
-    const fitHeight = Math.max(designHeight, measuredHeight)
+    const hasHorizontalOverflow = content ? content.scrollWidth > content.clientWidth + 1 : false
+    const hasVerticalOverflow = content ? content.scrollHeight > content.clientHeight + 1 : false
+    const fitWidth = hasHorizontalOverflow && content ? content.scrollWidth : designWidth
+    const fitHeight = hasVerticalOverflow && content ? content.scrollHeight : designHeight
+    const baseScale = Math.min(maxScale, Math.max(minScale, Math.min(availableWidth / designWidth, availableHeight / designHeight)))
+    const overflowScale = Math.min(availableWidth / Math.max(fitWidth, 1), availableHeight / Math.max(fitHeight, 1))
+    const nextScale = Math.min(baseScale, Math.max(minScale, overflowScale))
 
-    const widthScale = availableWidth / fitWidth
-    const heightScale = availableHeight / fitHeight
-    const viewportRatio = availableWidth / availableHeight
-    const contentRatio = fitWidth / fitHeight
-    const ratioScale = viewportRatio < contentRatio ? widthScale : heightScale
-
-    // Keep desktop dashboard-like pages fitted to the current page ratio.
-    const nextScale = Math.min(maxScale, Math.max(minScale, ratioScale))
+    setFrameSize((current) =>
+      current.width === roundedFrame.width && current.height === roundedFrame.height
+        ? current
+        : roundedFrame,
+    )
     setScale((current) => {
       const rounded = Number(nextScale.toFixed(3))
-      return Math.abs(current - rounded) > 0.005 ? rounded : current
+      if (Math.abs(current - rounded) > 0.005) {
+        scaleRef.current = rounded
+        return rounded
+      }
+      return current
     })
   }, [designHeight, designWidth, maxScale, minScale])
 
@@ -87,8 +97,8 @@ export function ScaledPageFrame({
   const contentStyle: CSSProperties = {
     transform: `scale(${scale})`,
     transformOrigin: 'top left',
-    width: `${designWidth}px`,
-    height: `${designHeight}px`,
+    width: `${frameSize.width / scale}px`,
+    height: `${frameSize.height / scale}px`,
   }
 
   return (

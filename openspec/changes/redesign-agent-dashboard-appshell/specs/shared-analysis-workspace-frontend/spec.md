@@ -42,11 +42,11 @@ The frontend SHALL render the result dashboard with a filter bar, core conclusio
 - **THEN** the dashboard opens an export modal with format and scope selectors
 
 ### Requirement: Ratio-Aware One-Page Fit
-The frontend SHALL use a 1920x1080 desktop review template and fit dense Agent and dashboard canvases to the available page ratio so the complete designed content can be viewed without vertical page scrolling.
+The frontend SHALL fit dense Agent and dashboard canvases to the available page ratio so the complete designed content fills the page content area without vertical page scrolling.
 
-#### Scenario: 1920x1080 desktop content fit
-- **WHEN** a user opens the Agent analysis page or result dashboard using a 1920x1080 desktop review viewport
-- **THEN** the main content canvas scales according to the available page width-height ratio and remains fully visible in the page content area
+#### Scenario: Arbitrary desktop content fit
+- **WHEN** a user opens the Agent analysis page or result dashboard using a wide, narrow, tall, or short desktop viewport
+- **THEN** the main content canvas scales according to the available page width-height ratio, fills the page content area, and remains fully visible
 
 #### Scenario: Overlay usability
 - **WHEN** the dashboard drill-down drawer or export modal is opened
