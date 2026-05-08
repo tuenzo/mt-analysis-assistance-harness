@@ -226,7 +226,7 @@ export function AgentAnalysisTestHarness() {
   const [localError, setLocalError] = useState<string | null>(null)
   const [seenEventStream, setSeenEventStream] = useState(false)
   const [seenFinalAnswer, setSeenFinalAnswer] = useState(false)
-  const [apiBaseUrl, setApiBaseUrl] = useState('')
+  const [apiBaseUrl] = useState(() => api.getBaseUrl())
   const [fixtureLoading, setFixtureLoading] = useState(false)
   const [fixtureStatus, setFixtureStatus] = useState<string | null>(null)
 
@@ -267,8 +267,11 @@ export function AgentAnalysisTestHarness() {
   }, [])
 
   useEffect(() => {
-    setApiBaseUrl(api.getBaseUrl())
-    void loadProjects()
+    const timeout = window.setTimeout(() => {
+      void loadProjects()
+    }, 0)
+
+    return () => window.clearTimeout(timeout)
   }, [loadProjects])
 
   const handleProjectChange = (nextProjectId: string) => {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { Database, FileSpreadsheet, FolderOpen, RefreshCw, Save, Search } from 'lucide-react'
 import { api } from '@/lib/api-client'
@@ -33,16 +33,12 @@ export default function DataIntakePage() {
   const [discovering, setDiscovering] = useState(false)
   const [importing, setImporting] = useState(false)
 
-  useEffect(() => {
-    void refresh()
-  }, [projectId])
-
   const importableCandidates = useMemo(
     () => discovery?.candidates.filter((candidate) => !candidate.skipped && candidate.extension === '.csv') ?? [],
     [discovery],
   )
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     const [sourceResponse, filesResponse] = await Promise.all([
       api.getDataSource(projectId),
       api.listFiles(projectId),
@@ -53,7 +49,15 @@ export default function DataIntakePage() {
     if (filesResponse.ok && filesResponse.data) {
       setFiles(filesResponse.data)
     }
-  }
+  }, [projectId])
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      void refresh()
+    }, 0)
+
+    return () => window.clearTimeout(timeout)
+  }, [refresh])
 
   async function saveSourcePath() {
     setSaving(true)

@@ -2,100 +2,149 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useProjectStore } from '@/store/project-store'
-import { useUIStore } from '@/store/ui-store'
-import { useApiBaseHref } from '@/lib/use-api-base-href'
-import { ChevronLeft, ChevronRight, FolderOpen, Plus, Settings } from 'lucide-react'
 import { useEffect } from 'react'
+import {
+  BarChart3,
+  BellRing,
+  Bot,
+  Brain,
+  CalendarClock,
+  FileText,
+  FolderOpen,
+  Home,
+  Inbox,
+  LayoutDashboard,
+  Plus,
+  Settings,
+} from 'lucide-react'
+import { useApiBaseHref } from '@/lib/use-api-base-href'
+import { useProjectStore } from '@/store/project-store'
+
+const navItems = [
+  { key: 'overview', label: '概览', route: (projectId: string) => `/projects/${projectId}`, icon: Home },
+  { key: 'data-ingestion', label: '数据接入', route: (projectId: string) => `/projects/${projectId}/data-intake`, icon: Inbox },
+  { key: 'agent-analysis', label: 'Agent 分析', route: (projectId: string) => `/projects/${projectId}/agent`, icon: Bot },
+  { key: 'dashboard', label: '结果看板', route: (projectId: string) => `/projects/${projectId}/dashboard`, icon: LayoutDashboard },
+  { key: 'timeline', label: '时间线', route: (projectId: string) => `/projects/${projectId}/timeline`, icon: CalendarClock },
+  { key: 'report', label: '报告', route: (projectId: string) => `/projects/${projectId}/reports`, icon: FileText },
+  { key: 'memory', label: '记忆', route: (projectId: string) => `/projects/${projectId}/memory`, icon: Brain },
+]
+
+function getProjectIdFromPathname(pathname: string) {
+  const match = pathname.match(/^\/projects\/([^/]+)/)
+  return match?.[1] ?? ''
+}
 
 export function Sidebar() {
   const pathname = usePathname()
-  const { projects, loadProjects } = useProjectStore()
-  const { sidebarCollapsed, toggleSidebar } = useUIStore()
   const hrefFor = useApiBaseHref()
+  const { projects, loadProjects } = useProjectStore()
+  const projectId = getProjectIdFromPathname(pathname) || projects[0]?.id || ''
 
   useEffect(() => {
     loadProjects()
   }, [loadProjects])
 
-  const isProjectRoute = pathname.startsWith('/projects/')
-
   return (
-    <aside
-      className={`hidden shrink-0 flex-col border-r border-[#e7b900] bg-[#ffd100] text-[#241a00] transition-all duration-300 md:flex ${
-        sidebarCollapsed ? 'w-16' : 'w-64'
-      }`}
-    >
-      <div className="flex items-center justify-between border-b border-[#e7b900] p-4">
-        {!sidebarCollapsed && (
+    <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-white text-[#1f2937] shadow-[8px_0_30px_rgba(31,41,55,0.04)] md:flex">
+      <div className="border-b border-border px-4 py-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-[#241a00] shadow-sm">
+            <BarChart3 className="h-5 w-5" />
+          </span>
           <div className="min-w-0">
-            <span className="block truncate text-sm font-semibold">商业分析工作区</span>
-            <span className="block truncate text-[11px] font-medium text-[#6f5600]">活动评估与决策看板</span>
+            <span className="block truncate text-sm font-bold">商业分析工作区</span>
+            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">活动评估与决策看板</span>
           </div>
-        )}
-        <button
-          onClick={toggleSidebar}
-          className="rounded p-1 text-[#4f3a00] transition-colors hover:bg-white/35 hover:text-[#1f2329]"
-          aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {sidebarCollapsed ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
-          )}
-        </button>
+        </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto bg-white p-2">
+      <nav className="flex-1 overflow-y-auto px-3 py-4">
         <div className="space-y-1">
-          {!sidebarCollapsed && (
-            <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-[#646a73]">
-              最近项目
-            </div>
-          )}
+          {navItems.map((item) => {
+            const Icon = item.icon
+            const href = projectId ? item.route(projectId) : '/projects'
+            const active =
+              item.key === 'overview'
+                ? pathname === href
+                : Boolean(projectId && pathname.startsWith(item.route(projectId)))
 
-          {projects.map((project) => (
-            <Link
-              key={project.id}
-              href={hrefFor(`/projects/${project.id}`)}
-              className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
-                isProjectRoute && pathname.includes(project.id)
-                  ? 'bg-[#fff7cc] text-[#1f2329] shadow-sm ring-1 ring-[#f2cf4a]'
-                  : 'text-[#4f5560] hover:bg-[#fff7cc] hover:text-[#1f2329]'
-              }`}
-              title={project.name}
-            >
-              <FolderOpen className="h-4 w-4 flex-shrink-0" />
-              {!sidebarCollapsed && (
-                <span className="truncate">{project.name}</span>
-              )}
-            </Link>
-          ))}
+            return (
+              <Link
+                key={item.key}
+                href={hrefFor(href)}
+                className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${
+                  active
+                    ? 'bg-secondary text-[#6f5200] shadow-sm'
+                    : 'text-[#4b5563] hover:bg-[#f7f8fa] hover:text-[#111827]'
+                }`}
+              >
+                {active && <span className="absolute left-0 top-2 h-6 w-1 rounded-r-full bg-primary" />}
+                <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-[#d39a00]' : 'text-[#6b7280] group-hover:text-[#111827]'}`} />
+                <span className="truncate">{item.label}</span>
+              </Link>
+            )
+          })}
+        </div>
 
-          {projects.length === 0 && !sidebarCollapsed && (
-            <div className="px-3 py-4 text-center text-xs text-[#8a8f99]">
-              暂无项目
-            </div>
-          )}
+        <div className="mt-6">
+          <div className="px-3 text-xs font-bold text-muted-foreground">最近项目</div>
+          <div className="mt-2 space-y-1">
+            {projects.slice(0, 4).map((project) => {
+              const active = pathname.startsWith(`/projects/${project.id}`)
+              return (
+                <Link
+                  key={project.id}
+                  href={hrefFor(`/projects/${project.id}/agent`)}
+                  className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition ${
+                    active
+                      ? 'border border-[#f2cf4a] bg-secondary text-[#1f2937]'
+                      : 'text-[#4b5563] hover:bg-[#f7f8fa] hover:text-[#111827]'
+                  }`}
+                  title={project.name}
+                >
+                  <FolderOpen className="h-3.5 w-3.5 shrink-0 text-[#6b7280]" />
+                  <span className="truncate">{project.name}</span>
+                </Link>
+              )
+            })}
+
+            {projects.length === 0 && (
+              <div className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+                暂无项目
+              </div>
+            )}
+          </div>
         </div>
       </nav>
 
-      <div className="border-t border-[#e6e8eb] bg-white p-2">
-        <Link
-          href={hrefFor('/projects')}
-          className="flex items-center gap-2 rounded-md border border-[#f2cf4a] bg-white px-3 py-2 text-sm font-semibold text-[#1f2329] transition-colors hover:bg-[#fff7cc]"
-          title="新建项目"
-        >
-          <Plus className="h-4 w-4 text-[#d49700]" />
-          {!sidebarCollapsed && <span>新建项目</span>}
-        </Link>
-        <button
-          className="mt-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-[#646a73] transition-colors hover:bg-[#f7f8fa] hover:text-[#1f2329]"
-          title="设置"
-        >
-          <Settings className="h-4 w-4" />
-          {!sidebarCollapsed && <span>设置</span>}
-        </button>
+      <div className="border-t border-border bg-white p-3">
+        <div className="rounded-xl border border-border bg-[#fbfcfe] p-3">
+          <div className="flex items-start gap-2">
+            <BellRing className="mt-0.5 h-4 w-4 shrink-0 text-[#d39a00]" />
+            <div className="min-w-0">
+              <p className="text-xs font-semibold">项目状态同步</p>
+              <p className="mt-1 text-[11px] leading-4 text-muted-foreground">结果、报告与记忆候选保持在项目内。</p>
+            </div>
+          </div>
+        </div>
+        <div className="mt-3 space-y-2">
+          <Link
+            href={hrefFor('/projects')}
+            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-[#f2cf4a] bg-white px-3 text-sm font-bold text-[#1f2937] transition hover:bg-secondary"
+            title="新建项目"
+          >
+            <Plus className="h-4 w-4 text-[#d49700]" />
+            <span>新建项目</span>
+          </Link>
+          <button
+            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold text-muted-foreground transition hover:bg-[#f7f8fa] hover:text-[#111827]"
+            title="设置"
+          >
+            <Settings className="h-4 w-4" />
+            <span>设置</span>
+          </button>
+        </div>
       </div>
     </aside>
   )

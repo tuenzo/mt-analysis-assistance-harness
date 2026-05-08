@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react'
 import { useParams } from 'next/navigation'
-import { ProjectTabs } from '@/features/layout/project-tabs'
 import { useProjectStore } from '@/store/project-store'
 
 export default function ProjectLayout({
@@ -22,7 +21,6 @@ export default function ProjectLayout({
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <ProjectTabs projectId={projectId} />
       <div className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
         {children}
       </div>
