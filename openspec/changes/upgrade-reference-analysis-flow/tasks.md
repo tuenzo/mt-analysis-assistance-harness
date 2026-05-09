@@ -11,13 +11,13 @@
 - [x] 2.2 Add pre/non-activity covariates, propensity scoring, nearest-neighbor matching, and SMD balance diagnostics.
 - [x] 2.3 Add event-window and placebo/pretrend diagnostics with method-status downgrades for thin support.
 - [x] 2.4 Preserve existing `psm_did_result.json` compatibility keys and add pytest coverage.
-- [ ] 2.5 Commit the PSM-DID upgrade as a small feature commit.
+- [x] 2.5 Commit the PSM-DID upgrade as a small feature commit.
 
 ## 3. Stage 1B - Upgrade Existing LocalGap
 
-- [ ] 3.1 Add non-sparse sample metadata and retained-coverage summaries to LocalGap outputs.
-- [ ] 3.2 Add order/AOV component baselines and counterfactual GMV where source fields support them.
-- [ ] 3.3 Add additive LMDI contribution summaries with zero-handling flags and reconciliation checks.
+- [x] 3.1 Add non-sparse sample metadata and retained-coverage summaries to LocalGap outputs.
+- [x] 3.2 Add order/AOV component baselines and counterfactual GMV where source fields support them.
+- [x] 3.3 Add additive LMDI contribution summaries with zero-handling flags and reconciliation checks.
 - [ ] 3.4 Add focused pytest coverage and commit the LocalGap/LMDI upgrade.
 
 ## 4. Stage 1C - Upgrade Existing GPS/Uplift

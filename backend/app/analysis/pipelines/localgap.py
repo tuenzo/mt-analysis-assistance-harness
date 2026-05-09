@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -94,7 +95,11 @@ def run_localgap(project_id: str, workspace_path: str) -> ToolResult:
 
 def compute_localgap_enriched_panel(panel: pd.DataFrame) -> pd.DataFrame:
     enriched = panel.sort_values(["category_key", "date"]).copy()
+    enriched["aov"] = np.where(enriched["order_count"] > 0, enriched["gmv"] / enriched["order_count"], np.nan)
     enriched["local_baseline"] = np.nan
+    enriched["cf_order_count"] = np.nan
+    enriched["cf_aov"] = np.nan
+    enriched["cf_component_gmv"] = np.nan
     enriched["baseline_obs"] = 0
     enriched["baseline_quality"] = "unavailable"
 
@@ -122,12 +127,18 @@ def compute_localgap_enriched_panel(panel: pd.DataFrame) -> pd.DataFrame:
             obs = int(len(history))
             if obs >= DEFAULT_MIN_BASELINE_OBS:
                 enriched.loc[idx, "local_baseline"] = float(history["gmv"].mean())
+                enriched.loc[idx, "cf_order_count"] = float(history["order_count"].mean())
+                positive_aov = history["aov"].replace([np.inf, -np.inf], np.nan).dropna()
+                if not positive_aov.empty:
+                    enriched.loc[idx, "cf_aov"] = float(positive_aov.mean())
+                    enriched.loc[idx, "cf_component_gmv"] = float(history["order_count"].mean()) * float(positive_aov.mean())
                 enriched.loc[idx, "baseline_obs"] = obs
                 enriched.loc[idx, "baseline_quality"] = (
                     "strong" if obs >= DEFAULT_RECOMMENDED_BASELINE_OBS else "weak"
                 )
 
     enriched["local_gap"] = enriched["gmv"] - enriched["local_baseline"]
+    enriched["component_gap"] = enriched["gmv"] - enriched["cf_component_gmv"]
     return _add_reference_terms(enriched)
 
 
@@ -139,6 +150,7 @@ def summarize_localgap(enriched: pd.DataFrame) -> dict[str, Any]:
 
     categories = _category_decomposition(estimable, model)
     monthly = _monthly_decomposition(estimable)
+    lmdi = _lmdi_decomposition(estimable)
     total_actual = float(estimable["gmv"].sum()) if not estimable.empty else 0.0
     total_baseline = float(estimable["local_baseline"].sum()) if not estimable.empty else 0.0
     total_gap = float(estimable["local_gap"].sum()) if not estimable.empty else 0.0
@@ -157,6 +169,8 @@ def summarize_localgap(enriched: pd.DataFrame) -> dict[str, Any]:
         },
         "categories": categories,
         "monthly_decomposition": monthly,
+        "non_sparse_sample": _non_sparse_sample_summary(enriched, activity, estimable),
+        "lmdi_decomposition": lmdi,
         "total_actual_gmv": round(total_actual, 2),
         "total_baseline_gmv": round(total_baseline, 2),
         "total_local_gap": round(total_gap, 2),
@@ -169,6 +183,7 @@ def summarize_localgap(enriched: pd.DataFrame) -> dict[str, Any]:
             },
             "model_terms": model["terms"],
             "r_squared": model["r_squared"],
+            "component_baseline_coverage_rate": lmdi["diagnostics"]["coverage_rate"],
         },
         "warnings": warnings,
         "evidence_artifacts": [
@@ -179,6 +194,7 @@ def summarize_localgap(enriched: pd.DataFrame) -> dict[str, Any]:
             "LocalGap is the main increment accounting layer.",
             "Channel attribution is conditional on the local baseline design and should be described directionally.",
             "Rows without LocalBaseline are excluded from increment totals rather than imputed.",
+            "LMDI decomposes component counterfactual uplift where actual and counterfactual GMV/order/AOV are positive.",
         ],
     }
 
@@ -199,7 +215,7 @@ def _prepare_panel(panel: pd.DataFrame) -> pd.DataFrame:
     prepared["category"] = prepared.get("category", prepared["category_name"]).astype(str)
     prepared["date"] = pd.to_datetime(prepared["date"], errors="coerce")
     prepared = prepared.dropna(subset=["date", "category_key"]).copy()
-    for column in ["gmv", "view_uv", "exposure", "discount_rate", "discount_amount", "buy_uv"]:
+    for column in ["gmv", "view_uv", "exposure", "discount_rate", "discount_amount", "buy_uv", "order_count", "quantity"]:
         if column not in prepared.columns:
             prepared[column] = 0.0
         prepared[column] = pd.to_numeric(prepared[column], errors="coerce").fillna(0.0)
@@ -313,6 +329,156 @@ def _monthly_decomposition(estimable: pd.DataFrame) -> list[dict[str, Any]]:
         }
         for row in grouped.itertuples(index=False)
     ]
+
+
+def _non_sparse_sample_summary(enriched: pd.DataFrame, activity: pd.DataFrame, estimable: pd.DataFrame) -> dict[str, Any]:
+    component_estimable = _component_estimable(activity)
+    total_activity_gmv = float(activity["gmv"].sum()) if not activity.empty else 0.0
+    retained_gmv = float(component_estimable["gmv"].sum()) if not component_estimable.empty else 0.0
+    all_categories = set(enriched["category_key"].astype(str).unique())
+    retained_categories = set(estimable["category_key"].astype(str).unique())
+    component_categories = set(component_estimable["category_key"].astype(str).unique())
+    return {
+        "definition": (
+            "Activity rows with historical non-activity LocalBaseline support; component LMDI additionally "
+            "requires positive actual/counterfactual GMV, order, and AOV."
+        ),
+        "total_category_count": int(len(all_categories)),
+        "localgap_retained_category_count": int(len(retained_categories)),
+        "component_retained_category_count": int(len(component_categories)),
+        "dropped_category_count": int(max(len(all_categories - retained_categories), 0)),
+        "activity_rows": int(len(activity)),
+        "localgap_estimable_rows": int(len(estimable)),
+        "component_estimable_rows": int(len(component_estimable)),
+        "retained_activity_gmv_share": round(retained_gmv / total_activity_gmv, 4) if total_activity_gmv > 0 else 0.0,
+    }
+
+
+def _lmdi_decomposition(estimable: pd.DataFrame) -> dict[str, Any]:
+    component = _component_estimable(estimable)
+    total_activity_rows = int(len(estimable))
+    if component.empty:
+        return {
+            "method": "additive_lmdi_order_aov",
+            "status": "limited",
+            "overall": _empty_lmdi_row("overall", "overall", "no_positive_component_cells"),
+            "monthly": [],
+            "category": [],
+            "diagnostics": {
+                "activity_rows": total_activity_rows,
+                "estimable_rows": 0,
+                "coverage_rate": 0.0,
+                "zero_or_invalid_rows": total_activity_rows,
+            },
+            "warnings": ["No positive component counterfactual rows are available for LMDI."],
+        }
+
+    overall = _lmdi_group_row("overall", "overall", component)
+    monthly = [
+        _lmdi_group_row("month", str(month), group)
+        for month, group in component.groupby("month", sort=True)
+    ]
+    category = [
+        _lmdi_group_row("category", str(category), group)
+        for category, group in component.groupby("category_name", sort=False)
+    ]
+    warnings = []
+    coverage = len(component) / max(total_activity_rows, 1)
+    if coverage < 0.5:
+        warnings.append("Less than half of LocalGap-estimable activity rows are eligible for exact LMDI.")
+    return {
+        "method": "additive_lmdi_order_aov",
+        "status": "implemented" if not warnings else "limited",
+        "identity": "GMV = order_count * AOV",
+        "overall": overall,
+        "monthly": monthly,
+        "category": sorted(category, key=lambda item: item["gmv_uplift"], reverse=True),
+        "diagnostics": {
+            "activity_rows": total_activity_rows,
+            "estimable_rows": int(len(component)),
+            "coverage_rate": round(float(coverage), 4),
+            "zero_or_invalid_rows": int(total_activity_rows - len(component)),
+        },
+        "warnings": warnings,
+    }
+
+
+def _component_estimable(frame: pd.DataFrame) -> pd.DataFrame:
+    required = ["gmv", "cf_component_gmv", "order_count", "cf_order_count", "aov", "cf_aov"]
+    if frame.empty or any(column not in frame.columns for column in required):
+        return pd.DataFrame(columns=frame.columns)
+    component = frame.dropna(subset=required).copy()
+    for column in required:
+        component = component[pd.to_numeric(component[column], errors="coerce") > 0]
+    return component
+
+
+def _lmdi_group_row(level: str, name: str, group: pd.DataFrame) -> dict[str, Any]:
+    actual_gmv = float(group["gmv"].sum())
+    counterfactual_gmv = float(group["cf_component_gmv"].sum())
+    actual_order = float(group["order_count"].sum())
+    counterfactual_order = float(group["cf_order_count"].sum())
+    actual_aov = actual_gmv / actual_order if actual_order > 0 else np.nan
+    counterfactual_aov = counterfactual_gmv / counterfactual_order if counterfactual_order > 0 else np.nan
+    if min(actual_gmv, counterfactual_gmv, actual_order, counterfactual_order, actual_aov, counterfactual_aov) <= 0:
+        return _empty_lmdi_row(level, name, "zero_baseline_or_zero_actual")
+
+    log_mean = _log_mean(actual_gmv, counterfactual_gmv)
+    order_contribution = log_mean * math.log(actual_order / counterfactual_order)
+    aov_contribution = log_mean * math.log(actual_aov / counterfactual_aov)
+    uplift = actual_gmv - counterfactual_gmv
+    residual = uplift - order_contribution - aov_contribution
+    return {
+        "level": level,
+        "name": name,
+        "rows": int(len(group)),
+        "actual_gmv": round(actual_gmv, 2),
+        "counterfactual_gmv": round(counterfactual_gmv, 2),
+        "gmv_uplift": round(uplift, 2),
+        "actual_order": round(actual_order, 2),
+        "counterfactual_order": round(counterfactual_order, 2),
+        "actual_aov": round(actual_aov, 4),
+        "counterfactual_aov": round(counterfactual_aov, 4),
+        "order_contribution": round(float(order_contribution), 2),
+        "aov_contribution": round(float(aov_contribution), 2),
+        "order_contribution_share": _safe_share(order_contribution, uplift),
+        "aov_contribution_share": _safe_share(aov_contribution, uplift),
+        "lmdi_residual_check": round(float(residual), 6),
+        "zero_handling_flag": "exact_positive",
+    }
+
+
+def _empty_lmdi_row(level: str, name: str, flag: str) -> dict[str, Any]:
+    return {
+        "level": level,
+        "name": name,
+        "rows": 0,
+        "actual_gmv": 0.0,
+        "counterfactual_gmv": 0.0,
+        "gmv_uplift": 0.0,
+        "actual_order": 0.0,
+        "counterfactual_order": 0.0,
+        "actual_aov": 0.0,
+        "counterfactual_aov": 0.0,
+        "order_contribution": 0.0,
+        "aov_contribution": 0.0,
+        "order_contribution_share": None,
+        "aov_contribution_share": None,
+        "lmdi_residual_check": None,
+        "zero_handling_flag": flag,
+    }
+
+
+def _log_mean(current: float, baseline: float) -> float:
+    if abs(current - baseline) <= 1e-12:
+        return float(current)
+    return float((current - baseline) / (math.log(current) - math.log(baseline)))
+
+
+def _safe_share(value: float, total: float) -> float | None:
+    if abs(total) <= 1e-9:
+        return None
+    return round(float(value / total), 6)
 
 
 def _term_contribution(group: pd.DataFrame, beta: dict[str, float], terms: list[str]) -> float:
