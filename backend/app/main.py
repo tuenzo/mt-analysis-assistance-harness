@@ -45,23 +45,3 @@ def list_projects():
     service = ProjectService()
     projects = service.list_projects()
     return {"ok": True, "data": [{"id": p.id, "name": p.name, "status": p.status, "created_at": p.created_at} for p in projects]}
-
-
-@app.get("/api/projects/{project_id}/sessions")
-def list_project_sessions(project_id: str):
-    from app.agent.session_store import SessionStore
-    store = SessionStore()
-    sessions = store.list_project_sessions(project_id)
-    return {
-        "ok": True,
-        "data": [
-            {
-                "id": s.id,
-                "project_id": s.project_id,
-                "runtime_provider": s.runtime_provider,
-                "status": s.status,
-                "created_at": s.created_at,
-            }
-            for s in sessions
-        ]
-    }

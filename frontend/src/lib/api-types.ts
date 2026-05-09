@@ -123,6 +123,10 @@ export interface AgentSession {
   runtime_provider: string
   status: string
   created_at: string
+  updated_at?: string
+  last_activity_at?: string
+  message_count?: number
+  last_message?: string
 }
 
 export interface MessageResponse {

@@ -372,6 +372,39 @@ def test_sdk_event_mapping_emits_thinking_block_as_thought(monkeypatch):
     assert thought["visibility"] == "provider"
 
 
+def test_sdk_event_mapping_ignores_unsupported_null_tool_use(monkeypatch):
+    import app.agent.claude_agent_sdk_adapter as sdk_adapter
+
+    class FakeToolUseBlock:
+        def __init__(self):
+            self.id = "toolu_null"
+            self.name = "null"
+            self.input = {}
+
+    class FakeAssistantMessage:
+        content = [FakeToolUseBlock()]
+
+    monkeypatch.setattr(sdk_adapter, "AssistantMessage", FakeAssistantMessage)
+    monkeypatch.setattr(sdk_adapter, "ToolUseBlock", FakeToolUseBlock)
+    monkeypatch.setattr(sdk_adapter, "get_gateway", lambda: SimpleNamespace())
+
+    adapter = sdk_adapter.ClaudeAgentSDKAdapter(
+        {"provider": "claude_agent_sdk", "workspace_root": "./workspaces"}
+    )
+    tool_uses = {}
+
+    events = adapter._map_sdk_message(
+        FakeAssistantMessage(),
+        tool_uses=tool_uses,
+        project_id="proj_sdk",
+        runtime_session_id="sess_sdk",
+        runtime_turn_id="turn_sdk",
+    )
+
+    assert events == []
+    assert tool_uses == {}
+
+
 def test_sdk_event_mapping_emits_streamed_thinking_delta(monkeypatch):
     import app.agent.claude_agent_sdk_adapter as sdk_adapter
 
@@ -786,6 +819,60 @@ def test_message_runtime_returns_before_slow_adapter_finishes(
     assert "assistant_thought_delta" in event_types
     assert "final_answer" in event_types
     assert runtime.wait_for_turn(response["turn_id"])
+
+
+def test_message_runtime_does_not_start_concurrent_turn_in_same_session(
+    monkeypatch, isolated_db
+):
+    import app.agent.message_runtime as message_runtime
+
+    class SlowAdapter:
+        def __init__(self):
+            self.send_count = 0
+
+        def create_session(self, project_id):
+            return f"sdk_external_{project_id}"
+
+        def resume_session(self, session_id, project_id):
+            return None
+
+        def send_message(self, session_id, message, context):
+            self.send_count += 1
+            time.sleep(0.25)
+            yield {"type": "final_answer", "message": "first done"}
+
+        def interrupt(self, session_id):
+            return None
+
+    adapter = SlowAdapter()
+    monkeypatch.setattr(
+        message_runtime,
+        "get_agent_runtime_config",
+        lambda: {"provider": "claude_agent_sdk"},
+    )
+    monkeypatch.setattr(
+        message_runtime,
+        "get_claude_adapter",
+        lambda config: adapter,
+    )
+
+    runtime = message_runtime.MessageRuntime()
+    first = runtime.handle_message("proj_busy", None, "first", {})
+    second = runtime.handle_message("proj_busy", first["session_id"], "second", {})
+
+    assert second["status"] == "completed"
+    events = collect_runtime_events(
+        runtime,
+        second["session_id"],
+        second["turn_id"],
+        lambda collected: any(event.get("type") == "final_answer" for event in collected),
+        timeout=1.0,
+    )
+
+    final = next(event for event in events if event["type"] == "final_answer")
+    assert "上一轮 Agent 任务仍在运行" in final["message"]
+    assert adapter.send_count == 1
+    assert runtime.wait_for_turn(first["turn_id"])
 
 
 def test_session_store_persists_runtime_provider_and_external_session_id(isolated_db):

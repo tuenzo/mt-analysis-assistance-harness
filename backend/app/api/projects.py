@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import FileResponse
 from typing import Any, Optional
+from app.agent.session_store import SessionStore
 from app.projects.schemas import (
     ProjectCreate, ProjectResponse,
     ProjectFileResponse, FileUploadResponse, SchemaInferResponse,
@@ -56,6 +57,27 @@ def get_project(project_id: str):
         "is_test": bool(project.is_test),
         "data_source_path": project.data_source_path,
     }}
+
+
+@router.delete("/{project_id}")
+def delete_project(project_id: str):
+    try:
+        result = service.delete_project(project_id)
+        return {"ok": True, "data": result}
+    except ValueError as e:
+        message = str(e)
+        status_code = 404 if "not found" in message.lower() else 400
+        raise HTTPException(status_code=status_code, detail=message)
+
+
+@router.get("/{project_id}/sessions")
+def list_project_sessions(project_id: str):
+    project = service.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    sessions = SessionStore().list_project_session_summaries(project_id)
+    return {"ok": True, "data": sessions}
 
 
 @router.get("/{project_id}/state")

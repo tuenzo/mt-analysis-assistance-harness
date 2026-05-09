@@ -15,6 +15,7 @@ interface ProjectStore {
   loadProjectState: (projectId: string) => Promise<void>
   loadFiles: (projectId: string) => Promise<void>
   createProject: (name: string, domain?: string, description?: string) => Promise<Project | null>
+  deleteProject: (projectId: string) => Promise<boolean>
   clearError: () => void
 }
 
@@ -96,6 +97,27 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Unknown error', loading: false })
       return null
+    }
+  },
+
+  deleteProject: async (projectId: string) => {
+    set({ error: null })
+    try {
+      const response = await api.deleteProject(projectId)
+      if (response.ok) {
+        set((state) => ({
+          projects: state.projects.filter((project) => project.id !== projectId),
+          currentProject: state.currentProject?.id === projectId ? null : state.currentProject,
+          projectState: state.currentProject?.id === projectId ? null : state.projectState,
+          files: state.currentProject?.id === projectId ? [] : state.files,
+        }))
+        return true
+      }
+      set({ error: response.error || 'Failed to delete project' })
+      return false
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Unknown error' })
+      return false
     }
   },
 

@@ -511,9 +511,12 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             for block in sdk_message.content:
                 if ToolUseBlock is not None and isinstance(block, ToolUseBlock):
                     tool_input = dict(block.input or {})
+                    raw_tool_name = getattr(block, "name", None)
+                    if not self._is_supported_tool_use_name(raw_tool_name):
+                        continue
                     if project_id:
                         tool_input["project_id"] = project_id
-                    tool_name = self._display_tool_name(block.name)
+                    tool_name = self._display_tool_name(raw_tool_name)
                     action = tool_input.get("action") or SDK_TOOL_NAME
                     runtime_tool_call_id = self._claim_executed_tool_call(
                         action=action,
@@ -862,6 +865,10 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
         return {key: value for key, value in payload.items() if not key.startswith("_runtime_")}
 
     @staticmethod
+    def _is_supported_tool_use_name(tool_name: str | None) -> bool:
+        return tool_name in {SDK_TOOL_NAME, SDK_ALLOWED_TOOL}
+
+    @staticmethod
     def _display_tool_name(tool_name: str | None) -> str:
         if not tool_name or tool_name == SDK_ALLOWED_TOOL:
             return SDK_TOOL_NAME
@@ -949,6 +956,7 @@ If latest_pipeline.steps contains analysis.run_gps_uplift with ok=true, say the 
 If latest_result_available contains "uplift", say uplift_result.json is available. Do not claim uplift has not run
 when either of those facts is true.
 Before citing metrics or recommendations, call result.get_latest or artifact.read and cite artifact paths.
+For artifact.read, use payload {{"path": ".analysis/<file>.json"}}.
 Use observed/descriptive language for diagnostics-only claims, directional language for LocalGap or PSM-DID,
 and exploratory language for stub outputs. When generating reports, use report.generate and treat
 .analysis/report_plan.json as the evidence skeleton.

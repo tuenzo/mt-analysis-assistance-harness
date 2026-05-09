@@ -7,7 +7,19 @@ from datetime import datetime
 from typing import Optional
 from app.core.database import get_session
 from app.core.config import get_demo_project_id, is_demo_mode, is_test_mode, resolve_project_path, settings
-from app.projects.models import Project, ProjectFile
+from app.projects.models import (
+    AgentEvent,
+    AgentTurn,
+    AnalysisSession,
+    ApprovalRequest,
+    Artifact,
+    Job,
+    MemoryCandidate,
+    Project,
+    ProjectFile,
+    Report,
+    ToolCall,
+)
 from app.workspace.manager import WorkspaceManager
 from app.workspace.manifest import FileEntry, ProjectManifest, compute_file_checksum
 from app.workspace.context_summary import ContextSummaryWriter
@@ -124,6 +136,31 @@ class ProjectService:
                 "reports_count": len(reports),
                 "current_stage": project.current_stage,
                 "last_activity": project.updated_at,
+            }
+        finally:
+            db.close()
+
+    def delete_project(self, project_id: str, *, delete_workspace: bool = True) -> dict:
+        db = get_session()
+        try:
+            project = self._query_project(db, project_id, include_hidden=True)
+            if not project:
+                raise ValueError(f"Project {project_id} not found")
+
+            workspace_path = self._project_workspace_path(project)
+            workspace_deleted = False
+            if delete_workspace and workspace_path.exists():
+                self._assert_deletable_workspace_path(workspace_path)
+                shutil.rmtree(workspace_path)
+                workspace_deleted = True
+
+            self._delete_project_records(db, project_id)
+            db.delete(project)
+            db.commit()
+            return {
+                "id": project_id,
+                "workspace_path": str(workspace_path),
+                "workspace_deleted": workspace_deleted,
             }
         finally:
             db.close()
@@ -393,11 +430,25 @@ class ProjectService:
         finally:
             db.close()
 
-    def _query_project(self, db, project_id: str) -> Optional[Project]:
+    def _query_project(self, db, project_id: str, *, include_hidden: bool = False) -> Optional[Project]:
         query = db.query(Project).filter(Project.id == project_id)
-        if not self._can_read_hidden_project(project_id):
+        if not include_hidden and not self._can_read_hidden_project(project_id):
             query = query.filter(Project.is_test == 0)
         return query.first()
+
+    @staticmethod
+    def _delete_project_records(db, project_id: str) -> None:
+        delete_options = {"synchronize_session": False}
+        db.query(ApprovalRequest).filter(ApprovalRequest.project_id == project_id).delete(**delete_options)
+        db.query(Artifact).filter(Artifact.project_id == project_id).delete(**delete_options)
+        db.query(Report).filter(Report.project_id == project_id).delete(**delete_options)
+        db.query(MemoryCandidate).filter(MemoryCandidate.project_id == project_id).delete(**delete_options)
+        db.query(Job).filter(Job.project_id == project_id).delete(**delete_options)
+        db.query(ToolCall).filter(ToolCall.project_id == project_id).delete(**delete_options)
+        db.query(AgentEvent).filter(AgentEvent.project_id == project_id).delete(**delete_options)
+        db.query(AgentTurn).filter(AgentTurn.project_id == project_id).delete(**delete_options)
+        db.query(AnalysisSession).filter(AnalysisSession.project_id == project_id).delete(**delete_options)
+        db.query(ProjectFile).filter(ProjectFile.project_id == project_id).delete(**delete_options)
 
     @staticmethod
     def _can_read_hidden_project(project_id: str) -> bool:
@@ -562,6 +613,17 @@ class ProjectService:
         if not source_dir.is_dir():
             raise ValueError(f"Data source path is not a directory: {source_dir}")
         return source_dir
+
+    @staticmethod
+    def _assert_deletable_workspace_path(workspace_path: Path) -> None:
+        root = resolve_project_path(settings.workspace_root)
+        resolved = workspace_path.resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("Project workspace must stay within the configured workspace root") from exc
+        if resolved == root:
+            raise ValueError("Refusing to delete the workspace root")
 
     def _resolve_direct_child(self, source_dir: Path, source_path: str) -> Path:
         raw_path = Path(source_path).expanduser()

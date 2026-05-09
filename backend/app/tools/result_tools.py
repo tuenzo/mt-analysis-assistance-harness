@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from app.core.config import resolve_project_path
@@ -106,17 +107,30 @@ def artifact_read(project_id: str, payload: dict) -> ToolResult:
             error={"code": "NOT_FOUND", "message": "Project not found"},
         )
 
-    artifact_path = payload.get("path")
+    artifact_path = payload.get("path") or payload.get("artifact_path")
     if not artifact_path:
         return ToolResult(
             ok=False,
             action="artifact.read",
             summary="",
-            error={"code": "MISSING_PATH", "message": "A path parameter is required."},
+            error={"code": "MISSING_PATH", "message": "A path or artifact_path parameter is required."},
         )
 
     workspace_path = resolve_project_path(project.workspace_path)
-    full_path = workspace_path / artifact_path
+    artifact_path = str(artifact_path)
+    raw_path = Path(artifact_path).expanduser()
+    full_path = raw_path if raw_path.is_absolute() else workspace_path / raw_path
+    full_path = full_path.resolve()
+    try:
+        full_path.relative_to(workspace_path)
+    except ValueError:
+        return ToolResult(
+            ok=False,
+            action="artifact.read",
+            summary="",
+            error={"code": "WORKSPACE_ESCAPE", "message": "Artifact path must stay within the project workspace."},
+        )
+
     if not full_path.exists():
         return ToolResult(
             ok=False,
@@ -124,9 +138,24 @@ def artifact_read(project_id: str, payload: dict) -> ToolResult:
             summary="",
             error={"code": "NOT_FOUND", "message": f"File does not exist: {artifact_path}"},
         )
+    if not full_path.is_file():
+        return ToolResult(
+            ok=False,
+            action="artifact.read",
+            summary="",
+            error={"code": "NOT_FILE", "message": f"Artifact path is not a file: {artifact_path}"},
+        )
 
     if full_path.suffix == ".json":
-        data = json.loads(full_path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(full_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            return ToolResult(
+                ok=False,
+                action="artifact.read",
+                summary="",
+                error={"code": "INVALID_JSON", "message": f"Artifact JSON could not be parsed: {exc}"},
+            )
         return ToolResult(
             ok=True,
             action="artifact.read",

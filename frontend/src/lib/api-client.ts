@@ -131,6 +131,12 @@ class ApiClient {
     return this.request<Project>(`/api/projects/${projectId}`)
   }
 
+  async deleteProject(projectId: string): Promise<ApiResponse<{ id: string; workspace_deleted: boolean }>> {
+    return this.request<{ id: string; workspace_deleted: boolean }>(`/api/projects/${projectId}`, {
+      method: 'DELETE',
+    })
+  }
+
   async getProjectState(projectId: string): Promise<ApiResponse<ProjectState>> {
     return this.request<ProjectState>(`/api/projects/${projectId}/state`)
   }
@@ -227,6 +233,12 @@ class ApiClient {
 
   async getSessionMessages(sessionId: string): Promise<ApiResponse<AgentMessage[]>> {
     return this.request<AgentMessage[]>(`/api/agent/sessions/${sessionId}/messages`)
+  }
+
+  async deleteSession(sessionId: string): Promise<ApiResponse<{ id: string; project_id: string; deleted: boolean }>> {
+    return this.request<{ id: string; project_id: string; deleted: boolean }>(`/api/agent/sessions/${sessionId}`, {
+      method: 'DELETE',
+    })
   }
 
   getSessionEventsUrl(sessionId: string, afterTurnId?: string | null): string {

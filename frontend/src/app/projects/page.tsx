@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useProjectStore } from '@/store/project-store'
 import { api } from '@/lib/api-client'
-import type { DemoStatus } from '@/lib/api-types'
+import type { DemoStatus, Project } from '@/lib/api-types'
 import { useApiBaseHref } from '@/lib/use-api-base-href'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,13 +19,16 @@ import {
   ModalFooter,
   ModalClose,
 } from '@/components/ui/modal'
-import { Plus, FolderOpen, Clock, ChevronRight, Sparkles } from 'lucide-react'
+import { AlertTriangle, Plus, FolderOpen, Clock, ChevronRight, Sparkles, Trash2 } from 'lucide-react'
 
 export default function ProjectsPage() {
-  const { projects, loading, error, loadProjects, createProject } = useProjectStore()
+  const { projects, loading, error, loadProjects, createProject, deleteProject } = useProjectStore()
   const [open, setOpen] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [creating, setCreating] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const [demoStatus, setDemoStatus] = useState<DemoStatus | null>(null)
   const hrefFor = useApiBaseHref()
 
@@ -46,6 +49,17 @@ export default function ProjectsPage() {
     if (project) {
       setOpen(false)
       setNewProjectName('')
+    }
+  }
+
+  const handleDeleteProject = async () => {
+    if (!projectToDelete) return
+    setDeleting(true)
+    const deleted = await deleteProject(projectToDelete.id)
+    setDeleting(false)
+    if (deleted) {
+      setDeleteOpen(false)
+      setProjectToDelete(null)
     }
   }
 
@@ -87,6 +101,27 @@ export default function ProjectsPage() {
               </ModalClose>
               <Button onClick={handleCreateProject} disabled={!newProjectName.trim() || creating}>
                 {creating ? '创建中...' : '创建项目'}
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+        <Modal open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <ModalContent>
+            <ModalHeader>
+              <ModalTitle className="flex items-center gap-2 text-destructive">
+                <AlertTriangle className="h-5 w-5" />
+                删除项目
+              </ModalTitle>
+              <ModalDescription>
+                将删除项目“{projectToDelete?.name || ''}”及其 workspace、会话、产物和报告记录。此操作无法撤销。
+              </ModalDescription>
+            </ModalHeader>
+            <ModalFooter>
+              <ModalClose asChild>
+                <Button variant="outline" disabled={deleting}>取消</Button>
+              </ModalClose>
+              <Button variant="destructive" onClick={handleDeleteProject} disabled={deleting || !projectToDelete}>
+                {deleting ? '删除中...' : '确认删除'}
               </Button>
             </ModalFooter>
           </ModalContent>
@@ -175,28 +210,32 @@ export default function ProjectsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {projects.map((project) => (
-            <Link key={project.id} href={hrefFor(`/projects/${project.id}`)}>
-              <Card className="hover:border-primary/50 transition-colors cursor-pointer h-full">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-primary/10 rounded-lg">
-                        <FolderOpen className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-lg">{project.name}</CardTitle>
-                        {project.description && (
-                          <CardDescription className="line-clamp-2 mt-1">
-                            {project.description}
-                          </CardDescription>
-                        )}
-                      </div>
+            <Card key={project.id} className="hover:border-primary/50 transition-colors h-full">
+              <CardHeader>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="p-2 bg-primary/10 rounded-lg">
+                      <FolderOpen className="h-5 w-5 text-primary" />
                     </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <CardTitle className="truncate text-lg">{project.name}</CardTitle>
+                      {project.description && (
+                        <CardDescription className="line-clamp-2 mt-1">
+                          {project.description}
+                        </CardDescription>
+                      )}
+                    </div>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <Link href={hrefFor(`/projects/${project.id}`)} aria-label={`进入项目 ${project.name}`}>
+                    <Button variant="ghost" size="sm" className="h-8 w-8 px-0">
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-4 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
                       {project.created_at ? new Date(project.created_at).toLocaleDateString() : '暂无'}
@@ -205,9 +244,21 @@ export default function ProjectsPage() {
                       {project.status}
                     </span>
                   </div>
-                </CardContent>
-              </Card>
-            </Link>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => {
+                      setProjectToDelete(project)
+                      setDeleteOpen(true)
+                    }}
+                  >
+                    <Trash2 className="mr-1.5 h-4 w-4" />
+                    删除
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           ))}
         </div>
       )}

@@ -38,6 +38,7 @@ panel.build_category_day -> analysis.run_diagnostics -> analysis.run_psm_did ->
 analysis.run_localgap -> analysis.run_gps_uplift -> result.get_latest
 
 For report requests, inspect latest results or artifacts before calling report.generate.
+When reading a specific artifact, call artifact.read with payload {"path": ".analysis/<file>.json"}.
 Default business-facing summaries and reports to Chinese unless the user asks for
 another language.
 

@@ -48,6 +48,16 @@ class MessageRuntime:
                     self._event_buffers[session_id] = []
                 self._turn_order.setdefault(session_id, [])
 
+            active_turn = self._active_running_turn(db, session_id)
+            if active_turn:
+                return self._complete_busy_turn(
+                    db,
+                    session_id=session_id,
+                    project_id=project_id,
+                    message=message,
+                    active_turn_id=active_turn.id,
+                )
+
             turn = AgentTurn(
                 id=f"turn_{uuid.uuid4().hex[:12]}",
                 session_id=session_id,
@@ -232,6 +242,84 @@ class MessageRuntime:
             "phase": phase,
             "visibility": "public",
             "source": source,
+        }
+
+    def _active_running_turn(self, db, session_id: str) -> AgentTurn | None:
+        turn = (
+            db.query(AgentTurn)
+            .filter(AgentTurn.session_id == session_id, AgentTurn.status == "running")
+            .order_by(AgentTurn.created_at.desc(), AgentTurn.id.desc())
+            .first()
+        )
+        if not turn:
+            return None
+
+        with self._event_lock:
+            worker = self._turn_workers.get(turn.id)
+        if worker and worker.is_alive():
+            return turn
+
+        try:
+            created_at = datetime.fromisoformat(turn.created_at)
+        except (TypeError, ValueError):
+            return None
+        if (datetime.now() - created_at).total_seconds() <= 120:
+            return turn
+        return None
+
+    def _complete_busy_turn(
+        self,
+        db,
+        *,
+        session_id: str,
+        project_id: str,
+        message: str,
+        active_turn_id: str,
+    ) -> dict:
+        now = datetime.now().isoformat()
+        assistant_message = (
+            "上一轮 Agent 任务仍在运行或收尾中。请等当前分析完成后再发送新的分析请求；"
+            f"当前占用的 turn_id 是 `{active_turn_id}`。"
+        )
+        turn = AgentTurn(
+            id=f"turn_{uuid.uuid4().hex[:12]}",
+            session_id=session_id,
+            project_id=project_id,
+            user_message=message,
+            assistant_message=assistant_message,
+            status="completed",
+            created_at=now,
+            completed_at=now,
+        )
+        db.add(turn)
+        db.flush()
+        with self._event_lock:
+            self._turn_order.setdefault(session_id, []).append(turn.id)
+
+        self._append_event(
+            db,
+            session_id,
+            turn.id,
+            project_id,
+            self._thought_event(
+                "A previous turn is still active, so this request was not sent to the model.",
+                phase="runtime_busy",
+                source="message_runtime",
+            ),
+        )
+        self._append_event(
+            db,
+            session_id,
+            turn.id,
+            project_id,
+            {"type": "final_answer", "turn_id": turn.id, "message": assistant_message},
+        )
+        db.commit()
+        return {
+            "turn_id": turn.id,
+            "session_id": session_id,
+            "status": "completed",
+            "event_stream_url": f"/api/agent/sessions/{session_id}/events",
         }
 
     def _execute_mock_tool_event(self, db, session_id: str, turn_id: str, project_id: str, event: dict) -> None:

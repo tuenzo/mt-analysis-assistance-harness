@@ -10,7 +10,7 @@ from app.core import config
 from app.core.database import init_db, reset_engine
 from app.projects.service import ProjectService
 from app.reports.renderer import render_report
-from app.tools.result_tools import result_get_latest
+from app.tools.result_tools import artifact_read, result_get_latest
 
 
 @pytest.fixture
@@ -163,6 +163,24 @@ def test_result_get_latest_writes_evidence_index(project_with_results):
     assert index["method_status"] == "aggregated_latest_results"
     assert "Use directional language" in " ".join(index["claim_rules"])
     assert any(item["name"] == "psm_did" for item in index["results"])
+
+
+def test_artifact_read_accepts_artifact_path_alias(project_with_results):
+    result = artifact_read(
+        project_with_results.id,
+        {"artifact_path": ".analysis/uplift_result.json"},
+    )
+
+    assert result.ok is True
+    assert result.artifacts[0]["path"] == ".analysis/uplift_result.json"
+    assert result.artifacts[0]["data"]["method"] == "gps_uplift"
+
+
+def test_artifact_read_rejects_workspace_escape(project_with_results):
+    result = artifact_read(project_with_results.id, {"path": "../outside.json"})
+
+    assert result.ok is False
+    assert result.error["code"] == "WORKSPACE_ESCAPE"
 
 
 def test_report_without_results(isolated_backend):

@@ -41,7 +41,7 @@ Rules:
 9. For data.ingest, only select direct CSV candidates returned by discovery and pass selected_files: [{{"source_path": "...", "role": "order_info|exposure_info|activity_timeline|unknown", "reason": "..."}}]. Do not ingest files you cannot classify.
 10. Never read local source data files directly; the backend copies them into the project workspace and updates the manifest.
 11. Data load is complete only after data.validate succeeds. If discover, ingest, schema.infer, or data.validate fails, explain the exact partial state and propose concrete fixes.
-12. Before citing project metrics or conclusions, call result.get_latest or artifact.read and cite the artifact path.
+12. Before citing project metrics or conclusions, call result.get_latest or artifact.read and cite the artifact path. For artifact.read, use payload {{"path": ".analysis/<file>.json"}}.
 13. Do not overclaim causality: use "observed" for diagnostics, "directional" for LocalGap/PSM-DID, and "exploratory" for stub outputs.
 14. For reports, ask the backend to generate report.generate and use .analysis/report_plan.json as the evidence skeleton.
 15. When the user asks to refresh result-dashboard images, call chart.render_dashboard with payload {{"charts": "all"}} or a chart_ids list.

@@ -15,6 +15,8 @@ import {
   Copy,
   FileBarChart,
   Loader2,
+  MessageSquare,
+  MessageSquarePlus,
   Paperclip,
   RefreshCw,
   Send,
@@ -22,16 +24,18 @@ import {
   Square,
   ThumbsUp,
   Timer,
+  Trash2,
   Wand2,
   X,
   XCircle,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { MarkdownView } from '@/components/markdown-view'
 import { useApiBaseHref } from '@/lib/use-api-base-href'
 import { api } from '@/lib/api-client'
 import { useAgentEvents } from '@/lib/sse-hooks'
-import type { AgentMessage, SSEEvent } from '@/lib/api-types'
+import type { AgentMessage, AgentSession, SSEEvent } from '@/lib/api-types'
 import { useAgentStore, type ApprovalRequest, type JobStatus, type ThoughtEntry, type ToolCall } from '@/store/agent-store'
 import { useProjectStore } from '@/store/project-store'
 import type { AgentRunStatus, ArtifactPreview, PlanStep, PlanStepStatus } from '@/types/agent'
@@ -63,13 +67,24 @@ const statusClass: Record<AgentRunStatus, string> = {
   failed: 'border-red-200 bg-red-50 text-red-700',
 }
 
-const planSteps: PlanStep[] = [
-  { id: 'validate', title: '数据校验', description: '检查订单、曝光和活动窗口完整性', status: 'completed', toolName: 'data.validate' },
-  { id: 'config', title: '推荐分析配置', description: '选择活动期、对照期和核心指标', status: 'completed', toolName: 'analysis.recommend_config' },
-  { id: 'pipeline', title: '执行分析管道', description: '运行 panel、LocalGap、DID 和策略分层', status: 'running', toolName: 'analysis.run_pipeline' },
-  { id: 'results', title: '读取最新结果', description: '汇总 artifact 和可解释指标', status: 'pending', toolName: 'result.get_latest' },
-  { id: 'answer', title: '生成解释与建议', description: '输出下一轮资源配置动作', status: 'pending', toolName: 'chat.explain_result' },
+const planStepTemplates: Array<Omit<PlanStep, 'status'>> = [
+  { id: 'validate', title: '数据校验', description: '检查订单、曝光和活动窗口完整性', toolName: 'data.validate' },
+  { id: 'pipeline', title: '执行分析管道', description: '运行 panel、LocalGap、DID 和策略分层', toolName: 'analysis.run_full_pipeline' },
+  { id: 'results', title: '读取最新结果', description: '汇总 artifact 和可解释指标', toolName: 'result.get_latest' },
+  { id: 'answer', title: '生成解释与建议', description: '输出下一轮资源配置动作', toolName: 'final_answer' },
 ]
+
+const pipelineActions = new Set([
+  'analysis.run_full_pipeline',
+  'panel.build_category_day',
+  'analysis.run_diagnostics',
+  'analysis.run_psm_did',
+  'analysis.run_localgap',
+  'analysis.run_gps_uplift',
+  'chart.render',
+  'chart.render_dashboard',
+  'report.generate',
+])
 
 function useAgentResponsiveDensity() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -128,6 +143,85 @@ function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
+function buildPlanSteps({
+  toolCalls,
+  approvals,
+  jobs,
+  artifacts,
+  runStatus,
+  isRunning,
+}: {
+  toolCalls: ToolCall[]
+  approvals: ApprovalRequest[]
+  jobs: JobStatus[]
+  artifacts: ArtifactPreview[]
+  runStatus: AgentRunStatus
+  isRunning: boolean
+}): PlanStep[] {
+  const hasApproval = approvals.some((approval) => approval.action === 'analysis.run_full_pipeline')
+  const hasSucceededJob = jobs.some((job) => job.status === 'succeeded')
+  const hasFailedJob = jobs.some((job) => job.status === 'failed')
+  const hasRunningJob = jobs.some((job) => job.status === 'running')
+
+  const byAction = (action: string) => toolCalls.filter((toolCall) => toolCall.action === action)
+  const hasStatus = (calls: ToolCall[], statuses: ToolCall['status'][]) =>
+    calls.some((toolCall) => statuses.includes(toolCall.status))
+
+  const validateCalls = byAction('data.validate')
+  const resultCalls = byAction('result.get_latest')
+  const pipelineCalls = toolCalls.filter((toolCall) => pipelineActions.has(toolCall.action))
+
+  const statusForCalls = (calls: ToolCall[], fallback: PlanStepStatus = 'pending'): PlanStepStatus => {
+    if (hasStatus(calls, ['error'])) return 'failed'
+    if (hasStatus(calls, ['running'])) return 'running'
+    if (hasStatus(calls, ['success'])) return 'completed'
+    return fallback
+  }
+
+  const validateStatus = statusForCalls(validateCalls)
+  let pipelineStatus: PlanStepStatus = statusForCalls(pipelineCalls)
+  if (hasFailedJob || hasStatus(pipelineCalls, ['error'])) {
+    pipelineStatus = 'failed'
+  } else if (hasSucceededJob || hasStatus(byAction('analysis.run_full_pipeline'), ['success'])) {
+    pipelineStatus = 'completed'
+  } else if (hasRunningJob || (isRunning && hasStatus(pipelineCalls, ['success', 'running']))) {
+    pipelineStatus = 'running'
+  } else if (hasApproval || hasStatus(byAction('analysis.run_full_pipeline'), ['waiting_approval'])) {
+    pipelineStatus = 'pending'
+  }
+
+  const resultsStatus =
+    statusForCalls(resultCalls, artifacts.length > 0 || hasSucceededJob ? 'completed' : 'pending')
+  const answerStatus: PlanStepStatus =
+    runStatus === 'failed'
+      ? 'failed'
+      : runStatus === 'completed'
+        ? 'completed'
+        : runStatus === 'waiting_approval'
+          ? 'pending'
+          : isRunning
+            ? 'running'
+            : 'pending'
+
+  return planStepTemplates.map((step) => {
+    const statusById: Record<string, PlanStepStatus> = {
+      validate: validateStatus,
+      pipeline: pipelineStatus,
+      results: resultsStatus,
+      answer: answerStatus,
+    }
+
+    return {
+      ...step,
+      description:
+        step.id === 'pipeline' && hasApproval
+          ? '等待确认后运行 panel、LocalGap、DID 和策略分层'
+          : step.description,
+      status: statusById[step.id] || 'pending',
+    }
+  })
+}
+
 const AGENT_SESSION_STORAGE_PREFIX = 'baa.agentSession.'
 
 function agentSessionStorageKey(projectId: string) {
@@ -166,33 +260,61 @@ export function AgentAnalysisPage() {
   const [turnId, setTurnId] = useState<string | null>(null)
   const [artifactEvents, setArtifactEvents] = useState<ArtifactEvent[]>([])
   const [lastCompletedAt, setLastCompletedAt] = useState<string | null>(null)
+  const [projectSessions, setProjectSessions] = useState<AgentSession[]>([])
+  const [loadingSessions, setLoadingSessions] = useState(false)
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
+  const artifactEventIdsRef = useRef(new Set<string>())
+
+  const rememberSessionId = useCallback(
+    (nextSessionId: string) => {
+      if (typeof window === 'undefined') return
+      try {
+        window.localStorage.setItem(agentSessionStorageKey(projectId), nextSessionId)
+      } catch {
+        // Ignore storage failures; backend session state still exists.
+      }
+    },
+    [projectId],
+  )
+
+  const forgetSessionId = useCallback(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.removeItem(agentSessionStorageKey(projectId))
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [projectId])
+
+  const resetConversationState = useCallback(() => {
+    clearMessages()
+    setCurrentSession(null)
+    setSessionId(null)
+    setTurnId(null)
+    setArtifactEvents([])
+    setLastCompletedAt(null)
+    artifactEventIdsRef.current.clear()
+  }, [clearMessages, setCurrentSession])
+
+  const refreshProjectSessions = useCallback(async () => {
+    setLoadingSessions(true)
+    const sessionsResponse = await api.listProjectSessions(projectId)
+    setLoadingSessions(false)
+    if (sessionsResponse.ok && sessionsResponse.data) {
+      setProjectSessions(sessionsResponse.data)
+    }
+    return sessionsResponse.ok ? sessionsResponse.data || [] : []
+  }, [projectId])
 
   useEffect(() => {
     let cancelled = false
 
-    const storageKey = agentSessionStorageKey(projectId)
     const readStoredSessionId = () => {
       if (typeof window === 'undefined') return null
       try {
-        return window.localStorage.getItem(storageKey)
+        return window.localStorage.getItem(agentSessionStorageKey(projectId))
       } catch {
         return null
-      }
-    }
-    const rememberSessionId = (nextSessionId: string) => {
-      if (typeof window === 'undefined') return
-      try {
-        window.localStorage.setItem(storageKey, nextSessionId)
-      } catch {
-        // Ignore storage failures; backend fallback still works.
-      }
-    }
-    const forgetSessionId = () => {
-      if (typeof window === 'undefined') return
-      try {
-        window.localStorage.removeItem(storageKey)
-      } catch {
-        // Ignore storage failures.
       }
     }
     const loadCandidateSession = async (candidateSessionId?: string | null, persist = true) => {
@@ -212,12 +334,8 @@ export function AgentAnalysisPage() {
     }
 
     const restoreSession = async () => {
-      clearMessages()
-      setCurrentSession(null)
-      setSessionId(null)
-      setTurnId(null)
-      setArtifactEvents([])
-      setLastCompletedAt(null)
+      resetConversationState()
+      const sessions = await refreshProjectSessions()
 
       if (await loadCandidateSession(readStoredSessionId())) return
 
@@ -232,10 +350,7 @@ export function AgentAnalysisPage() {
         return
       }
 
-      const sessionsResponse = await api.listProjectSessions(projectId)
-      const latestSession = sessionsResponse.ok
-        ? sessionsResponse.data?.find((session) => session.project_id === projectId)
-        : null
+      const latestSession = sessions.find((session) => session.project_id === projectId)
       await loadCandidateSession(latestSession?.id)
     }
 
@@ -243,7 +358,7 @@ export function AgentAnalysisPage() {
     return () => {
       cancelled = true
     }
-  }, [clearMessages, loadSessionMessages, projectId, setCurrentSession])
+  }, [forgetSessionId, loadSessionMessages, projectId, refreshProjectSessions, rememberSessionId, resetConversationState])
 
   useEffect(() => {
     if (sessionId) {
@@ -251,18 +366,29 @@ export function AgentAnalysisPage() {
     }
   }, [projectId, sessionId, loadPendingApprovals])
 
-  const handleRuntimeEvent = useCallback(
+  const applyRuntimeSideEffects = useCallback(
     (event: SSEEvent) => {
       if (event.type === 'artifact_created') {
-        setArtifactEvents((current) => [event, ...current].slice(0, 8))
-        toast.success(`产物已生成：${event.name}`)
+        if (!artifactEventIdsRef.current.has(event.artifact_id)) {
+          artifactEventIdsRef.current.add(event.artifact_id)
+          setArtifactEvents((current) => [event, ...current].slice(0, 8))
+          toast.success(`产物已生成：${event.name}`)
+        }
       }
       if (event.type === 'final_answer') {
         setLastCompletedAt(new Date().toISOString())
+        void refreshProjectSessions()
       }
+    },
+    [refreshProjectSessions],
+  )
+
+  const handleRuntimeEvent = useCallback(
+    (event: SSEEvent) => {
+      applyRuntimeSideEffects(event)
       handleSSEEvent(event)
     },
-    [handleSSEEvent],
+    [applyRuntimeSideEffects, handleSSEEvent],
   )
 
   const handleSSEError = useCallback(
@@ -298,6 +424,18 @@ export function AgentAnalysisPage() {
     type: 'artifact',
     path: event.path,
   }))
+  const planSteps = useMemo(
+    () =>
+      buildPlanSteps({
+        toolCalls: allToolCalls,
+        approvals: approvalRequests,
+        jobs: jobList,
+        artifacts,
+        runStatus,
+        isRunning,
+      }),
+    [allToolCalls, approvalRequests, artifacts, jobList, runStatus, isRunning],
+  )
 
   async function handleSend(nextInput = input) {
     const prompt = nextInput.trim()
@@ -307,11 +445,8 @@ export function AgentAnalysisPage() {
     if (response) {
       setSessionId(response.session_id)
       setTurnId(response.turn_id)
-      try {
-        window.localStorage.setItem(agentSessionStorageKey(projectId), response.session_id)
-      } catch {
-        // Ignore storage failures; the backend session still exists.
-      }
+      rememberSessionId(response.session_id)
+      void refreshProjectSessions()
       setInput('')
     }
   }
@@ -324,26 +459,66 @@ export function AgentAnalysisPage() {
 
   async function handleApprove(approvalId: string) {
     const events = await approveApproval(approvalId)
-    events.forEach(handleRuntimeEvent)
+    events.forEach(applyRuntimeSideEffects)
   }
 
   async function handleReject(approvalId: string) {
     const events = await rejectApproval(approvalId)
-    events.forEach(handleRuntimeEvent)
+    events.forEach(applyRuntimeSideEffects)
   }
 
-  function handleClearConversation() {
-    clearMessages()
-    setCurrentSession(null)
-    setSessionId(null)
-    setTurnId(null)
-    setArtifactEvents([])
-    setLastCompletedAt(null)
-    try {
-      window.localStorage.removeItem(agentSessionStorageKey(projectId))
-    } catch {
-      // Ignore storage failures.
+  function handleStartNewThread() {
+    if (isRunning) {
+      toast.error('当前线程还在运行，完成后再新建线程。')
+      return
     }
+    resetConversationState()
+    forgetSessionId()
+  }
+
+  async function handleContinueSession(nextSessionId: string) {
+    if (nextSessionId === sessionId) return
+    if (isRunning) {
+      toast.error('当前线程还在运行，完成后再切换线程。')
+      return
+    }
+    const sessionResponse = await api.getSession(nextSessionId)
+    if (!sessionResponse.ok || sessionResponse.data?.project_id !== projectId) {
+      toast.error('这个线程已不可用。')
+      void refreshProjectSessions()
+      return
+    }
+    resetConversationState()
+    await loadSessionMessages(nextSessionId)
+    setSessionId(nextSessionId)
+    setTurnId(null)
+    rememberSessionId(nextSessionId)
+    void loadPendingApprovals(projectId, nextSessionId)
+  }
+
+  async function handleDeleteSession(targetSessionId: string) {
+    if (isRunning && targetSessionId === sessionId) {
+      toast.error('当前线程还在运行，完成后再删除。')
+      return
+    }
+    const targetSession = projectSessions.find((session) => session.id === targetSessionId)
+    const ok = window.confirm(`确认删除线程${targetSession?.last_message ? `“${targetSession.last_message.slice(0, 24)}”` : ''}？`)
+    if (!ok) return
+
+    setDeletingSessionId(targetSessionId)
+    const response = await api.deleteSession(targetSessionId)
+    setDeletingSessionId(null)
+    if (!response.ok) {
+      toast.error(response.error || '删除线程失败')
+      return
+    }
+
+    setProjectSessions((sessions) => sessions.filter((session) => session.id !== targetSessionId))
+    if (targetSessionId === sessionId) {
+      resetConversationState()
+      forgetSessionId()
+    }
+    toast.success('线程已删除')
   }
 
   return (
@@ -355,7 +530,7 @@ export function AgentAnalysisPage() {
             connected={connected}
             onRefresh={reconnect}
             onStop={handleInterrupt}
-            onClear={handleClearConversation}
+            onClear={handleStartNewThread}
             canStop={Boolean(isRunning && sessionId)}
           />
 
@@ -363,6 +538,8 @@ export function AgentAnalysisPage() {
             <AgentConversationPanel
               messages={messageQueue}
               toolCalls={allToolCalls}
+              planSteps={planSteps}
+              runStatus={runStatus}
               thoughts={allThoughts}
               approvals={approvalRequests}
               artifacts={artifacts}
@@ -389,7 +566,15 @@ export function AgentAnalysisPage() {
               runStatus={runStatus}
               activeJob={activeJob}
               toolCalls={allToolCalls}
+              planSteps={planSteps}
               artifacts={artifacts}
+              sessions={projectSessions}
+              currentSessionId={sessionId}
+              loadingSessions={loadingSessions}
+              deletingSessionId={deletingSessionId}
+              onNewThread={handleStartNewThread}
+              onContinueSession={(nextSessionId) => void handleContinueSession(nextSessionId)}
+              onDeleteSession={(targetSessionId) => void handleDeleteSession(targetSessionId)}
               lastCompletedAt={lastCompletedAt}
               dashboardHref={hrefFor(`/projects/${projectId}/dashboard`)}
               reportHref={hrefFor(`/projects/${projectId}/reports`)}
@@ -444,8 +629,8 @@ function AgentAnalysisHeader({
           停止
         </Button>
         <Button variant="outline" size="sm" onClick={onClear}>
-          <X className="mr-1.5 h-4 w-4" />
-          清空对话
+          <MessageSquarePlus className="mr-1.5 h-4 w-4" />
+          新建线程
         </Button>
       </div>
     </section>
@@ -454,6 +639,8 @@ function AgentAnalysisHeader({
 function AgentConversationPanel({
   messages,
   toolCalls,
+  planSteps,
+  runStatus,
   thoughts,
   approvals,
   artifacts,
@@ -468,6 +655,8 @@ function AgentConversationPanel({
 }: {
   messages: AgentMessage[]
   toolCalls: ToolCall[]
+  planSteps: PlanStep[]
+  runStatus: AgentRunStatus
   thoughts: ThoughtEntry[]
   approvals: ApprovalRequest[]
   artifacts: ArtifactPreview[]
@@ -500,6 +689,8 @@ function AgentConversationPanel({
       <ConversationStream
         messages={messages}
         toolCalls={toolCalls}
+        planSteps={planSteps}
+        runStatus={runStatus}
         thoughts={thoughts}
         approvals={approvals}
         artifacts={artifacts}
@@ -522,6 +713,8 @@ function AgentConversationPanel({
 function ConversationStream({
   messages,
   toolCalls,
+  planSteps,
+  runStatus,
   thoughts,
   approvals,
   artifacts,
@@ -531,6 +724,8 @@ function ConversationStream({
 }: {
   messages: AgentMessage[]
   toolCalls: ToolCall[]
+  planSteps: PlanStep[]
+  runStatus: AgentRunStatus
   thoughts: ThoughtEntry[]
   approvals: ApprovalRequest[]
   artifacts: ArtifactPreview[]
@@ -550,7 +745,7 @@ function ConversationStream({
 
       {(toolCalls.length > 0 || approvals.length > 0 || artifacts.length > 0) && (
         <div className="ml-8 space-y-3 border-l border-dashed border-border pl-4">
-          <AgentPlanCard steps={planSteps} />
+          <AgentPlanCard steps={planSteps} runStatus={runStatus} />
           {toolCalls.slice(-4).map((toolCall) => (
             <ToolCallCard key={`${toolCall.turnId}-${toolCall.id}`} toolCall={toolCall} />
           ))}
@@ -629,7 +824,11 @@ function MessageBubble({ message }: { message: AgentMessage }) {
     <div className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
       {!isUser && <Avatar tone="agent" icon={<Bot className="h-4 w-4" />} />}
       <article className={`max-w-[78%] rounded-2xl border px-4 py-3 text-sm shadow-sm ${isUser ? 'border-transparent bg-[#eef4ff]' : 'border-border bg-white'}`}>
-        <div className="whitespace-pre-wrap leading-6">{message.content}</div>
+        {isUser ? (
+          <div className="whitespace-pre-wrap leading-6">{message.content}</div>
+        ) : (
+          <MarkdownView content={message.content} compact />
+        )}
         <div className="mt-2 flex items-center justify-between gap-4 text-[11px] text-muted-foreground">
           <span>{formatTime(message.created_at)}</span>
           {!isUser && (
@@ -646,7 +845,7 @@ function MessageBubble({ message }: { message: AgentMessage }) {
   )
 }
 
-function AgentPlanCard({ steps }: { steps: PlanStep[] }) {
+function AgentPlanCard({ steps, runStatus }: { steps: PlanStep[]; runStatus: AgentRunStatus }) {
   return (
     <div className="rounded-2xl border border-border bg-[#fbfcfe] p-4">
       <div className="flex items-center justify-between gap-3">
@@ -659,7 +858,7 @@ function AgentPlanCard({ steps }: { steps: PlanStep[] }) {
             <p className="text-xs text-muted-foreground">按需调用唯一业务工具 business_analysis</p>
           </div>
         </div>
-        <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">规划中</Badge>
+        <Badge variant="outline" className={statusClass[runStatus]}>{statusText[runStatus]}</Badge>
       </div>
       <div className="mt-4 space-y-2">
         {steps.map((step) => (
@@ -825,7 +1024,15 @@ function AgentSideInspector({
   runStatus,
   activeJob,
   toolCalls,
+  planSteps,
   artifacts,
+  sessions,
+  currentSessionId,
+  loadingSessions,
+  deletingSessionId,
+  onNewThread,
+  onContinueSession,
+  onDeleteSession,
   lastCompletedAt,
   dashboardHref,
   reportHref,
@@ -839,7 +1046,15 @@ function AgentSideInspector({
   runStatus: AgentRunStatus
   activeJob: JobStatus | null
   toolCalls: ToolCall[]
+  planSteps: PlanStep[]
   artifacts: ArtifactPreview[]
+  sessions: AgentSession[]
+  currentSessionId: string | null
+  loadingSessions: boolean
+  deletingSessionId: string | null
+  onNewThread: () => void
+  onContinueSession: (sessionId: string) => void
+  onDeleteSession: (sessionId: string) => void
   lastCompletedAt: string | null
   dashboardHref: string
   reportHref: string
@@ -847,6 +1062,16 @@ function AgentSideInspector({
   const progress = Math.round((activeJob?.progress ?? (runStatus === 'completed' ? 1 : runStatus === 'idle' ? 0 : 0.62)) * 100)
   return (
     <aside className="agent-side-inspector flex h-full min-h-0 flex-col overflow-hidden">
+      <AgentThreadCard
+        sessions={sessions}
+        currentSessionId={currentSessionId}
+        loading={loadingSessions}
+        deletingSessionId={deletingSessionId}
+        onNewThread={onNewThread}
+        onContinueSession={onContinueSession}
+        onDeleteSession={onDeleteSession}
+      />
+
       <InspectorCard title="项目上下文">
         <InfoRow label="项目名称" value={projectName} />
         <InfoRow label="数据周期" value="2025-09-01 ~ 2025-11-30" optional />
@@ -915,6 +1140,94 @@ function AgentSideInspector({
         </div>
       </InspectorCard>
     </aside>
+  )
+}
+
+function AgentThreadCard({
+  sessions,
+  currentSessionId,
+  loading,
+  deletingSessionId,
+  onNewThread,
+  onContinueSession,
+  onDeleteSession,
+}: {
+  sessions: AgentSession[]
+  currentSessionId: string | null
+  loading: boolean
+  deletingSessionId: string | null
+  onNewThread: () => void
+  onContinueSession: (sessionId: string) => void
+  onDeleteSession: (sessionId: string) => void
+}) {
+  const visibleSessions = sessions.slice(0, 6)
+
+  return (
+    <InspectorCard title="对话线程">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <Button variant="outline" size="sm" className="h-8 px-2 text-xs" onClick={onNewThread}>
+          <MessageSquarePlus className="mr-1.5 h-3.5 w-3.5" />
+          新线程
+        </Button>
+        <Badge variant="outline" className="border-gray-200 bg-gray-50 text-gray-600">
+          {sessions.length} 条
+        </Badge>
+      </div>
+      <div className="max-h-48 space-y-1.5 overflow-y-auto pr-1">
+        {loading ? (
+          <div className="flex items-center gap-2 rounded-lg bg-[#f7f8fa] px-3 py-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            正在加载线程
+          </div>
+        ) : visibleSessions.length === 0 ? (
+          <div className="rounded-lg bg-[#f7f8fa] px-3 py-2 text-xs text-muted-foreground">
+            发送第一条消息后会生成线程
+          </div>
+        ) : (
+          visibleSessions.map((session) => {
+            const isCurrent = session.id === currentSessionId
+            const preview = session.last_message || '空线程'
+            const deleting = deletingSessionId === session.id
+            return (
+              <div
+                key={session.id}
+                className={`flex items-center gap-1.5 rounded-lg border px-2 py-2 ${
+                  isCurrent ? 'border-primary/40 bg-primary/10' : 'border-border bg-[#fbfcfe]'
+                }`}
+              >
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                  onClick={() => onContinueSession(session.id)}
+                  aria-current={isCurrent ? 'true' : undefined}
+                >
+                  <MessageSquare className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-semibold">
+                      {isCurrent ? '当前线程' : `线程 ${session.id.slice(0, 6)}`}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[11px] leading-4 text-muted-foreground">{preview}</span>
+                    <span className="mt-0.5 block text-[10px] leading-4 text-muted-foreground">
+                      {session.message_count || 0} 条 · {formatThreadTime(session.last_activity_at || session.updated_at || session.created_at)}
+                    </span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                  onClick={() => onDeleteSession(session.id)}
+                  disabled={deleting}
+                  aria-label="删除线程"
+                  title="删除线程"
+                >
+                  {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+            )
+          })
+        )}
+      </div>
+    </InspectorCard>
   )
 }
 
@@ -1019,4 +1332,16 @@ function toolTone(action: string) {
 function formatTime(value?: string | null) {
   if (!value) return '-'
   return new Date(value).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+}
+
+function formatThreadTime(value?: string | null) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
