@@ -1,9 +1,8 @@
-from pathlib import Path
-
 from app.analysis.pipelines.diagnostics import run_diagnostics
 from app.analysis.pipelines.gps_uplift import run_gps_uplift
 from app.analysis.pipelines.localgap import run_localgap
 from app.analysis.pipelines.psm_did import run_psm_did
+from app.core.config import resolve_project_path
 from app.projects.service import ProjectService
 from app.tools.schemas import ToolResult
 
@@ -19,7 +18,7 @@ def analysis_run_diagnostics(project_id: str, payload: dict) -> ToolResult:
             error={"code": "NOT_FOUND", "message": "Project not found"},
         )
 
-    workspace_path = Path(project.workspace_path)
+    workspace_path = resolve_project_path(project.workspace_path)
     return run_diagnostics(project_id, str(workspace_path))
 
 
@@ -34,7 +33,7 @@ def analysis_run_psm_did(project_id: str, payload: dict) -> ToolResult:
             error={"code": "NOT_FOUND", "message": "Project not found"},
         )
 
-    workspace_path = Path(project.workspace_path)
+    workspace_path = resolve_project_path(project.workspace_path)
     return run_psm_did(project_id, str(workspace_path))
 
 
@@ -49,7 +48,7 @@ def analysis_run_localgap(project_id: str, payload: dict) -> ToolResult:
             error={"code": "NOT_FOUND", "message": "Project not found"},
         )
 
-    workspace_path = Path(project.workspace_path)
+    workspace_path = resolve_project_path(project.workspace_path)
     return run_localgap(project_id, str(workspace_path))
 
 
@@ -64,7 +63,7 @@ def analysis_run_gps_uplift(project_id: str, payload: dict) -> ToolResult:
             error={"code": "NOT_FOUND", "message": "Project not found"},
         )
 
-    workspace_path = Path(project.workspace_path)
+    workspace_path = resolve_project_path(project.workspace_path)
     return run_gps_uplift(project_id, str(workspace_path), payload)
 
 

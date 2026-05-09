@@ -1,4 +1,4 @@
-from pathlib import Path
+from app.core.config import resolve_project_path
 from app.tools.schemas import ToolResult
 from app.projects.service import ProjectService
 from app.reports.renderer import render_report, export_report as do_export
@@ -16,7 +16,7 @@ def report_generate(project_id: str, payload: dict) -> ToolResult:
         )
 
     fmt = payload.get("format", "md")
-    workspace_path = Path(project.workspace_path)
+    workspace_path = resolve_project_path(project.workspace_path)
     return render_report(project_id, str(workspace_path), fmt, project_name=project.name)
 
 
@@ -34,7 +34,7 @@ def report_export(project_id: str, payload: dict) -> ToolResult:
     report_path = payload.get("report_path", "")
     export_format = payload.get("format", "md")
 
-    workspace_path = Path(project.workspace_path)
+    workspace_path = resolve_project_path(project.workspace_path)
     if report_path:
         full_path = workspace_path / report_path
     else:

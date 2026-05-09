@@ -2,10 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import {
-  BarChart3,
-  BellRing,
   Bot,
   Brain,
   CalendarClock,
@@ -14,7 +12,9 @@ import {
   Home,
   Inbox,
   LayoutDashboard,
-  Plus,
+  FolderCog,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings,
 } from 'lucide-react'
 import { useApiBaseHref } from '@/lib/use-api-base-href'
@@ -32,7 +32,7 @@ const navItems = [
 
 const fallbackRecentProjects = [
   { id: 'demo-project', name: 'Keemart 促销增长全流程演示 Demo' },
-  { id: 'demo-project-2', name: '新项目演示2' },
+  { id: 'demo-project-2', name: '新项目演示 2' },
   { id: 'demo-project-3', name: '新项目' },
 ]
 
@@ -45,6 +45,9 @@ export function Sidebar() {
   const pathname = usePathname()
   const hrefFor = useApiBaseHref()
   const { projects, loadProjects } = useProjectStore()
+  const [collapsed, setCollapsed] = useState(() =>
+    typeof window !== 'undefined' && window.localStorage.getItem('baa.sidebarCollapsed') === 'true',
+  )
   const projectId = getProjectIdFromPathname(pathname) || projects[0]?.id || ''
   const recentProjects = projects.length > 0 ? projects.slice(0, 4) : fallbackRecentProjects
 
@@ -52,21 +55,40 @@ export function Sidebar() {
     loadProjects()
   }, [loadProjects])
 
+  function toggleCollapsed() {
+    setCollapsed((current) => {
+      const next = !current
+      window.localStorage.setItem('baa.sidebarCollapsed', String(next))
+      return next
+    })
+  }
+
   return (
-    <aside className="hidden w-60 shrink-0 flex-col border-r border-border bg-white text-[#1f2937] shadow-[8px_0_30px_rgba(31,41,55,0.04)] md:flex">
-      <div className="border-b border-border px-4 py-5">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-[#241a00] shadow-sm">
-            <BarChart3 className="h-5 w-5" />
+    <aside className={`app-font-scale-80 hidden shrink-0 flex-col border-r border-border bg-card text-card-foreground shadow-[8px_0_30px_rgba(31,41,55,0.04)] transition-[width] duration-200 md:flex ${collapsed ? 'w-20' : 'w-60'}`}>
+      <div className={`border-b border-border py-5 ${collapsed ? 'px-2' : 'px-3'}`}>
+        <div className={`flex min-w-0 items-center gap-2 ${collapsed ? 'flex-col justify-center gap-2' : ''}`}>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-[0.72rem] font-black tracking-tight text-[#241a00] shadow-sm">
+            美团
           </span>
-          <div className="min-w-0">
-            <span className="block truncate text-sm font-bold">商业分析工作区</span>
-            <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">活动评估与决策看板</span>
-          </div>
+          {!collapsed && (
+            <div className="min-w-0">
+              <span className="block truncate text-sm font-bold">商业分析工作区</span>
+              <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">活动评估与决策看板</span>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            className={`ml-auto rounded-lg p-2 text-muted-foreground transition hover:bg-accent hover:text-accent-foreground ${collapsed ? 'ml-0' : ''}`}
+            aria-label={collapsed ? '展开侧边栏' : '折叠侧边栏'}
+            title={collapsed ? '展开侧边栏' : '折叠侧边栏'}
+          >
+            {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </button>
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-3 py-4">
+      <nav className={`flex-1 overflow-y-auto py-4 ${collapsed ? 'px-2' : 'px-3'}`}>
         <div className="space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon
@@ -80,70 +102,64 @@ export function Sidebar() {
               <Link
                 key={item.key}
                 href={hrefFor(href)}
-                className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${
+                title={item.label}
+                className={`group relative flex items-center gap-3 rounded-lg py-2.5 text-sm font-semibold transition ${collapsed ? 'justify-center px-2' : 'px-3'} ${
                   active
-                    ? 'bg-secondary text-[#6f5200] shadow-sm'
-                    : 'text-[#4b5563] hover:bg-[#f7f8fa] hover:text-[#111827]'
+                    ? 'bg-secondary text-secondary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                 }`}
               >
                 {active && <span className="absolute left-0 top-2 h-6 w-1 rounded-r-full bg-primary" />}
-                <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-[#d39a00]' : 'text-[#6b7280] group-hover:text-[#111827]'}`} />
-                <span className="truncate">{item.label}</span>
+                <Icon className={`h-4 w-4 shrink-0 ${active ? 'text-primary' : 'text-muted-foreground group-hover:text-accent-foreground'}`} />
+                {!collapsed && <span className="truncate">{item.label}</span>}
               </Link>
             )
           })}
         </div>
 
-        <div className="mt-6">
-          <div className="px-3 text-xs font-bold text-muted-foreground">最近项目</div>
-          <div className="mt-2 space-y-1">
-            {recentProjects.map((project) => {
-              const active = pathname.startsWith(`/projects/${project.id}`)
-              return (
-                <Link
-                  key={project.id}
-                  href={hrefFor(`/projects/${project.id}/agent`)}
-                  className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition ${
-                    active
-                      ? 'border border-[#f2cf4a] bg-secondary text-[#1f2937]'
-                      : 'text-[#4b5563] hover:bg-[#f7f8fa] hover:text-[#111827]'
-                  }`}
-                  title={project.name}
-                >
-                  <FolderOpen className="h-3.5 w-3.5 shrink-0 text-[#6b7280]" />
-                  <span className="truncate">{project.name}</span>
-                </Link>
-              )
-            })}
-          </div>
-        </div>
-      </nav>
-
-      <div className="border-t border-border bg-white p-3">
-        <div className="rounded-xl border border-border bg-[#fbfcfe] p-3">
-          <div className="flex items-start gap-2">
-            <BellRing className="mt-0.5 h-4 w-4 shrink-0 text-[#d39a00]" />
-            <div className="min-w-0">
-              <p className="text-xs font-semibold">项目状态同步</p>
-              <p className="mt-1 text-[11px] leading-4 text-muted-foreground">结果、报告与记忆候选保持在项目内。</p>
+        {!collapsed && (
+          <div className="mt-6">
+            <div className="px-3 text-xs font-bold text-muted-foreground">最近项目</div>
+            <div className="mt-2 space-y-1">
+              {recentProjects.map((project) => {
+                const active = pathname.startsWith(`/projects/${project.id}`)
+                return (
+                  <Link
+                    key={project.id}
+                    href={hrefFor(`/projects/${project.id}/agent`)}
+                    className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition ${
+                      active
+                        ? 'border border-[#f2cf4a] bg-secondary text-secondary-foreground'
+                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                    }`}
+                    title={project.name}
+                  >
+                    <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{project.name}</span>
+                  </Link>
+                )
+              })}
             </div>
           </div>
-        </div>
-        <div className="mt-3 space-y-2">
+        )}
+      </nav>
+
+      <div className="border-t border-border bg-card p-3">
+        <div className="space-y-2">
           <Link
             href={hrefFor('/projects')}
-            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-[#f2cf4a] bg-white px-3 text-sm font-bold text-[#1f2937] transition hover:bg-secondary"
-            title="新建项目"
+            className="flex h-10 items-center justify-center gap-2 rounded-lg border border-[#f2cf4a] bg-card px-3 text-sm font-bold text-card-foreground transition hover:bg-secondary"
+            title="项目管理"
           >
-            <Plus className="h-4 w-4 text-[#d49700]" />
-            <span>新建项目</span>
+            <FolderCog className="h-4 w-4 text-[#d49700]" />
+            {!collapsed && <span>项目管理</span>}
           </Link>
           <button
-            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold text-muted-foreground transition hover:bg-[#f7f8fa] hover:text-[#111827]"
+            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold text-muted-foreground transition hover:bg-accent hover:text-accent-foreground"
             title="设置"
           >
             <Settings className="h-4 w-4" />
-            <span>设置</span>
+            {!collapsed && <span>设置</span>}
           </button>
         </div>
       </div>

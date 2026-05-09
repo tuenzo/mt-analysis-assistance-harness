@@ -9,6 +9,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from app.core.config import resolve_project_path
 from app.projects.service import ProjectService
 from app.strategy_lab.schemas import (
     AnalysisFlowPayload,
@@ -82,7 +83,7 @@ class StrategyLabService:
         project = self.project_service.get_project(project_id)
         if not project:
             raise StrategyLabError("NOT_FOUND", "Project not found.", {"project_id": project_id})
-        workspace_path = Path(project.workspace_path).resolve()
+        workspace_path = resolve_project_path(project.workspace_path)
         workspace_path.mkdir(parents=True, exist_ok=True)
         return workspace_path
 

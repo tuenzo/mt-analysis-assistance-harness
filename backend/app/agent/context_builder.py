@@ -1,10 +1,9 @@
-from pathlib import Path
 import json
 
 from app.projects.models import Artifact, Job, Project, ProjectFile
 from app.core.database import get_session
 from app.workspace.context_summary import ContextSummaryWriter
-from app.core.config import settings
+from app.core.config import resolve_project_path
 
 
 AVAILABLE_ACTIONS = [
@@ -38,7 +37,7 @@ class ContextBuilder:
 
             files = db.query(ProjectFile).filter(ProjectFile.project_id == project_id).all()
 
-            workspace_path = Path(project.workspace_path)
+            workspace_path = resolve_project_path(project.workspace_path)
             ctx_content = ""
             if workspace_path.exists():
                 ctx_content = ContextSummaryWriter.read(workspace_path)

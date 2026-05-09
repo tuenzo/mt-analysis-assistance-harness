@@ -6,7 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "frontend:test": "node ../scripts/serve-frontend.mjs --host 127.0.0.1 --port 4180 --name test",
+    "frontend:probe": "node ../scripts/frontend-lifecycle.mjs probe --target all",
+    "frontend:monitor": "node ../scripts/frontend-lifecycle.mjs monitor --target all --interval-ms 30000",
+    "e2e": "node ../scripts/run-e2e.mjs",
+    "e2e:test": "node ../scripts/run-e2e.mjs --target test",
+    "e2e:manual": "node ../scripts/run-e2e.mjs --target manual"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
@@ -27,6 +33,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

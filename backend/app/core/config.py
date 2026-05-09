@@ -21,7 +21,7 @@ for env_file in (
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="APP_", env_file=".env", env_file_encoding="utf-8")
 
-    workspace_root: Path = Path("./workspaces")
+    workspace_root: Path = PROJECT_ROOT / "workspaces"
     workspace_version: int = 1
     agent_runtime_provider: str = "mock"
     agent_permission_mode: str = "dontAsk"
@@ -38,7 +38,15 @@ class Settings(BaseSettings):
     anthropic_api_model: str = "claude-opus-4-5-20250501"
 
 
+def resolve_project_path(path: Path | str) -> Path:
+    candidate = Path(path).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve()
+    return (PROJECT_ROOT / candidate).resolve()
+
+
 settings = Settings()
+settings.workspace_root = resolve_project_path(settings.workspace_root)
 
 
 def is_test_mode() -> bool:

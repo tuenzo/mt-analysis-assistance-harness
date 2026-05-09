@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.config import settings
 from app.core.database import get_session, init_db, reset_engine
 from app.core.permissions import PermissionLevel
 from app.main import app
@@ -158,7 +159,7 @@ def test_tool_call_logged_to_file(gateway, project, test_db):
     )
     assert result.ok is True
 
-    log_path = Path("./workspaces") / "tool_calls.jsonl"
+    log_path = settings.workspace_root / "tool_calls.jsonl"
     assert log_path.exists()
 
     with log_path.open("r", encoding="utf-8") as handle:

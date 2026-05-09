@@ -34,7 +34,7 @@ import type {
 
 const initialFilters: DashboardFilters = {
   timeRange: ['2025-05-06', '2025-06-04'],
-  activityWindow: 'during',
+  activityWindow: 'all',
   categoryLevel: 'all',
   calendarType: 'all',
 }

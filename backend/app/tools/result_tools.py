@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
+from app.core.config import resolve_project_path
 from app.projects.service import ProjectService
 from app.tools.schemas import ToolResult
 
@@ -28,7 +28,7 @@ def result_get_latest(project_id: str, payload: dict) -> ToolResult:
             error={"code": "NOT_FOUND", "message": "Project not found"},
         )
 
-    workspace_path = Path(project.workspace_path)
+    workspace_path = resolve_project_path(project.workspace_path)
     latest_data: dict[str, Any] = {}
 
     for name, relative_path in RESULT_FILES.items():
@@ -111,7 +111,8 @@ def artifact_read(project_id: str, payload: dict) -> ToolResult:
             error={"code": "MISSING_PATH", "message": "A path parameter is required."},
         )
 
-    full_path = Path(project.workspace_path) / artifact_path
+    workspace_path = resolve_project_path(project.workspace_path)
+    full_path = workspace_path / artifact_path
     if not full_path.exists():
         return ToolResult(
             ok=False,

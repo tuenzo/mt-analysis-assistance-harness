@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from app.core.config import demo_reset_on_start, get_demo_project_id, is_demo_mode, settings
+from app.core.config import demo_reset_on_start, get_demo_project_id, is_demo_mode, resolve_project_path, settings
 from app.analysis.dashboard_chart_renderer import DEFAULT_DASHBOARD_CHART_IDS, render_dashboard_chart
 from app.core.database import get_session
 from app.projects.models import (
@@ -94,7 +94,7 @@ class DemoSeedService:
                 db.commit()
                 return {"project_id": project_id, "session_id": session_id}
 
-            workspace_path = self.workspace_manager.create_workspace(project_id)
+            workspace_path = self.workspace_manager.create_workspace(project_id).resolve()
             now = datetime.now().isoformat()
             project = Project(
                 id=project_id,
@@ -136,11 +136,11 @@ class DemoSeedService:
 
     def _ensure_existing_demo_ready(self, db, project: Project) -> str | None:
         project_id = project.id
-        workspace_path = Path(project.workspace_path)
+        workspace_path = resolve_project_path(project.workspace_path)
         manifest_path = workspace_path / ".analysis" / "project_manifest.json"
         workspace_missing = not manifest_path.exists()
         if workspace_missing:
-            workspace_path = self.workspace_manager.create_workspace(project_id)
+            workspace_path = self.workspace_manager.create_workspace(project_id).resolve()
             project.workspace_path = str(workspace_path)
 
         now = datetime.now().isoformat()

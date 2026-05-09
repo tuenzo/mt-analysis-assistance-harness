@@ -1,8 +1,8 @@
-from pathlib import Path
 from app.tools.schemas import ToolResult
 from app.projects.service import ProjectService
 from app.analysis.chart_renderer import render_chart
 from app.analysis.dashboard_chart_renderer import DEFAULT_DASHBOARD_CHART_IDS, render_dashboard_chart_artifacts
+from app.core.config import resolve_project_path
 
 
 def chart_render(project_id: str, payload: dict) -> ToolResult:
@@ -17,7 +17,7 @@ def chart_render(project_id: str, payload: dict) -> ToolResult:
         )
 
     chart_type = payload.get("type") or payload.get("chart_type") or "gmv_trend"
-    workspace_path = Path(project.workspace_path)
+    workspace_path = resolve_project_path(project.workspace_path)
     return render_chart(str(workspace_path), chart_type)
 
 
@@ -48,5 +48,5 @@ def chart_render_dashboard(project_id: str, payload: dict) -> ToolResult:
             error={"code": "INVALID_PAYLOAD", "message": "charts must be 'all', a comma string, or a list of chart ids"},
         )
 
-    workspace_path = Path(project.workspace_path)
+    workspace_path = resolve_project_path(project.workspace_path)
     return render_dashboard_chart_artifacts(project_id, workspace_path, chart_ids)

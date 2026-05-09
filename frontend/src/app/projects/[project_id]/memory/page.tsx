@@ -27,7 +27,7 @@ export default function MemoryPage() {
     ])
     setLoading(false)
     if (!candidateResponse.ok || !candidateResponse.data) {
-      setError(candidateResponse.error || 'Failed to load memory candidates.')
+      setError(candidateResponse.error || '无法加载记忆候选。')
       return
     }
     setCandidates(candidateResponse.data)
@@ -40,7 +40,7 @@ export default function MemoryPage() {
     const response = await api.generateMemorySummary(projectId)
     setBusy(false)
     if (!response.ok) {
-      setError(response.error || 'Failed to generate memory summary.')
+      setError(response.error || '无法生成记忆摘要。')
       return
     }
     await loadMemory()
@@ -51,7 +51,7 @@ export default function MemoryPage() {
     const response = await api.approveMemoryCandidate(candidateId)
     setBusy(false)
     if (!response.ok) {
-      setError(response.error || 'Failed to approve memory candidate.')
+      setError(response.error || '无法通过记忆候选。')
       return
     }
     await loadMemory()
@@ -62,7 +62,7 @@ export default function MemoryPage() {
     const response = await api.rejectMemoryCandidate(candidateId)
     setBusy(false)
     if (!response.ok) {
-      setError(response.error || 'Failed to reject memory candidate.')
+      setError(response.error || '无法拒绝记忆候选。')
       return
     }
     await loadMemory()
@@ -86,17 +86,17 @@ export default function MemoryPage() {
     <div className="container mx-auto max-w-6xl px-4 py-8 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Memory Review</h1>
-          <p className="text-sm text-muted-foreground">Review project memory candidates before persistence.</p>
+          <h1 className="text-2xl font-semibold">记忆审核</h1>
+          <p className="text-sm text-muted-foreground">在写入项目前审核候选记忆内容。</p>
         </div>
         <div className="flex gap-2">
           <Button type="button" variant="outline" onClick={loadMemory} disabled={loading || busy}>
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+            刷新
           </Button>
           <Button type="button" onClick={generateSummary} disabled={loading || busy}>
             <Sparkles className="mr-2 h-4 w-4" />
-            Generate
+            生成摘要
           </Button>
         </div>
       </div>
@@ -108,20 +108,20 @@ export default function MemoryPage() {
       )}
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Metric title="Pending" value={pending.length} />
-        <Metric title="Reviewed" value={reviewed.length} />
-        <Metric title="Stored" value={storedMemory ? 1 : 0} />
+        <Metric title="待审核" value={pending.length} />
+        <Metric title="已处理" value={reviewed.length} />
+        <Metric title="已存储" value={storedMemory ? 1 : 0} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Candidates</CardTitle>
+            <CardTitle className="text-base">候选记忆</CardTitle>
           </CardHeader>
           <CardContent>
-            {loading && <p className="text-sm text-muted-foreground">Loading candidates...</p>}
+            {loading && <p className="text-sm text-muted-foreground">正在加载候选记忆...</p>}
             {!loading && candidates.length === 0 && (
-              <p className="text-sm text-muted-foreground">No memory candidates yet.</p>
+              <p className="text-sm text-muted-foreground">暂无记忆候选。</p>
             )}
             <div className="space-y-3">
               {candidates.map((candidate) => (
@@ -142,11 +142,11 @@ export default function MemoryPage() {
                     <div className="mt-3 flex justify-end gap-2">
                       <Button type="button" size="sm" variant="outline" onClick={() => reject(candidate.id)} disabled={busy}>
                         <X className="mr-1 h-3.5 w-3.5" />
-                        Reject
+                        拒绝
                       </Button>
                       <Button type="button" size="sm" onClick={() => approve(candidate.id)} disabled={busy}>
                         <Check className="mr-1 h-3.5 w-3.5" />
-                        Approve
+                        通过
                       </Button>
                     </div>
                   )}
@@ -158,7 +158,7 @@ export default function MemoryPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Stored Project Memory</CardTitle>
+            <CardTitle className="text-base">已存储的项目记忆</CardTitle>
           </CardHeader>
           <CardContent>
             {storedMemory ? (
@@ -166,7 +166,7 @@ export default function MemoryPage() {
                 <MarkdownView content={storedMemory} compact />
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No approved project memory has been stored yet.</p>
+              <p className="text-sm text-muted-foreground">暂无已通过并写入的项目记忆。</p>
             )}
           </CardContent>
         </Card>

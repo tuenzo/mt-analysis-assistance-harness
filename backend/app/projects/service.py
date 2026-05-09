@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 from app.core.database import get_session
-from app.core.config import get_demo_project_id, is_demo_mode, is_test_mode, settings
+from app.core.config import get_demo_project_id, is_demo_mode, is_test_mode, resolve_project_path, settings
 from app.projects.models import Project, ProjectFile
 from app.workspace.manager import WorkspaceManager
 from app.workspace.manifest import FileEntry, ProjectManifest, compute_file_checksum
@@ -21,6 +21,11 @@ class ProjectService:
     def __init__(self):
         self.workspace_manager = WorkspaceManager(settings.workspace_root)
 
+    def _workspace_manager(self) -> WorkspaceManager:
+        if self.workspace_manager.workspace_root != settings.workspace_root:
+            self.workspace_manager = WorkspaceManager(settings.workspace_root)
+        return self.workspace_manager
+
     def create_project(
         self,
         name: str,
@@ -31,7 +36,7 @@ class ProjectService:
         db = get_session()
         try:
             project_id = f"proj_{uuid.uuid4().hex[:12]}"
-            workspace_path = self.workspace_manager.create_workspace(project_id)
+            workspace_path = self._workspace_manager().create_workspace(project_id).resolve()
 
             project = Project(
                 id=project_id,
@@ -274,7 +279,7 @@ class ProjectService:
             from app.analysis.pipelines.build_panel import ROLE_ALIASES, infer_schema_from_columns
 
             for pf in files:
-                workspace_path = Path(project.workspace_path)
+                workspace_path = self._project_workspace_path(project)
                 file_path = workspace_path / pf.current_path
                 headers: list[str] = []
 
@@ -398,8 +403,12 @@ class ProjectService:
     def _can_read_hidden_project(project_id: str) -> bool:
         return is_test_mode() or project_id == get_demo_project_id()
 
+    @staticmethod
+    def _project_workspace_path(project: Project) -> Path:
+        return resolve_project_path(project.workspace_path)
+
     def _register_file_bytes(self, db, project: Project, file_content: bytes, original_name: str, role: str) -> ProjectFile:
-        workspace_path = Path(project.workspace_path)
+        workspace_path = self._project_workspace_path(project)
         safe_name = self._safe_filename(original_name)
         file_path = self._unique_raw_path(workspace_path, safe_name)
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -420,7 +429,7 @@ class ProjectService:
         return project_file
 
     def _register_file_path(self, db, project: Project, source_file: Path, role: str) -> ProjectFile:
-        workspace_path = Path(project.workspace_path)
+        workspace_path = self._project_workspace_path(project)
         safe_name = self._safe_filename(source_file.name)
         file_path = self._unique_raw_path(workspace_path, safe_name)
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -444,7 +453,7 @@ class ProjectService:
         file_path: Path,
         size_bytes: int,
     ) -> ProjectFile:
-        workspace_path = Path(project.workspace_path)
+        workspace_path = self._project_workspace_path(project)
         now = datetime.now().isoformat()
         project_file = ProjectFile(
             project_id=project.id,
@@ -471,7 +480,7 @@ class ProjectService:
         next_steps: str = "Run schema.infer and data.validate",
         extra_lines: list[str] | None = None,
     ) -> None:
-        workspace_path = Path(project.workspace_path)
+        workspace_path = self._project_workspace_path(project)
         manifest = ProjectManifest.load(workspace_path)
         project_files = db.query(ProjectFile).filter(ProjectFile.project_id == project.id).all()
         manifest.files = [

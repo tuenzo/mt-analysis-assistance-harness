@@ -12,6 +12,7 @@ from app.projects.schemas import (
     DataDiscoverRequest, DataDiscoverResponse, DataIngestRequest, DataIngestResponse
 )
 from app.projects.service import ProjectService
+from app.core.config import resolve_project_path
 from app.core.database import get_session
 from app.projects.models import AgentEvent, ApprovalRequest, Artifact, Job, ToolCall
 from app.analysis.dashboard_chart_renderer import CHART_IDS
@@ -160,7 +161,7 @@ def read_dashboard_chart(project_id: str, chart_id: str):
     if chart_id not in CHART_IDS:
         raise HTTPException(status_code=404, detail="Dashboard chart not found")
 
-    workspace = Path(project.workspace_path).resolve()
+    workspace = resolve_project_path(project.workspace_path)
     chart_path = (workspace / "artifacts" / "charts" / "dashboard" / f"{chart_id}.png").resolve()
     try:
         chart_path.relative_to(workspace)
@@ -305,7 +306,7 @@ def _serialize_artifact(artifact: Artifact) -> dict[str, Any]:
 
 
 def _resolve_workspace_path(workspace_path: str, artifact_path: str) -> Path:
-    workspace = Path(workspace_path).resolve()
+    workspace = resolve_project_path(workspace_path)
     candidate = Path(artifact_path)
     resolved = candidate.resolve() if candidate.is_absolute() else (workspace / candidate).resolve()
     try:

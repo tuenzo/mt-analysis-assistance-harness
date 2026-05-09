@@ -13,16 +13,16 @@ export default function ProjectHomePage() {
   if (!currentProject) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-muted-foreground">Loading project...</div>
+        <div className="text-muted-foreground">正在加载项目...</div>
       </div>
     )
   }
 
   const stats = [
-    { label: 'Files', value: projectState?.files_count ?? 0, icon: Database },
-    { label: 'Sessions', value: projectState?.sessions_count ?? 0, icon: Bot },
-    { label: 'Artifacts', value: projectState?.artifacts_count ?? 0, icon: FileText },
-    { label: 'Reports', value: projectState?.reports_count ?? 0, icon: FileText },
+    { label: '文件', value: projectState?.files_count ?? 0, icon: Database },
+    { label: '会话', value: projectState?.sessions_count ?? 0, icon: Bot },
+    { label: '产物', value: projectState?.artifacts_count ?? 0, icon: FileText },
+    { label: '报告', value: projectState?.reports_count ?? 0, icon: FileText },
   ]
 
   return (
@@ -35,7 +35,7 @@ export default function ProjectHomePage() {
         <div className="flex items-center gap-4 mt-4 text-sm text-muted-foreground">
           <span className="flex items-center gap-1">
             <Clock className="h-4 w-4" />
-            Created {currentProject.created_at ? new Date(currentProject.created_at).toLocaleDateString() : 'N/A'}
+            创建于 {currentProject.created_at ? new Date(currentProject.created_at).toLocaleDateString() : '暂无'}
           </span>
           <span className="px-2 py-0.5 bg-secondary rounded-full">
             {currentProject.status}
@@ -73,12 +73,12 @@ export default function ProjectHomePage() {
                 <div className="p-2 bg-primary/10 rounded-lg">
                   <Database className="h-5 w-5 text-primary" />
                 </div>
-                <CardTitle>Data Intake</CardTitle>
+                <CardTitle>数据接入</CardTitle>
               </div>
             </CardHeader>
             <CardContent>
               <CardDescription>
-                Upload and manage your data files for analysis
+                上传、发现并管理用于分析的数据文件。
               </CardDescription>
             </CardContent>
           </Card>
@@ -91,12 +91,12 @@ export default function ProjectHomePage() {
                 <div className="p-2 bg-primary/10 rounded-lg">
                   <Bot className="h-5 w-5 text-primary" />
                 </div>
-                <CardTitle>Agent Command Center</CardTitle>
+                <CardTitle>Agent 分析中心</CardTitle>
               </div>
             </CardHeader>
             <CardContent>
               <CardDescription>
-                Chat with the AI agent to run analysis pipelines
+                通过对话驱动数据校验、分析管道与结果解释。
               </CardDescription>
             </CardContent>
           </Card>
@@ -109,12 +109,12 @@ export default function ProjectHomePage() {
                 <div className="p-2 bg-primary/10 rounded-lg">
                   <FileText className="h-5 w-5 text-primary" />
                 </div>
-                <CardTitle>Results Dashboard</CardTitle>
+                <CardTitle>结果看板</CardTitle>
               </div>
             </CardHeader>
             <CardContent>
               <CardDescription>
-                View analysis results and generated reports
+                查看分析结果、关键指标和生成的报告产物。
               </CardDescription>
             </CardContent>
           </Card>
@@ -127,12 +127,12 @@ export default function ProjectHomePage() {
                 <div className="p-2 bg-primary/10 rounded-lg">
                   <Brain className="h-5 w-5 text-primary" />
                 </div>
-                <CardTitle>Memory Review</CardTitle>
+                <CardTitle>记忆审核</CardTitle>
               </div>
             </CardHeader>
             <CardContent>
               <CardDescription>
-                Review and approve memory candidates for persistence
+                审核并确认需要沉淀到项目记忆的候选内容。
               </CardDescription>
             </CardContent>
           </Card>
@@ -141,7 +141,7 @@ export default function ProjectHomePage() {
 
       {files.length > 0 && (
         <div className="mt-8">
-          <h2 className="text-xl font-semibold mb-4">Recent Files</h2>
+          <h2 className="text-xl font-semibold mb-4">最近文件</h2>
           <div className="space-y-2">
             {files.slice(0, 5).map((file) => (
               <div key={file.id} className="flex items-center gap-3 p-3 bg-card border rounded-lg">

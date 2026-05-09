@@ -23,7 +23,7 @@ export default function TimelinePage() {
     const response = await api.getProjectTimeline(projectId)
     setLoading(false)
     if (!response.ok || !response.data) {
-      setError(response.error || 'Failed to load timeline.')
+      setError(response.error || '无法加载时间线。')
       return
     }
     setTimeline(response.data)
@@ -42,12 +42,12 @@ export default function TimelinePage() {
     <div className="container mx-auto max-w-6xl px-4 py-8 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Run Timeline</h1>
-          <p className="text-sm text-muted-foreground">Jobs, approvals, tool calls, and agent runtime events.</p>
+          <h1 className="text-2xl font-semibold">运行时间线</h1>
+          <p className="text-sm text-muted-foreground">查看任务、审批、工具调用和 Agent 运行事件。</p>
         </div>
         <Button type="button" variant="outline" onClick={loadTimeline} disabled={loading}>
           <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
+          刷新
         </Button>
       </div>
 
@@ -58,20 +58,20 @@ export default function TimelinePage() {
       )}
 
       <div className="grid gap-4 md:grid-cols-4">
-        <Metric title="Jobs" value={timeline?.jobs.length ?? 0} />
-        <Metric title="Tool Calls" value={timeline?.tool_calls.length ?? 0} />
-        <Metric title="Approvals" value={timeline?.approvals.length ?? 0} />
-        <Metric title="Events" value={timeline?.events.length ?? 0} />
+        <Metric title="任务" value={timeline?.jobs.length ?? 0} />
+        <Metric title="工具调用" value={timeline?.tool_calls.length ?? 0} />
+        <Metric title="审批" value={timeline?.approvals.length ?? 0} />
+        <Metric title="事件" value={timeline?.events.length ?? 0} />
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">History</CardTitle>
+          <CardTitle className="text-base">历史记录</CardTitle>
         </CardHeader>
         <CardContent>
-          {loading && <p className="text-sm text-muted-foreground">Loading timeline...</p>}
+          {loading && <p className="text-sm text-muted-foreground">正在加载时间线...</p>}
           {!loading && items.length === 0 && (
-            <p className="text-sm text-muted-foreground">No timeline records yet.</p>
+            <p className="text-sm text-muted-foreground">暂无时间线记录。</p>
           )}
           <div className="space-y-3">
             {items.map((item) => (
@@ -85,7 +85,7 @@ export default function TimelinePage() {
                   <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
                     {item.status && <span className="rounded bg-secondary px-2 py-0.5">{item.status}</span>}
                     {item.progress !== undefined && <span>{Math.round(item.progress * 100)}%</span>}
-                    {item.risk_level && <span>{item.risk_level} risk</span>}
+                    {item.risk_level && <span>{item.risk_level} 风险</span>}
                     {item.summary && <span className="truncate">{item.summary}</span>}
                     {item.reason && <span className="truncate">{item.reason}</span>}
                     {item.error_message && <span className="text-destructive">{item.error_message}</span>}
@@ -103,10 +103,10 @@ export default function TimelinePage() {
 function flattenTimeline(timeline: ProjectTimeline | null): TimelineItem[] {
   if (!timeline) return []
   return [
-    ...timeline.jobs.map((item) => ({ ...item, kind: 'job' as const, label: item.action || 'Job' })),
-    ...timeline.tool_calls.map((item) => ({ ...item, kind: 'tool' as const, label: item.action || 'Tool call' })),
-    ...timeline.approvals.map((item) => ({ ...item, kind: 'approval' as const, label: item.action || 'Approval' })),
-    ...timeline.events.map((item) => ({ ...item, kind: 'event' as const, label: item.type || 'Event' })),
+    ...timeline.jobs.map((item) => ({ ...item, kind: 'job' as const, label: item.action || '任务' })),
+    ...timeline.tool_calls.map((item) => ({ ...item, kind: 'tool' as const, label: item.action || '工具调用' })),
+    ...timeline.approvals.map((item) => ({ ...item, kind: 'approval' as const, label: item.action || '审批' })),
+    ...timeline.events.map((item) => ({ ...item, kind: 'event' as const, label: item.type || '事件' })),
   ].sort((a, b) => Date.parse(b.created_at || '') - Date.parse(a.created_at || ''))
 }
 

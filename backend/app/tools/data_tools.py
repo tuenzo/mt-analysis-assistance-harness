@@ -1,6 +1,5 @@
-from pathlib import Path
-
 from app.analysis.pipelines.build_panel import validate_files
+from app.core.config import resolve_project_path
 from app.projects.service import ProjectService
 from app.tools.schemas import ToolResult
 
@@ -111,7 +110,7 @@ def data_validate(project_id: str, payload: dict) -> ToolResult:
             error={"code": "NOT_FOUND", "message": "Project not found", "details": {}},
         )
 
-    workspace_path = Path(project.workspace_path)
+    workspace_path = resolve_project_path(project.workspace_path)
     val_result = validate_files(workspace_path)
 
     issues = val_result.issues.copy()

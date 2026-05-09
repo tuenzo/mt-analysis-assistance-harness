@@ -1,4 +1,4 @@
-from pathlib import Path
+from app.core.config import resolve_project_path
 from app.memory.summarizer import generate_memory_summary
 from app.memory.store import MemoryStore
 from app.tools.schemas import ToolResult
@@ -41,7 +41,8 @@ class MemoryBridge:
                 error={"code": "NOT_FOUND", "message": "Project not found"},
             )
 
-        store = MemoryStore(project.workspace_path)
+        workspace_path = resolve_project_path(project.workspace_path)
+        store = MemoryStore(workspace_path)
         success = store.write_memory(content, scope)
 
         if success:
@@ -73,7 +74,8 @@ class MemoryBridge:
                 error={"code": "NOT_FOUND", "message": "Project not found"},
             )
 
-        summary = generate_memory_summary(project_id, project.workspace_path)
+        workspace_path = resolve_project_path(project.workspace_path)
+        summary = generate_memory_summary(project_id, str(workspace_path))
         if "error" in summary:
             return ToolResult(
                 ok=False,
@@ -103,7 +105,8 @@ class MemoryBridge:
                 error={"code": "NOT_FOUND", "message": "Project not found"},
             )
 
-        store = MemoryStore(project.workspace_path)
+        workspace_path = resolve_project_path(project.workspace_path)
+        store = MemoryStore(workspace_path)
         content = store.read_memory(scope)
 
         if not content:

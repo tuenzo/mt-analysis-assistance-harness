@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import { Sidebar } from '@/features/layout/sidebar'
 import { Header } from '@/features/layout/header'
+import { MainContent } from '@/features/layout/main-content'
 
 export const metadata: Metadata = {
   title: 'Business Analysis Companion',
@@ -20,9 +21,9 @@ export default function RootLayout({
           <Sidebar />
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
             <Header />
-            <main className="flex-1 overflow-x-hidden overflow-y-auto bg-background">
+            <MainContent>
               {children}
-            </main>
+            </MainContent>
           </div>
         </div>
       </body>

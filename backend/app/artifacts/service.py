@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from app.core.config import resolve_project_path
 from app.core.database import get_session
 from app.projects.models import Artifact, Project, Report
 from app.tools.schemas import ToolResult
@@ -94,7 +95,7 @@ def _artifact_checksum(db, project_id: str, artifact_path: str) -> str | None:
     if not project:
         return None
 
-    workspace = Path(project.workspace_path).resolve()
+    workspace = resolve_project_path(project.workspace_path)
     candidate = Path(artifact_path)
     resolved = candidate.resolve() if candidate.is_absolute() else (workspace / candidate).resolve()
     try:
@@ -114,7 +115,7 @@ def _sync_manifest_assets(db, project_id: str, artifacts: list[Artifact]) -> Non
     if not project:
         return
 
-    workspace = Path(project.workspace_path)
+    workspace = resolve_project_path(project.workspace_path)
     try:
         manifest = ProjectManifest.load(workspace)
     except FileNotFoundError:

@@ -66,11 +66,11 @@ export default function DataIntakePage() {
     const response = await api.setDataSource(projectId, sourcePath.trim())
     setSaving(false)
     if (!response.ok) {
-      setError(response.error || 'Could not save data source path.')
+      setError(response.error || '无法保存数据源路径。')
       return
     }
     setSourcePath(response.data?.data_source_path ?? '')
-    setStatus('Data source saved.')
+    setStatus('数据源已保存。')
   }
 
   async function discoverData() {
@@ -80,7 +80,7 @@ export default function DataIntakePage() {
     const response = await api.discoverDataSource(projectId)
     setDiscovering(false)
     if (!response.ok || !response.data) {
-      setError(response.error || 'Could not discover source files.')
+      setError(response.error || '无法发现源文件。')
       return
     }
     setDiscovery(response.data)
@@ -91,11 +91,11 @@ export default function DataIntakePage() {
         return {
           source_path: candidate.source_path,
           role,
-          reason: role === 'unknown' ? 'Needs review before import.' : `Suggested from filename and headers: ${candidate.headers.join(', ')}`,
+          reason: role === 'unknown' ? '导入前需要人工确认角色。' : `根据文件名和字段推荐：${candidate.headers.join(', ')}`,
         }
       })
     setSelectedFiles(selections)
-    setStatus(`Discovered ${response.data.candidate_count} item(s). Review roles before import.`)
+    setStatus(`已发现 ${response.data.candidate_count} 个候选项，请在导入前确认角色。`)
   }
 
   async function importData() {
@@ -106,11 +106,11 @@ export default function DataIntakePage() {
     const response = await api.ingestDataSource(projectId, confirmed)
     setImporting(false)
     if (!response.ok || !response.data) {
-      setError(response.error || 'Could not import selected files.')
+      setError(response.error || '无法导入选中文件。')
       return
     }
     setResult(response.data)
-    setStatus(`Imported ${response.data.imported_count} selected CSV file(s).`)
+    setStatus(`已导入 ${response.data.imported_count} 个选中的 CSV 文件。`)
     await refresh()
   }
 
@@ -135,7 +135,7 @@ export default function DataIntakePage() {
         {
           source_path: candidate.source_path,
           role,
-          reason: role === 'unknown' ? 'Selected manually; role needs review.' : `Selected from headers: ${candidate.headers.join(', ')}`,
+          reason: role === 'unknown' ? '手动选择，仍需确认角色。' : `根据字段选择：${candidate.headers.join(', ')}`,
         },
       ]
     })
@@ -148,15 +148,15 @@ export default function DataIntakePage() {
           <Database className="h-5 w-5 text-primary" />
         </div>
         <div>
-          <h1 className="text-2xl font-semibold">Data Intake</h1>
-          <p className="text-sm text-muted-foreground">Discover local CSV candidates, review roles, then import selected files.</p>
+          <h1 className="text-2xl font-semibold">数据接入</h1>
+          <p className="text-sm text-muted-foreground">发现本地 CSV 候选文件，确认角色后导入项目。</p>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Local Data Source</CardTitle>
-          <CardDescription>Set an absolute directory path. Discovery reads first-level filenames, headers, and bounded previews.</CardDescription>
+          <CardTitle className="text-lg">本地数据源</CardTitle>
+          <CardDescription>设置绝对目录路径。系统会读取第一层文件名、表头和有限预览。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col gap-3 md:flex-row">
@@ -167,11 +167,11 @@ export default function DataIntakePage() {
             <div className="flex gap-2">
               <Button type="button" variant="outline" onClick={saveSourcePath} disabled={saving || !sourcePath.trim()}>
                 <Save className="mr-2 h-4 w-4" />
-                {saving ? 'Saving' : 'Save'}
+                {saving ? '保存中' : '保存'}
               </Button>
               <Button type="button" onClick={discoverData} disabled={discovering || !sourcePath.trim()}>
                 <Search className={`mr-2 h-4 w-4 ${discovering ? 'animate-spin' : ''}`} />
-                {discovering ? 'Discovering' : 'Discover Files'}
+                {discovering ? '发现中' : '发现文件'}
               </Button>
             </div>
           </div>
@@ -183,8 +183,8 @@ export default function DataIntakePage() {
       {discovery && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Discovered Candidates</CardTitle>
-            <CardDescription>{importableCandidates.length} CSV candidate(s) from {discovery.source_path}</CardDescription>
+            <CardTitle className="text-lg">发现的候选文件</CardTitle>
+            <CardDescription>来自 {discovery.source_path} 的 {importableCandidates.length} 个 CSV 候选文件</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {discovery.candidates.map((candidate) => {
@@ -199,7 +199,7 @@ export default function DataIntakePage() {
                         {candidate.skipped && <span className="rounded-md bg-secondary px-2 py-1 text-xs">{candidate.skip_reason}</span>}
                       </div>
                       <div className="mt-1 text-xs text-muted-foreground">
-                        {candidate.size_bytes ?? 0} bytes · {candidate.headers.join(', ') || 'no headers'}
+                        {candidate.size_bytes ?? 0} bytes · {candidate.headers.join(', ') || '无表头'}
                       </div>
                       {candidate.preview && (
                         <pre className="mt-2 max-h-32 overflow-auto rounded-md bg-secondary p-2 text-xs whitespace-pre-wrap">{candidate.preview}</pre>
@@ -209,7 +209,7 @@ export default function DataIntakePage() {
                       <div className="flex min-w-64 flex-col gap-2">
                         <label className="flex items-center gap-2 text-sm">
                           <input type="checkbox" checked={isSelected(candidate.source_path)} onChange={() => toggleSelection(candidate)} />
-                          Import this file
+                          导入此文件
                         </label>
                         {selected && (
                           <>
@@ -232,7 +232,7 @@ export default function DataIntakePage() {
             <div className="flex justify-end">
               <Button type="button" onClick={importData} disabled={importing || selectedFiles.filter((file) => file.role !== 'unknown').length === 0}>
                 <RefreshCw className={`mr-2 h-4 w-4 ${importing ? 'animate-spin' : ''}`} />
-                {importing ? 'Importing' : 'Import Selected'}
+                {importing ? '导入中' : '导入选中文件'}
               </Button>
             </div>
           </CardContent>
@@ -242,8 +242,8 @@ export default function DataIntakePage() {
       {result && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Latest Import</CardTitle>
-            <CardDescription>Source: {result.source_path}</CardDescription>
+            <CardTitle className="text-lg">最近导入</CardTitle>
+            <CardDescription>来源：{result.source_path}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             {result.imported.map((file) => (
@@ -264,12 +264,12 @@ export default function DataIntakePage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Workspace Files</CardTitle>
-          <CardDescription>Files currently registered for this project.</CardDescription>
+          <CardTitle className="text-lg">工作区文件</CardTitle>
+          <CardDescription>当前项目已登记的文件。</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
-            {files.length === 0 && <p className="text-sm text-muted-foreground">No files have been imported yet.</p>}
+            {files.length === 0 && <p className="text-sm text-muted-foreground">还没有导入文件。</p>}
             {files.map((file) => (
               <div key={file.id} className="flex items-center gap-3 rounded-md border p-3">
                 <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />

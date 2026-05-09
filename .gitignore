@@ -12,6 +12,7 @@ logs/
 *.log
 .codex-run/
 .tmp/
+.pytest_tmp/
 
 # Python
 __pycache__/

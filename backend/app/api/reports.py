@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from app.projects.service import ProjectService
 from app.tools.report_tools import report_generate, report_export
+from app.core.config import resolve_project_path
 from pathlib import Path
 
 router = APIRouter(prefix="/projects", tags=["reports"])
@@ -34,7 +35,7 @@ def get_latest_report(project_id: str):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    report_path = Path(project.workspace_path) / "reports" / "report.md"
+    report_path = resolve_project_path(project.workspace_path) / "reports" / "report.md"
     if not report_path.exists():
         raise HTTPException(status_code=404, detail="Report not found")
 

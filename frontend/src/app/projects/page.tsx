@@ -53,28 +53,28 @@ export default function ProjectsPage() {
     <div className="container mx-auto py-8 px-4">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold">Projects</h1>
+          <h1 className="text-3xl font-bold">项目</h1>
           <p className="text-muted-foreground mt-1">
-            Manage your business analysis projects
+            管理你的商业分析项目。
           </p>
         </div>
         <Modal open={open} onOpenChange={setOpen}>
           <ModalTrigger asChild>
             <Button>
               <Plus className="h-4 w-4 mr-2" />
-              New Project
+              新建项目
             </Button>
           </ModalTrigger>
           <ModalContent>
             <ModalHeader>
-              <ModalTitle>Create New Project</ModalTitle>
+              <ModalTitle>新建项目</ModalTitle>
               <ModalDescription>
-                Enter a name for your new business analysis project.
+                为新的商业分析项目输入名称。
               </ModalDescription>
             </ModalHeader>
             <div className="py-4">
               <Input
-                placeholder="Project name"
+                placeholder="项目名称"
                 value={newProjectName}
                 onChange={(e) => setNewProjectName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleCreateProject()}
@@ -83,10 +83,10 @@ export default function ProjectsPage() {
             </div>
             <ModalFooter>
               <ModalClose asChild>
-                <Button variant="outline">Cancel</Button>
+                <Button variant="outline">取消</Button>
               </ModalClose>
               <Button onClick={handleCreateProject} disabled={!newProjectName.trim() || creating}>
-                {creating ? 'Creating...' : 'Create Project'}
+                {creating ? '创建中...' : '创建项目'}
               </Button>
             </ModalFooter>
           </ModalContent>
@@ -108,8 +108,8 @@ export default function ProjectsPage() {
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <p className="font-medium">Demo Mode</p>
-                  <span className="rounded-md bg-primary px-2 py-0.5 text-xs text-primary-foreground">Enabled</span>
+                  <p className="font-medium">演示模式</p>
+                  <span className="rounded-md bg-primary px-2 py-0.5 text-xs text-primary-foreground">已启用</span>
                 </div>
                 <p className="text-sm text-muted-foreground">{demoStatus.project_name}</p>
               </div>
@@ -117,7 +117,7 @@ export default function ProjectsPage() {
             <Link href={hrefFor(`/projects/${demoStatus.project_id}/agent`)}>
               <Button>
                 <Sparkles className="mr-2 h-4 w-4" />
-                Enter Demo Project
+                进入演示项目
               </Button>
             </Link>
           </CardContent>
@@ -126,14 +126,14 @@ export default function ProjectsPage() {
 
       {loading && projects.length === 0 ? (
         <div className="flex items-center justify-center py-12">
-          <div className="text-muted-foreground">Loading projects...</div>
+          <div className="text-muted-foreground">正在加载项目...</div>
         </div>
       ) : projects.length === 0 ? (
         <Card className="max-w-md mx-auto">
           <CardHeader>
-            <CardTitle>No projects yet</CardTitle>
+            <CardTitle>暂无项目</CardTitle>
             <CardDescription>
-              Create your first project to get started with business analysis
+              创建第一个项目，开始商业分析流程。
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -141,19 +141,19 @@ export default function ProjectsPage() {
               <ModalTrigger asChild>
                 <Button className="w-full">
                   <Plus className="h-4 w-4 mr-2" />
-                  Create Project
+                  创建项目
                 </Button>
               </ModalTrigger>
               <ModalContent>
                 <ModalHeader>
-                  <ModalTitle>Create New Project</ModalTitle>
+                  <ModalTitle>新建项目</ModalTitle>
                   <ModalDescription>
-                    Enter a name for your new business analysis project.
+                    为新的商业分析项目输入名称。
                   </ModalDescription>
                 </ModalHeader>
                 <div className="py-4">
                   <Input
-                    placeholder="Project name"
+                    placeholder="项目名称"
                     value={newProjectName}
                     onChange={(e) => setNewProjectName(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleCreateProject()}
@@ -162,10 +162,10 @@ export default function ProjectsPage() {
                 </div>
                 <ModalFooter>
                   <ModalClose asChild>
-                    <Button variant="outline">Cancel</Button>
+                    <Button variant="outline">取消</Button>
                   </ModalClose>
                   <Button onClick={handleCreateProject} disabled={!newProjectName.trim() || creating}>
-                    {creating ? 'Creating...' : 'Create Project'}
+                    {creating ? '创建中...' : '创建项目'}
                   </Button>
                 </ModalFooter>
               </ModalContent>
@@ -199,7 +199,7 @@ export default function ProjectsPage() {
                   <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
-                      {project.created_at ? new Date(project.created_at).toLocaleDateString() : 'N/A'}
+                      {project.created_at ? new Date(project.created_at).toLocaleDateString() : '暂无'}
                     </span>
                     <span className="px-2 py-0.5 bg-secondary rounded-full">
                       {project.status}
