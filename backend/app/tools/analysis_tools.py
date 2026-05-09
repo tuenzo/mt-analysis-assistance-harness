@@ -1,6 +1,7 @@
 from app.analysis.pipelines.diagnostics import run_diagnostics
 from app.analysis.pipelines.gps_uplift import run_gps_uplift
 from app.analysis.pipelines.localgap import run_localgap
+from app.analysis.pipelines.mechanism_regression import run_conversion_diagnostics, run_mechanism_regression
 from app.analysis.pipelines.psm_did import run_psm_did
 from app.core.config import resolve_project_path
 from app.projects.service import ProjectService
@@ -50,6 +51,36 @@ def analysis_run_localgap(project_id: str, payload: dict) -> ToolResult:
 
     workspace_path = resolve_project_path(project.workspace_path)
     return run_localgap(project_id, str(workspace_path))
+
+
+def analysis_run_mechanism_regression(project_id: str, payload: dict) -> ToolResult:
+    service = ProjectService()
+    project = service.get_project(project_id)
+    if not project:
+        return ToolResult(
+            ok=False,
+            action="analysis.run_mechanism_regression",
+            summary="",
+            error={"code": "NOT_FOUND", "message": "Project not found"},
+        )
+
+    workspace_path = resolve_project_path(project.workspace_path)
+    return run_mechanism_regression(project_id, str(workspace_path))
+
+
+def analysis_run_conversion_diagnostics(project_id: str, payload: dict) -> ToolResult:
+    service = ProjectService()
+    project = service.get_project(project_id)
+    if not project:
+        return ToolResult(
+            ok=False,
+            action="analysis.run_conversion_diagnostics",
+            summary="",
+            error={"code": "NOT_FOUND", "message": "Project not found"},
+        )
+
+    workspace_path = resolve_project_path(project.workspace_path)
+    return run_conversion_diagnostics(project_id, str(workspace_path))
 
 
 def analysis_run_gps_uplift(project_id: str, payload: dict) -> ToolResult:

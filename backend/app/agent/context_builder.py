@@ -18,6 +18,8 @@ AVAILABLE_ACTIONS = [
     "analysis.run_diagnostics",
     "analysis.run_psm_did",
     "analysis.run_localgap",
+    "analysis.run_mechanism_regression",
+    "analysis.run_conversion_diagnostics",
     "analysis.run_gps_uplift",
     "analysis.run_full_pipeline",
     "result.get_latest",

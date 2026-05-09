@@ -9,8 +9,10 @@ from app.artifacts.service import persist_tool_result_artifacts
 from app.projects.models import Job, Project, ToolCall
 from app.tools.analysis_tools import (
     analysis_run_diagnostics,
+    analysis_run_conversion_diagnostics,
     analysis_run_gps_uplift,
     analysis_run_localgap,
+    analysis_run_mechanism_regression,
     analysis_run_psm_did,
 )
 from app.tools.chart_tools import chart_render, chart_render_dashboard
@@ -30,6 +32,8 @@ PIPELINE_STEPS: list[tuple[str, str, StepFunc, dict]] = [
     ("Diagnostics", "analysis.run_diagnostics", analysis_run_diagnostics, {}),
     ("PSM-DID", "analysis.run_psm_did", analysis_run_psm_did, {}),
     ("LocalGap", "analysis.run_localgap", analysis_run_localgap, {}),
+    ("Mechanism regression", "analysis.run_mechanism_regression", analysis_run_mechanism_regression, {}),
+    ("Conversion diagnostics", "analysis.run_conversion_diagnostics", analysis_run_conversion_diagnostics, {}),
     ("GPS uplift", "analysis.run_gps_uplift", analysis_run_gps_uplift, {}),
     ("GMV trend chart", "chart.render", chart_render, {"type": "gmv_trend"}),
     ("LocalGap chart", "chart.render", chart_render, {"type": "localgap"}),

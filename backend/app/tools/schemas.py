@@ -14,6 +14,8 @@ class BusinessAnalysisAction(str, Enum):
     ANALYSIS_RUN_DIAGNOSTICS = "analysis.run_diagnostics"
     ANALYSIS_RUN_PSM_DID = "analysis.run_psm_did"
     ANALYSIS_RUN_LOCALGAP = "analysis.run_localgap"
+    ANALYSIS_RUN_MECHANISM_REGRESSION = "analysis.run_mechanism_regression"
+    ANALYSIS_RUN_CONVERSION_DIAGNOSTICS = "analysis.run_conversion_diagnostics"
     ANALYSIS_RUN_GPS_UPLIFT = "analysis.run_gps_uplift"
     ANALYSIS_RUN_FULL_PIPELINE = "analysis.run_full_pipeline"
     RESULT_GET_LATEST = "result.get_latest"
