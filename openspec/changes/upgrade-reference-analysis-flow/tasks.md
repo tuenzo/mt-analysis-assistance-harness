@@ -31,8 +31,8 @@
 
 - [x] 5.1 Add mechanism-regression action and pipeline module for GMV/order/AOV resource decomposition.
 - [x] 5.2 Add conversion-on-discount by exposure-tier action and artifact.
-- [ ] 5.3 Update full-pipeline ordering and report synthesis to follow the reference PDF logic.
-- [ ] 5.4 Add tests and commit stage-2 capability changes.
+- [x] 5.3 Update full-pipeline ordering and report synthesis to follow the reference PDF logic.
+- [x] 5.4 Add tests and commit stage-2 capability changes.
 
 ## 6. Stage 3 - Add Reference-Skill-Only Interfaces
 

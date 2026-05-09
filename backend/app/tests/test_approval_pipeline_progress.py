@@ -50,6 +50,8 @@ def test_full_pipeline_approval_emits_progress_and_persists_outputs():
             assert job.status == "succeeded"
             assert job.progress == 1
             steps = json.loads(job.output_json)["steps"]
+            assert any(step["action"] == "analysis.run_mechanism_regression" and step["ok"] for step in steps)
+            assert any(step["action"] == "analysis.run_conversion_diagnostics" and step["ok"] for step in steps)
             assert any(step["action"] == "analysis.run_gps_uplift" and step["ok"] for step in steps)
             assert any(step["action"] == "chart.render_dashboard" and step["ok"] for step in steps)
             assert db.query(Artifact).filter(Artifact.project_id == project["id"]).count() >= 1
@@ -72,7 +74,14 @@ def test_full_pipeline_approval_emits_progress_and_persists_outputs():
 
         latest = result_get_latest(project["id"], {})
         assert latest.ok
-        assert latest.artifacts[0]["available"] == ["diagnostics", "localgap", "psm_did", "uplift"]
+        assert set(latest.artifacts[0]["available"]) == {
+            "diagnostics",
+            "localgap",
+            "psm_did",
+            "mechanism",
+            "conversion",
+            "uplift",
+        }
     finally:
         os.chdir(original_cwd)
         reset_engine()

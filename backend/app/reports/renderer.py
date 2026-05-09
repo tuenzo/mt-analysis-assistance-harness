@@ -13,6 +13,8 @@ RESULT_SOURCES = {
     "diagnostics": ".analysis/diagnostics_result.json",
     "localgap": ".analysis/localgap_result.json",
     "psm_did": ".analysis/psm_did_result.json",
+    "mechanism": ".analysis/mechanism_regression_result.json",
+    "conversion": ".analysis/conversion_diagnostics_result.json",
     "uplift": ".analysis/uplift_result.json",
 }
 
@@ -248,6 +250,7 @@ def _build_sections(context: ReportContext) -> list[ReportSection]:
         _evidence_coverage_section(context),
         _observed_performance_section(context),
         _increment_causal_section(context),
+        _mechanism_conversion_section(context),
         _action_plan_section(context),
         _assumptions_next_checks_section(context),
     ]
@@ -491,6 +494,90 @@ def _action_plan_section(context: ReportContext) -> ReportSection:
     return ReportSection(plan, body)
 
 
+def _mechanism_conversion_section(context: ReportContext) -> ReportSection:
+    mechanism = context.results.get("mechanism", {})
+    conversion = context.results.get("conversion", {})
+    model_rows = []
+    for model in mechanism.get("models", []):
+        if not isinstance(model, dict):
+            continue
+        discount = next(
+            (
+                coefficient
+                for coefficient in model.get("coefficients", [])
+                if isinstance(coefficient, dict) and coefficient.get("term") == "discount_rate_pp"
+            ),
+            {},
+        )
+        exposure = next(
+            (
+                coefficient
+                for coefficient in model.get("coefficients", [])
+                if isinstance(coefficient, dict) and coefficient.get("term") == "log_view_uv"
+            ),
+            {},
+        )
+        model_rows.append(
+            [
+                model.get("model_id", "-"),
+                model.get("outcome", "-"),
+                model.get("status", "-"),
+                _fmt_signed_money(discount.get("coefficient")),
+                _fmt_signed_money(exposure.get("coefficient")),
+                _fmt_percent(model.get("r_squared_within") * 100 if model.get("r_squared_within") is not None else None),
+            ]
+        )
+
+    tier_rows = [
+        [
+            item.get("tier", "-"),
+            _fmt_int(item.get("category_count")),
+            _fmt_int(item.get("row_count")),
+            _fmt_money(item.get("avg_conversion_per_10k_uv")),
+            _fmt_signed_money(item.get("discount_slope_per_pp")),
+            item.get("model", {}).get("status", "-") if isinstance(item.get("model"), dict) else "-",
+        ]
+        for item in conversion.get("exposure_tiers", [])
+        if isinstance(item, dict)
+    ]
+    findings = [
+        f"Mechanism models available: {len(model_rows)}; status={mechanism.get('method_status', 'missing')}.",
+        f"Conversion exposure tiers available: {len(tier_rows)}; status={conversion.get('method_status', 'missing')}.",
+    ]
+
+    plan = _plan(
+        "mechanism_conversion",
+        "Mechanism And Conversion",
+        "Explain whether resource effects came through traffic, order volume, AOV, or discount conversion by exposure tier.",
+        "Use mechanism regression and conversion diagnostics after LocalGap and before resource allocation.",
+        [
+            _tool_call("analysis.run_mechanism_regression", "Refresh GMV/order/AOV resource mechanism models."),
+            _tool_call("analysis.run_conversion_diagnostics", "Refresh discount conversion by exposure tier."),
+        ],
+        _artifact_paths(context, ["mechanism", "conversion"]),
+        ["Mechanism and conversion models are observational diagnostics over the current category-day panel."],
+        _limitations_for(context, ["mechanism", "conversion"]),
+        ["Compare mechanism signals with GPS/uplift before scaling discount or exposure investment."],
+        findings=findings,
+    )
+    body = "\n".join(
+        [
+            _bullets(findings),
+            "\n**Mechanism Models**\n",
+            _markdown_table(
+                ["model", "outcome", "status", "discount coef", "exposure coef", "within R2"],
+                model_rows,
+            ),
+            "\n**Conversion By Exposure Tier**\n",
+            _markdown_table(
+                ["tier", "categories", "rows", "conversion per 10k UV", "discount slope", "status"],
+                tier_rows,
+            ),
+        ]
+    )
+    return ReportSection(plan, body)
+
+
 def _assumptions_next_checks_section(context: ReportContext) -> ReportSection:
     limitations = _global_limitations(context)
     follow_up = _recommended_next_actions(context)
@@ -678,6 +765,26 @@ def _result_key_metrics(name: str, data: dict[str, Any]) -> dict[str, Any]:
             "did_estimate": data.get("estimates", {}).get("did_estimate"),
             "incremental_lift_pct": data.get("lift", {}).get("incremental_lift_pct"),
         }
+    if name == "mechanism":
+        models = data.get("models", [])
+        ok_models = [item for item in models if isinstance(item, dict) and item.get("status") == "ok"]
+        return {
+            "model_count": len(models) if isinstance(models, list) else 0,
+            "estimable_model_count": len(ok_models),
+            "method_status": data.get("method_status"),
+        }
+    if name == "conversion":
+        tiers = data.get("exposure_tiers", [])
+        estimable = [
+            item
+            for item in tiers
+            if isinstance(item, dict) and isinstance(item.get("model"), dict) and item["model"].get("status") == "ok"
+        ]
+        return {
+            "tier_count": len(tiers) if isinstance(tiers, list) else 0,
+            "estimable_tier_count": len(estimable),
+            "method_status": data.get("method_status"),
+        }
     if name == "uplift":
         return {
             "segment_count": len(data.get("segments", [])) if isinstance(data.get("segments"), list) else 0,
@@ -766,6 +873,11 @@ def _global_limitations(context: ReportContext) -> list[str]:
     elif uplift.get("method_status") == "stub":
         limitations.append("GPS-Uplift 当前仍是 stub 输出，分群行动只能视为占位建议。")
 
+    if "mechanism" not in context.results:
+        limitations.append("Mechanism regression evidence is missing; traffic/order/AOV channel claims remain limited.")
+    if "conversion" not in context.results:
+        limitations.append("Conversion-by-exposure-tier evidence is missing; discount scaling claims remain limited.")
+
     if not context.panel_summary:
         limitations.append("Panel summary 缺失，因此行数和日期覆盖可能不完整。")
 
@@ -786,6 +898,10 @@ def _report_confidence(context: ReportContext) -> dict[str, Any]:
         score += 0.15
     if "uplift" in evidence_names and context.results["uplift"].get("method_status") != "stub":
         score += 0.1
+    if "mechanism" in evidence_names:
+        score += 0.05
+    if "conversion" in evidence_names:
+        score += 0.05
     if context.panel_summary:
         score += 0.05
     if context.charts:
@@ -818,6 +934,10 @@ def _recommended_next_actions(context: ReportContext) -> list[str]:
         actions.append("运行 `analysis.run_psm_did` 以补充方向性因果证据。")
     if "localgap" not in context.results:
         actions.append("运行 `analysis.run_localgap` 以补充增量分解。")
+    if "mechanism" not in context.results:
+        actions.append("Run `analysis.run_mechanism_regression` before explaining traffic/order/AOV mechanisms.")
+    if "conversion" not in context.results:
+        actions.append("Run `analysis.run_conversion_diagnostics` before scaling discount recommendations by exposure tier.")
     if "uplift" not in context.results:
         actions.append("在提出分群策略前运行 `analysis.run_gps_uplift`。")
     if "diagnostics" in context.results and "gmv_trend" not in context.charts:

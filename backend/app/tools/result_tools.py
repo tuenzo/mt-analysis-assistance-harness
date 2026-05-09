@@ -13,6 +13,8 @@ RESULT_FILES = {
     "diagnostics": ".analysis/diagnostics_result.json",
     "localgap": ".analysis/localgap_result.json",
     "psm_did": ".analysis/psm_did_result.json",
+    "mechanism": ".analysis/mechanism_regression_result.json",
+    "conversion": ".analysis/conversion_diagnostics_result.json",
     "uplift": ".analysis/uplift_result.json",
 }
 
@@ -197,6 +199,26 @@ def _key_metrics(name: str, payload: dict[str, Any]) -> dict[str, Any]:
             "did_estimate": payload.get("estimates", {}).get("did_estimate"),
             "incremental_lift_pct": payload.get("lift", {}).get("incremental_lift_pct"),
         }
+    if name == "mechanism":
+        models = payload.get("models", [])
+        estimable = [item for item in models if isinstance(item, dict) and item.get("status") == "ok"]
+        return {
+            "model_count": len(models) if isinstance(models, list) else 0,
+            "estimable_model_count": len(estimable),
+            "method_status": payload.get("method_status"),
+        }
+    if name == "conversion":
+        tiers = payload.get("exposure_tiers", [])
+        estimable = [
+            item
+            for item in tiers
+            if isinstance(item, dict) and isinstance(item.get("model"), dict) and item["model"].get("status") == "ok"
+        ]
+        return {
+            "tier_count": len(tiers) if isinstance(tiers, list) else 0,
+            "estimable_tier_count": len(estimable),
+            "method_status": payload.get("method_status"),
+        }
     if name == "uplift":
         segments = payload.get("segments", [])
         recommendations = payload.get("recommended_actions", [])
@@ -222,6 +244,14 @@ def _result_findings(latest_data: dict[str, Any]) -> list[str]:
     psm_did = latest_data.get("psm_did", {})
     if psm_did:
         findings.append(f"Directional DID estimate is {_fmt_signed(psm_did.get('estimates', {}).get('did_estimate'))}.")
+    mechanism = latest_data.get("mechanism", {})
+    if mechanism:
+        models = mechanism.get("models", [])
+        findings.append(f"Mechanism regression produced {len(models) if isinstance(models, list) else 0} model(s).")
+    conversion = latest_data.get("conversion", {})
+    if conversion:
+        tiers = conversion.get("exposure_tiers", [])
+        findings.append(f"Conversion diagnostics produced {len(tiers) if isinstance(tiers, list) else 0} exposure tier(s).")
     return findings or ["No interpreted findings are available from current results."]
 
 
@@ -233,6 +263,10 @@ def _result_confidence(latest_data: dict[str, Any], available_results: list[str]
         score += 0.1
     if "psm_did" in latest_data:
         score += 0.1
+    if "mechanism" in latest_data:
+        score += 0.05
+    if "conversion" in latest_data:
+        score += 0.05
     if latest_data.get("uplift", {}).get("method_status") == "stub":
         score -= 0.05
     score = max(0.1, min(round(score, 2), 0.9))
@@ -255,6 +289,10 @@ def _result_limitations(latest_data: dict[str, Any], missing_results: list[str])
         limitations.append("No PSM-DID result is available; do not claim causal lift.")
     elif latest_data["psm_did"].get("method_status") in {None, "simplified", "stub"}:
         limitations.append("PSM-DID is simplified in this MVP and should be treated as directional.")
+    if "mechanism" not in latest_data:
+        limitations.append("No mechanism regression result is available; resource mechanism claims remain limited.")
+    if "conversion" not in latest_data:
+        limitations.append("No conversion diagnostics result is available; discount-by-exposure claims remain limited.")
     if latest_data.get("uplift", {}).get("method_status") == "stub":
         limitations.append("GPS-Uplift is a stub; segment strategy remains illustrative.")
     if "localgap" in latest_data:
@@ -271,6 +309,10 @@ def _result_follow_up(missing_results: list[str], latest_data: dict[str, Any]) -
             actions.append("Run `analysis.run_psm_did` before causal direction claims.")
         elif name == "localgap":
             actions.append("Run `analysis.run_localgap` before increment decomposition claims.")
+        elif name == "mechanism":
+            actions.append("Run `analysis.run_mechanism_regression` before explaining traffic/order/AOV mechanisms.")
+        elif name == "conversion":
+            actions.append("Run `analysis.run_conversion_diagnostics` before discount-by-exposure scaling claims.")
         elif name == "diagnostics":
             actions.append("Run `analysis.run_diagnostics` before descriptive performance claims.")
     if "psm_did" in latest_data:
