@@ -44,9 +44,11 @@ def test_gps_uplift_produces_non_stub_outputs(isolated_backend):
     gps_path = workspace / ".analysis" / "gps_uplift_result.json"
     uplift_path = workspace / ".analysis" / "uplift_result.json"
     rec_path = workspace / "artifacts" / "tables" / "category_action_recommendations.csv"
+    quadrant_path = workspace / "artifacts" / "tables" / "resource_marketing_quadrants.csv"
     assert gps_path.exists()
     assert uplift_path.exists()
     assert rec_path.exists()
+    assert quadrant_path.exists()
 
     payload = json.loads(uplift_path.read_text(encoding="utf-8"))
     assert payload["method_status"] in {"implemented", "limited"}
@@ -57,6 +59,14 @@ def test_gps_uplift_produces_non_stub_outputs(isolated_backend):
     assert "uplift_model" in payload
     assert payload["uplift_model"]["status"] in {"ok", "insufficient_support", "insufficient_treatment_split", "insufficient_estimable_folds"}
     assert payload["uplift_ranking"]
+    assert payload["resource_uplift_scores"]
+    assert payload["rank_curves"]["combined"]
+    assert payload["rank_curves"]["exposure"]
+    assert payload["rank_curves"]["discount"]
+    assert payload["marketing_quadrants"]["resource_quadrants"]
+    assert payload["marketing_quadrants"]["classic_quadrants"]
+    assert payload["heterogeneity"]["exposure_by_category_size"]
+    assert payload["heterogeneity"]["discount_by_payday"]
     assert payload["segments"]
     assert payload["recommended_actions"]
     assert payload["diagnostics"]["row_count"] >= 21
@@ -66,6 +76,10 @@ def test_gps_uplift_produces_non_stub_outputs(isolated_backend):
         rows = list(csv.DictReader(handle))
     assert rows
     assert {"category", "action", "reason", "guardrail", "evidence"}.issubset(rows[0].keys())
+    with quadrant_path.open("r", newline="", encoding="utf-8-sig") as handle:
+        quadrant_rows = list(csv.DictReader(handle))
+    assert quadrant_rows
+    assert {"resource_quadrant", "classic_quadrant", "exposure_uplift", "discount_uplift"}.issubset(quadrant_rows[0].keys())
 
     latest = result_get_latest(project.id, {})
     assert latest.ok is True

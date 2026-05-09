@@ -18,13 +18,13 @@
 - [x] 3.1 Add non-sparse sample metadata and retained-coverage summaries to LocalGap outputs.
 - [x] 3.2 Add order/AOV component baselines and counterfactual GMV where source fields support them.
 - [x] 3.3 Add additive LMDI contribution summaries with zero-handling flags and reconciliation checks.
-- [ ] 3.4 Add focused pytest coverage and commit the LocalGap/LMDI upgrade.
+- [x] 3.4 Add focused pytest coverage and commit the LocalGap/LMDI upgrade.
 
 ## 4. Stage 1C - Upgrade Existing GPS/Uplift
 
-- [ ] 4.1 Add exposure and discount heterogeneity slices for category size and payday/non-payday windows.
-- [ ] 4.2 Add rank-curve and continuous resource quadrant artifacts.
-- [ ] 4.3 Add focused pytest coverage and commit the GPS/uplift upgrade.
+- [x] 4.1 Add exposure and discount heterogeneity slices for category size and payday/non-payday windows.
+- [x] 4.2 Add rank-curve and continuous resource quadrant artifacts.
+- [x] 4.3 Add focused pytest coverage and commit the GPS/uplift upgrade.
 - [ ] 4.4 Run backend pytest for stage 1 and commit a stage-1 checkpoint.
 
 ## 5. Stage 2 - Add Report-PDF Flow Capabilities

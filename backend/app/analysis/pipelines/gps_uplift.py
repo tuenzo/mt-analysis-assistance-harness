@@ -55,7 +55,12 @@ def run_gps_uplift(project_id: str, workspace_path: str, payload: dict | None = 
 
     uplift = _run_time_safe_uplift(working, treatment_col="combined_intensity", outcome_col="local_gap")
     warnings = _dedupe([*warnings, *uplift.get("warnings", [])])
+    resource_scores = _resource_uplift_scores(panel, working)
+    heterogeneity = _build_heterogeneity(working)
+    warnings = _dedupe([*warnings, *heterogeneity.get("warnings", [])])
     ranking = _build_ranking(panel, working, dose_response, uplift)
+    rank_curves = _build_rank_curves(ranking, resource_scores)
+    marketing_quadrants = _build_marketing_quadrants(resource_scores)
     recommendations = _build_recommendations(ranking, dose_response)
 
     limited = bool(warnings) or any(item.get("status") == "limited" for item in dose_response.values())
@@ -73,8 +78,12 @@ def run_gps_uplift(project_id: str, workspace_path: str, payload: dict | None = 
             "activity_rows": int(panel["is_activity"].sum()),
         },
         "dose_response": dose_response,
+        "heterogeneity": heterogeneity,
         "uplift_model": uplift,
         "uplift_ranking": ranking,
+        "resource_uplift_scores": resource_scores,
+        "rank_curves": rank_curves,
+        "marketing_quadrants": marketing_quadrants,
         "segments": [
             {
                 "segment": item["bucket"],
@@ -117,9 +126,11 @@ def run_gps_uplift(project_id: str, workspace_path: str, payload: dict | None = 
     gps_path = analysis_dir / "gps_uplift_result.json"
     uplift_path = analysis_dir / "uplift_result.json"
     rec_path = table_dir / "category_action_recommendations.csv"
+    quadrant_path = table_dir / "resource_marketing_quadrants.csv"
     gps_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     uplift_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     _write_recommendations_csv(rec_path, recommendations)
+    _write_resource_scores_csv(quadrant_path, resource_scores)
 
     summary = (
         f"GPS/uplift completed: {len(ranking)} category/categories, "
@@ -152,6 +163,12 @@ def run_gps_uplift(project_id: str, workspace_path: str, payload: dict | None = 
                 "title": "category_action_recommendations.csv",
                 "path": str(rec_path.relative_to(workspace)),
                 "rows": len(recommendations),
+            },
+            {
+                "type": "table",
+                "title": "resource_marketing_quadrants.csv",
+                "path": str(quadrant_path.relative_to(workspace)),
+                "rows": len(resource_scores),
             },
         ],
         assistant_hint=(
@@ -427,6 +444,184 @@ def _run_time_safe_uplift(panel: pd.DataFrame, treatment_col: str, outcome_col: 
     }
 
 
+def _resource_uplift_scores(panel: pd.DataFrame, working: pd.DataFrame) -> list[dict[str, Any]]:
+    size_segments = _category_size_segments(panel)
+    rows: list[dict[str, Any]] = []
+    for (category_key, category_name), group in panel.groupby(["category_key", "category_name"], sort=False):
+        work_group = working[working["category_key"] == category_key]
+        exposure_uplift = _dose_uplift(work_group, "exposure_intensity") if not work_group.empty else 0.0
+        discount_uplift = _dose_uplift(work_group, "discount_intensity") if not work_group.empty else 0.0
+        combined = exposure_uplift + discount_uplift
+        activity = group[group["is_activity"]]
+        rows.append(
+            {
+                "category_key": str(category_key),
+                "category": str(category_name),
+                "category_size_segment": size_segments.get(str(category_key), "Mid"),
+                "exposure_uplift": round(float(exposure_uplift), 4),
+                "discount_uplift": round(float(discount_uplift), 4),
+                "combined_resource_uplift": round(float(combined), 4),
+                "local_gap": round(float(work_group["local_gap"].sum()) if not work_group.empty else 0.0, 4),
+                "activity_gmv": round(float(activity["gmv"].sum()) if not activity.empty else 0.0, 4),
+                "activity_rows": int(len(activity)),
+            }
+        )
+    return _assign_resource_quadrants(rows)
+
+
+def _category_size_segments(panel: pd.DataFrame) -> dict[str, str]:
+    totals = (
+        panel.groupby("category_key", as_index=False)
+        .agg(total_gmv=("gmv", "sum"))
+        .sort_values("total_gmv", ascending=False)
+        .reset_index(drop=True)
+    )
+    count = len(totals)
+    if count == 0:
+        return {}
+    segments: dict[str, str] = {}
+    for index, row in totals.iterrows():
+        if count < 3:
+            segment = "Mid"
+        elif index < math.ceil(count / 3):
+            segment = "Top"
+        elif index < math.ceil(count * 2 / 3):
+            segment = "Mid"
+        else:
+            segment = "LongTail"
+        segments[str(row["category_key"])] = segment
+    return segments
+
+
+def _assign_resource_quadrants(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not rows:
+        return []
+    exposure_cut = float(np.median([row["exposure_uplift"] for row in rows]))
+    discount_cut = float(np.median([row["discount_uplift"] for row in rows]))
+    combined_cut = float(np.median([row["combined_resource_uplift"] for row in rows]))
+    baseline_cut = float(np.median([row["activity_gmv"] for row in rows]))
+    output = []
+    for row in rows:
+        high_exposure = row["exposure_uplift"] >= exposure_cut
+        high_discount = row["discount_uplift"] >= discount_cut
+        high_combined = row["combined_resource_uplift"] >= combined_cut
+        high_baseline = row["activity_gmv"] >= baseline_cut
+        if high_exposure and high_discount:
+            resource_quadrant = "High View / High Discount"
+        elif high_exposure:
+            resource_quadrant = "High View / Low Discount"
+        elif high_discount:
+            resource_quadrant = "Low View / High Discount"
+        else:
+            resource_quadrant = "Low View / Low Discount"
+
+        if high_combined and not high_baseline:
+            classic_quadrant = "Persuadables"
+        elif high_combined and high_baseline:
+            classic_quadrant = "Sure Things"
+        elif not high_combined and high_baseline:
+            classic_quadrant = "Lost Causes"
+        else:
+            classic_quadrant = "Do Not Disturb"
+        output.append(
+            {
+                **row,
+                "resource_quadrant": resource_quadrant,
+                "classic_quadrant": classic_quadrant,
+                "quadrant_cutoffs": {
+                    "exposure_median": round(exposure_cut, 4),
+                    "discount_median": round(discount_cut, 4),
+                    "combined_median": round(combined_cut, 4),
+                    "activity_gmv_median": round(baseline_cut, 4),
+                },
+            }
+        )
+    return sorted(output, key=lambda item: item["combined_resource_uplift"], reverse=True)
+
+
+def _build_heterogeneity(working: pd.DataFrame) -> dict[str, Any]:
+    if working.empty:
+        return {
+            "exposure_by_category_size": [],
+            "discount_by_payday": [],
+            "warnings": ["No analysis rows are available for heterogeneity diagnostics."],
+        }
+    enriched = working.copy()
+    size_segments = _category_size_segments(enriched)
+    enriched["category_size_segment"] = enriched["category_key"].map(size_segments).fillna("Mid")
+    exposure_by_size = []
+    for segment, group in enriched.groupby("category_size_segment", sort=False):
+        response = _estimate_dose_response(group, "exposure_intensity")
+        exposure_by_size.append({"segment": str(segment), **response})
+
+    discount_by_payday = []
+    for label, flag in [("Payday", True), ("NonPayday", False)]:
+        group = enriched[enriched["is_payday"] == flag]
+        response = _estimate_dose_response(group, "discount_intensity")
+        discount_by_payday.append({"segment": label, **response})
+
+    warnings = [
+        warning
+        for item in [*exposure_by_size, *discount_by_payday]
+        for warning in item.get("warnings", [])
+    ]
+    return {
+        "exposure_by_category_size": exposure_by_size,
+        "discount_by_payday": discount_by_payday,
+        "warnings": _dedupe(warnings),
+    }
+
+
+def _build_rank_curves(ranking: list[dict[str, Any]], resource_scores: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    return {
+        "combined": _rank_curve(ranking, "uplift_score", "local_gap"),
+        "exposure": _rank_curve(resource_scores, "exposure_uplift", "local_gap"),
+        "discount": _rank_curve(resource_scores, "discount_uplift", "local_gap"),
+    }
+
+
+def _rank_curve(rows: list[dict[str, Any]], score_col: str, value_col: str) -> list[dict[str, Any]]:
+    if not rows:
+        return []
+    ordered = sorted(rows, key=lambda item: float(item.get(score_col) or 0.0), reverse=True)
+    total = sum(float(item.get(value_col) or 0.0) for item in ordered)
+    cumulative = 0.0
+    curve = []
+    for index, item in enumerate(ordered, start=1):
+        cumulative += float(item.get(value_col) or 0.0)
+        random_baseline = total * index / len(ordered)
+        curve.append(
+            {
+                "selected_count": index,
+                "coverage": round(index / len(ordered), 4),
+                "cumulative_value": round(cumulative, 4),
+                "random_baseline": round(random_baseline, 4),
+                "gain_over_random": round(cumulative - random_baseline, 4),
+            }
+        )
+    return curve
+
+
+def _build_marketing_quadrants(resource_scores: list[dict[str, Any]]) -> dict[str, Any]:
+    resource_counts: dict[str, int] = {}
+    classic_counts: dict[str, int] = {}
+    examples: dict[str, list[str]] = {}
+    for row in resource_scores:
+        resource = row["resource_quadrant"]
+        classic = row["classic_quadrant"]
+        resource_counts[resource] = resource_counts.get(resource, 0) + 1
+        classic_counts[classic] = classic_counts.get(classic, 0) + 1
+        examples.setdefault(resource, [])
+        if len(examples[resource]) < 4:
+            examples[resource].append(row["category"])
+    return {
+        "resource_quadrants": resource_counts,
+        "classic_quadrants": classic_counts,
+        "examples": examples,
+        "cutoff_rule": "Median split on category-level exposure and discount uplift scores.",
+    }
+
+
 def _build_ranking(
     panel: pd.DataFrame,
     working: pd.DataFrame,
@@ -661,6 +856,25 @@ def _write_recommendations_csv(path: Path, recommendations: list[dict[str, Any]]
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for row in recommendations:
+            writer.writerow({field: row.get(field, "") for field in fieldnames})
+
+
+def _write_resource_scores_csv(path: Path, resource_scores: list[dict[str, Any]]) -> None:
+    fieldnames = [
+        "category",
+        "category_size_segment",
+        "exposure_uplift",
+        "discount_uplift",
+        "combined_resource_uplift",
+        "local_gap",
+        "activity_gmv",
+        "resource_quadrant",
+        "classic_quadrant",
+    ]
+    with path.open("w", newline="", encoding="utf-8-sig") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in resource_scores:
             writer.writerow({field: row.get(field, "") for field in fieldnames})
 
 
