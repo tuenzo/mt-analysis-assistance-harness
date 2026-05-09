@@ -49,6 +49,6 @@
 
 ## 8. Final Verification
 
-- [ ] 8.1 Run backend pytest.
-- [ ] 8.2 Run frontend build if touched artifacts or report metadata affect frontend contracts.
-- [ ] 8.3 Review git diff for secrets, generated cache files, and unrelated changes before final summary.
+- [x] 8.1 Run backend pytest.
+- [x] 8.2 Run frontend build if touched artifacts or report metadata affect frontend contracts.
+- [x] 8.3 Review git diff for secrets, generated cache files, and unrelated changes before final summary.
