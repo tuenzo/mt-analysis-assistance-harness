@@ -31,11 +31,11 @@ def get_registry() -> ToolRegistry:
 def _register_all_tools(registry: ToolRegistry):
     from app.tools.project_tools import project_get_state
     from app.tools.data_tools import data_discover_source_files, data_ingest, data_validate, schema_infer, schema_apply_mapping
-    from app.tools.panel_tools import panel_build_category_day
+    from app.tools.panel_tools import panel_build_category_day, panel_build_user_week
     from app.tools.analysis_tools import (
         analysis_run_diagnostics, analysis_run_psm_did, analysis_run_localgap,
         analysis_run_mechanism_regression, analysis_run_conversion_diagnostics,
-        analysis_run_gps_uplift, analysis_run_full_pipeline
+        analysis_run_gps_uplift, analysis_run_hmm_state_path, analysis_run_full_pipeline
     )
     from app.tools.result_tools import result_get_latest, artifact_read
     from app.tools.chart_tools import chart_render, chart_render_dashboard
@@ -55,12 +55,14 @@ def _register_all_tools(registry: ToolRegistry):
     registry.register(BusinessAnalysisAction.SCHEMA_INFER, schema_infer, PermissionLevel.READ_STATE)
     registry.register(BusinessAnalysisAction.SCHEMA_APPLY_MAPPING, schema_apply_mapping, PermissionLevel.MODIFY_WORKSPACE)
     registry.register(BusinessAnalysisAction.PANEL_BUILD_CATEGORY_DAY, panel_build_category_day, PermissionLevel.MODIFY_WORKSPACE)
+    registry.register(BusinessAnalysisAction.PANEL_BUILD_USER_WEEK, panel_build_user_week, PermissionLevel.SAFE_COMPUTE)
     registry.register(BusinessAnalysisAction.ANALYSIS_RUN_DIAGNOSTICS, analysis_run_diagnostics, PermissionLevel.SAFE_COMPUTE)
     registry.register(BusinessAnalysisAction.ANALYSIS_RUN_PSM_DID, analysis_run_psm_did, PermissionLevel.SAFE_COMPUTE)
     registry.register(BusinessAnalysisAction.ANALYSIS_RUN_LOCALGAP, analysis_run_localgap, PermissionLevel.SAFE_COMPUTE)
     registry.register(BusinessAnalysisAction.ANALYSIS_RUN_MECHANISM_REGRESSION, analysis_run_mechanism_regression, PermissionLevel.SAFE_COMPUTE)
     registry.register(BusinessAnalysisAction.ANALYSIS_RUN_CONVERSION_DIAGNOSTICS, analysis_run_conversion_diagnostics, PermissionLevel.SAFE_COMPUTE)
     registry.register(BusinessAnalysisAction.ANALYSIS_RUN_GPS_UPLIFT, analysis_run_gps_uplift, PermissionLevel.SAFE_COMPUTE)
+    registry.register(BusinessAnalysisAction.ANALYSIS_RUN_HMM_STATE_PATH, analysis_run_hmm_state_path, PermissionLevel.SAFE_COMPUTE)
     registry.register(BusinessAnalysisAction.ANALYSIS_RUN_FULL_PIPELINE, analysis_run_full_pipeline, PermissionLevel.MODIFY_WORKSPACE)
     registry.register(BusinessAnalysisAction.RESULT_GET_LATEST, result_get_latest, PermissionLevel.READ_STATE)
     registry.register(BusinessAnalysisAction.ARTIFACT_READ, artifact_read, PermissionLevel.READ_STATE)

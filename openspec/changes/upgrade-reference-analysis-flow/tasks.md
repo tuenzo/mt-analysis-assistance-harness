@@ -36,10 +36,10 @@
 
 ## 6. Stage 3 - Add Reference-Skill-Only Interfaces
 
-- [ ] 6.1 Add user-week panel action interface with validation and limited-status artifact behavior.
-- [ ] 6.2 Add HMM state-path action interface with artifact contract and downgrade behavior.
-- [ ] 6.3 Add tests proving the interfaces are registered but not called by the standard full pipeline.
-- [ ] 6.4 Commit stage-3 interface changes.
+- [x] 6.1 Add user-week panel action interface with validation and limited-status artifact behavior.
+- [x] 6.2 Add HMM state-path action interface with artifact contract and downgrade behavior.
+- [x] 6.3 Add tests proving the interfaces are registered but not called by the standard full pipeline.
+- [x] 6.4 Commit stage-3 interface changes.
 
 ## 7. Stage 4 - Integrate Stage-3 Capabilities
 

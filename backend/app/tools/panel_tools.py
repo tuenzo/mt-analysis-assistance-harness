@@ -4,6 +4,7 @@ from app.core.config import resolve_project_path
 from app.tools.schemas import ToolResult
 from app.projects.service import ProjectService
 from app.analysis.pipelines.build_panel import build_category_day_panel
+from app.analysis.pipelines.user_week_hmm import build_user_week_panel
 
 
 def panel_build_category_day(project_id: str, payload: dict) -> ToolResult:
@@ -28,3 +29,18 @@ def panel_build_category_day(project_id: str, payload: dict) -> ToolResult:
 
     workspace_path = resolve_project_path(project.workspace_path)
     return build_category_day_panel(project_id, str(workspace_path), schema_mappings=schema_mappings)
+
+
+def panel_build_user_week(project_id: str, payload: dict) -> ToolResult:
+    service = ProjectService()
+    project = service.get_project(project_id)
+    if not project:
+        return ToolResult(
+            ok=False,
+            action="panel.build_user_week",
+            summary="",
+            error={"code": "NOT_FOUND", "message": "Project not found"},
+        )
+
+    workspace_path = resolve_project_path(project.workspace_path)
+    return build_user_week_panel(project_id, str(workspace_path))
