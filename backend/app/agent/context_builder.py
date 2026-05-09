@@ -4,6 +4,7 @@ from app.projects.models import Artifact, Job, Project, ProjectFile
 from app.core.database import get_session
 from app.workspace.context_summary import ContextSummaryWriter
 from app.core.config import resolve_project_path
+from app.agent.python_env import discover_python_environment
 
 
 AVAILABLE_ACTIONS = [
@@ -96,6 +97,7 @@ class ContextBuilder:
                 "project_name": project.name,
                 "current_stage": project.current_stage,
                 "workspace_path": str(workspace_path),
+                "python_environment": discover_python_environment(workspace_path).as_dict(),
                 "files": files_info,
                 "data_quality": data_quality,
                 "schema_status": schema_status,

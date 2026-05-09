@@ -50,6 +50,10 @@ The reference materials define four useful tiers:
 
    Use pandas/numpy implementations for the first pass. If stronger statistical diagnostics later require sklearn/statsmodels/hmmlearn, add them behind an OpenSpec task with explicit dependency and fallback handling.
 
+6. Agent dialogue runtime inherits the backend venv.
+
+   The Claude Agent SDK child runtime will discover the project or backend `.venv`, set `VIRTUAL_ENV`, prepend the venv `Scripts`/`bin` directory to `PATH`, and expose the resolved interpreter in runtime diagnostics and prompt context. This keeps agent-side analysis behavior aligned with backend pytest/development commands.
+
 ## Risks / Trade-offs
 
 - [Risk] Better PSM-DID without sklearn/statsmodels is still lighter than the reference report. -> Mitigation: output matched sample, SMD diagnostics, event windows, and placebo notes with `method_status` downgrade when support is thin.
@@ -57,6 +61,7 @@ The reference materials define four useful tiers:
 - [Risk] Adding many stages at once could create a hard-to-review diff. -> Mitigation: commit OpenSpec first, then one module or capability per small commit, plus phase summary commits.
 - [Risk] Existing reports may expect old keys. -> Mitigation: retain existing top-level keys such as `estimates`, `lift`, `method_status`, and artifact filenames while adding richer fields.
 - [Risk] Reference report results are dataset-specific. -> Mitigation: implement methods and artifact contracts, not hard-coded report numbers.
+- [Risk] Runtime venv discovery could pick a global interpreter if no venv exists. -> Mitigation: search workspace `.venv` first, then backend `.venv`, and disclose unavailable status in diagnostics.
 
 ## Migration Plan
 

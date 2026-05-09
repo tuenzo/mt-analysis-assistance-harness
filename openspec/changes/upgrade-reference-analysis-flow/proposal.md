@@ -17,6 +17,7 @@ The current harness has a working analysis loop, but several analytical modules 
   - Gaussian HMM state-path analysis;
   - state-based customer strategy artifacts.
 - Later integrate the stage-3 interfaces into the standard flow behind explicit method-status and downgrade controls.
+- Ensure agent dialogue analysis inherits the backend Python virtual environment so model-driven analysis commands and diagnostics do not fall back to global Python.
 - Keep all public actions routed through the single `business_analysis(project_id, action, payload, reason)` gateway.
 
 ## Capabilities

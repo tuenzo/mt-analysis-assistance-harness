@@ -2,6 +2,8 @@
 
 - [x] 1.1 Create the OpenSpec proposal, design, specs, and task list for the four-stage roadmap.
 - [x] 1.2 Commit the OpenSpec planning artifacts separately from implementation changes.
+- [x] 1.3 Ensure agent dialogue analysis automatically discovers and uses the backend Python virtual environment.
+- [x] 1.4 Add runtime-environment tests and commit the venv integration separately.
 
 ## 2. Stage 1A - Upgrade Existing PSM-DID
 

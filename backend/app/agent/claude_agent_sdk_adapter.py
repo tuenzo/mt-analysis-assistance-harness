@@ -44,6 +44,7 @@ from app.core.permissions import PermissionLevel, action_to_permission_level
 from app.projects.models import ApprovalRequest, Project, ToolCall
 from app.tools.gateway import get_gateway
 from app.tools.schemas import BusinessAnalysisAction, ToolResult
+from app.agent.python_env import apply_python_environment, discover_python_environment
 from app.workspace.skills import ensure_project_skill_files, normalize_skill_names
 
 
@@ -312,6 +313,9 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             )
             session["config_dir"] = config_dir
             env["CLAUDE_CONFIG_DIR"] = config_dir
+        workspace_path = Path(session.get("workspace_path") or self._workspace_root)
+        env = apply_python_environment(env, workspace_path)
+        session["python_environment"] = discover_python_environment(workspace_path).as_dict()
         env.setdefault("CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK", "1")
 
         kwargs = {
@@ -354,6 +358,7 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             "skills": skills,
             "skill_allowed_tools": self._skill_allowed_tools(skills),
             "workspace_path": session.get("workspace_path", ""),
+            "python_environment": session.get("python_environment", {}),
         }
 
     def _resolve_project_workspace_path(self, project_id: str) -> Path:
@@ -894,10 +899,12 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
         latest_result_available = context.get("latest_result_available") or []
         latest_pipeline = context.get("latest_pipeline") or {}
         recent_artifacts = context.get("recent_artifacts") or []
+        python_environment = context.get("python_environment") or {}
         project_facts = {
             "latest_result_available": latest_result_available,
             "latest_pipeline": latest_pipeline,
             "recent_artifacts": recent_artifacts,
+            "python_environment": python_environment,
         }
 
         return f"""You are a business analysis assistant working in project "{project_name}".
@@ -907,6 +914,7 @@ Project state:
 - current_stage: {current_stage}
 - data_quality: {data_quality}
 - project_facts: {json.dumps(project_facts, ensure_ascii=False)}
+- python_environment: {json.dumps(python_environment, ensure_ascii=False)}
 
 You may answer directly for discussion or clarification. When project state, data, analysis pipelines,
 artifacts, reports, or memory candidates are needed, use exactly this tool:
@@ -918,6 +926,12 @@ payload, and reason. Do not merely describe the planned call.
 
 When calling business_analysis, always pass exactly this project_id: "{project_id}".
 Do not use the route name, page name, project name, or any guessed identifier as project_id.
+
+Python/runtime rule:
+When Python/package commands are needed during agent analysis, use the discovered virtual environment.
+If python_environment.available is true, prefer python_environment.python_executable over bare python,
+and assume child runtime PATH/VIRTUAL_ENV already point at that venv. Do not suggest global Python
+unless the venv is unavailable.
 
 Only use project facts from the backend workspace context and tool results. Do not read local source
 data files directly. For CSV directory ingest, first call business_analysis with action
