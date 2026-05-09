@@ -82,6 +82,7 @@ def test_mock_adapter_send_message_returns_generator():
     events = list(adapter.send_message(session_id, "你好", {}))
 
     assert len(events) > 0
+    assert any(e["type"] == "assistant_thought_delta" for e in events)
     assert any(e["type"] == "assistant_message_delta" for e in events)
 
 

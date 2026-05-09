@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams } from 'next/navigation'
 import { Toaster, toast } from 'sonner'
 import {
@@ -28,12 +28,11 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ScaledPageFrame } from '@/components/ui/scaled-page-frame'
 import { useApiBaseHref } from '@/lib/use-api-base-href'
 import { api } from '@/lib/api-client'
 import { useAgentEvents } from '@/lib/sse-hooks'
 import type { AgentMessage, SSEEvent } from '@/lib/api-types'
-import { useAgentStore, type ApprovalRequest, type JobStatus, type ToolCall } from '@/store/agent-store'
+import { useAgentStore, type ApprovalRequest, type JobStatus, type ThoughtEntry, type ToolCall } from '@/store/agent-store'
 import { useProjectStore } from '@/store/project-store'
 import type { AgentRunStatus, ArtifactPreview, PlanStep, PlanStepStatus } from '@/types/agent'
 
@@ -72,10 +71,74 @@ const planSteps: PlanStep[] = [
   { id: 'answer', title: '生成解释与建议', description: '输出下一轮资源配置动作', status: 'pending', toolName: 'chat.explain_result' },
 ]
 
+function useAgentResponsiveDensity() {
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const element = containerRef.current
+    if (!element) return
+
+    let frame = 0
+
+    const setDensity = (nextDensity: number) => {
+      const density = clampNumber(nextDensity, 0, 1)
+      element.style.setProperty('--agent-density', density.toFixed(3))
+      element.dataset.agentDensity =
+        density <= 0.02 ? 'minimum' : density < 0.45 ? 'dense' : density < 0.8 ? 'compact' : 'comfortable'
+    }
+
+    const updateDensity = () => {
+      window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(() => {
+        const height = element.clientHeight || window.innerHeight
+        const width = element.clientWidth || window.innerWidth
+        let density = clampNumber(Math.min((height - 680) / 360, (width - 920) / 420), 0, 1)
+
+        setDensity(density)
+
+        const inspector = element.querySelector<HTMLElement>('.agent-side-inspector')
+        if (!inspector?.clientHeight) return
+
+        for (let attempt = 0; attempt < 6; attempt += 1) {
+          const overflowRatio = inspector.scrollHeight / inspector.clientHeight
+          if (overflowRatio <= 1) break
+
+          density = clampNumber(density - Math.min(0.25, (overflowRatio - 1) * 1.7), 0, 1)
+          setDensity(density)
+        }
+      })
+    }
+
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateDensity)
+    observer?.observe(element)
+    window.addEventListener('resize', updateDensity)
+    updateDensity()
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      observer?.disconnect()
+      window.removeEventListener('resize', updateDensity)
+    }
+  }, [])
+
+  return containerRef
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
+const AGENT_SESSION_STORAGE_PREFIX = 'baa.agentSession.'
+
+function agentSessionStorageKey(projectId: string) {
+  return `${AGENT_SESSION_STORAGE_PREFIX}${projectId}`
+}
+
 export function AgentAnalysisPage() {
   const params = useParams<{ project_id: string }>()
   const projectId = params.project_id
   const hrefFor = useApiBaseHref()
+  const densityRef = useAgentResponsiveDensity()
   const { currentProject, projectState, files } = useProjectStore()
   const {
     messageQueue,
@@ -85,6 +148,7 @@ export function AgentAnalysisPage() {
     toolCalls,
     approvalRequests,
     jobs,
+    thoughts,
     sendMessage,
     loadSessionMessages,
     loadPendingApprovals,
@@ -92,6 +156,7 @@ export function AgentAnalysisPage() {
     interruptSession,
     clearMessages,
     failRun,
+    setCurrentSession,
     approveApproval,
     rejectApproval,
   } = useAgentStore()
@@ -104,22 +169,81 @@ export function AgentAnalysisPage() {
 
   useEffect(() => {
     let cancelled = false
-    api.getDemoStatus().then(async (response) => {
-      if (
-        !cancelled &&
-        response.ok &&
-        response.data?.enabled &&
-        response.data.project_id === projectId &&
-        response.data.session_id
-      ) {
-        setSessionId(response.data.session_id)
-        await loadSessionMessages(response.data.session_id)
+
+    const storageKey = agentSessionStorageKey(projectId)
+    const readStoredSessionId = () => {
+      if (typeof window === 'undefined') return null
+      try {
+        return window.localStorage.getItem(storageKey)
+      } catch {
+        return null
       }
-    })
+    }
+    const rememberSessionId = (nextSessionId: string) => {
+      if (typeof window === 'undefined') return
+      try {
+        window.localStorage.setItem(storageKey, nextSessionId)
+      } catch {
+        // Ignore storage failures; backend fallback still works.
+      }
+    }
+    const forgetSessionId = () => {
+      if (typeof window === 'undefined') return
+      try {
+        window.localStorage.removeItem(storageKey)
+      } catch {
+        // Ignore storage failures.
+      }
+    }
+    const loadCandidateSession = async (candidateSessionId?: string | null, persist = true) => {
+      if (!candidateSessionId) return false
+      const sessionResponse = await api.getSession(candidateSessionId)
+      if (!sessionResponse.ok || sessionResponse.data?.project_id !== projectId) {
+        if (persist) forgetSessionId()
+        return false
+      }
+      if (cancelled) return true
+      await loadSessionMessages(candidateSessionId)
+      if (cancelled) return true
+      setSessionId(candidateSessionId)
+      setTurnId(null)
+      if (persist) rememberSessionId(candidateSessionId)
+      return true
+    }
+
+    const restoreSession = async () => {
+      clearMessages()
+      setCurrentSession(null)
+      setSessionId(null)
+      setTurnId(null)
+      setArtifactEvents([])
+      setLastCompletedAt(null)
+
+      if (await loadCandidateSession(readStoredSessionId())) return
+
+      const demoResponse = await api.getDemoStatus()
+      if (
+        demoResponse.ok &&
+        demoResponse.data?.enabled &&
+        demoResponse.data.project_id === projectId &&
+        demoResponse.data.session_id &&
+        await loadCandidateSession(demoResponse.data.session_id)
+      ) {
+        return
+      }
+
+      const sessionsResponse = await api.listProjectSessions(projectId)
+      const latestSession = sessionsResponse.ok
+        ? sessionsResponse.data?.find((session) => session.project_id === projectId)
+        : null
+      await loadCandidateSession(latestSession?.id)
+    }
+
+    void restoreSession()
     return () => {
       cancelled = true
     }
-  }, [projectId, loadSessionMessages])
+  }, [clearMessages, loadSessionMessages, projectId, setCurrentSession])
 
   useEffect(() => {
     if (sessionId) {
@@ -154,6 +278,7 @@ export function AgentAnalysisPage() {
   })
 
   const allToolCalls = useMemo(() => Object.values(toolCalls).flat(), [toolCalls])
+  const allThoughts = useMemo(() => Object.values(thoughts).flat(), [thoughts])
   const jobList = useMemo(() => Object.values(jobs), [jobs])
   const activeJob = jobList.find((job) => job.status === 'running') || jobList[0] || null
 
@@ -182,6 +307,11 @@ export function AgentAnalysisPage() {
     if (response) {
       setSessionId(response.session_id)
       setTurnId(response.turn_id)
+      try {
+        window.localStorage.setItem(agentSessionStorageKey(projectId), response.session_id)
+      } catch {
+        // Ignore storage failures; the backend session still exists.
+      }
       setInput('')
     }
   }
@@ -202,29 +332,38 @@ export function AgentAnalysisPage() {
     events.forEach(handleRuntimeEvent)
   }
 
+  function handleClearConversation() {
+    clearMessages()
+    setCurrentSession(null)
+    setSessionId(null)
+    setTurnId(null)
+    setArtifactEvents([])
+    setLastCompletedAt(null)
+    try {
+      window.localStorage.removeItem(agentSessionStorageKey(projectId))
+    } catch {
+      // Ignore storage failures.
+    }
+  }
+
   return (
-    <div className="h-full bg-background">
+    <div className="h-full overflow-hidden bg-background">
       <Toaster position="top-right" richColors />
-      <ScaledPageFrame
-        designWidth={1680}
-        designHeight={1010}
-        minScale={0.25}
-        contentClassName="h-full"
-      >
-        <div className="flex h-full flex-col bg-background px-6 py-5">
+      <div ref={densityRef} className="agent-analysis-page flex h-full min-h-0 flex-col overflow-hidden bg-background text-[15px] leading-6">
           <AgentAnalysisHeader
             status={runStatus}
             connected={connected}
             onRefresh={reconnect}
             onStop={handleInterrupt}
-            onClear={clearMessages}
+            onClear={handleClearConversation}
             canStop={Boolean(isRunning && sessionId)}
           />
 
-          <div className="mt-4 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_370px] gap-4">
+          <div className="agent-analysis-grid grid min-h-0 flex-1 grid-cols-[minmax(0,2fr)_minmax(0,1fr)] overflow-hidden">
             <AgentConversationPanel
               messages={messageQueue}
               toolCalls={allToolCalls}
+              thoughts={allThoughts}
               approvals={approvalRequests}
               artifacts={artifacts}
               isRunning={isRunning}
@@ -257,7 +396,6 @@ export function AgentAnalysisPage() {
             />
           </div>
         </div>
-      </ScaledPageFrame>
     </div>
   )
 }
@@ -278,15 +416,15 @@ function AgentAnalysisHeader({
   onClear: () => void
 }) {
   return (
-    <section className="flex items-end justify-between gap-4">
+    <section className="agent-analysis-header flex shrink-0 items-end justify-between">
       <div>
-        <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+        <div className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground">
           <span>当前项目</span>
           <ArrowRight className="h-3.5 w-3.5" />
           <span>Agent 分析</span>
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-bold tracking-normal">Agent 分析</h1>
+        <div className="mt-1.5 flex flex-wrap items-center gap-2.5">
+          <h1 className="agent-analysis-title font-bold tracking-normal">Agent 分析</h1>
           <Badge variant="outline" className={statusClass[status]}>
             {statusText[status]}
           </Badge>
@@ -294,7 +432,7 @@ function AgentAnalysisHeader({
             {connected ? 'SSE 已连接' : 'SSE 待连接'}
           </Badge>
         </div>
-        <p className="mt-2 text-sm text-muted-foreground">通过对话驱动数据检查、分析执行与结果解释</p>
+        <p className="mt-1 text-sm text-muted-foreground">通过对话驱动数据检查、分析执行与结果解释</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Button variant="outline" size="sm" onClick={onRefresh}>
@@ -316,6 +454,7 @@ function AgentAnalysisHeader({
 function AgentConversationPanel({
   messages,
   toolCalls,
+  thoughts,
   approvals,
   artifacts,
   isRunning,
@@ -329,6 +468,7 @@ function AgentConversationPanel({
 }: {
   messages: AgentMessage[]
   toolCalls: ToolCall[]
+  thoughts: ThoughtEntry[]
   approvals: ApprovalRequest[]
   artifacts: ArtifactPreview[]
   isRunning: boolean
@@ -341,15 +481,15 @@ function AgentConversationPanel({
   onReject: (id: string) => void
 }) {
   return (
-    <section className="flex h-full min-h-0 flex-col rounded-2xl border border-border bg-white shadow-[var(--shadow-soft)]">
-      <div className="border-b border-border px-5 py-4">
+    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-[var(--shadow-soft)]">
+      <div className="agent-quick-prompts shrink-0 border-b border-border">
         <div className="flex flex-wrap gap-2">
           {quickPrompts.map((prompt) => (
             <button
               key={prompt}
               type="button"
               onClick={() => onPrompt(prompt)}
-              className="rounded-full border border-border bg-[#fbfcfe] px-3 py-1.5 text-xs font-semibold text-[#4b5563] transition hover:border-[#f2cf4a] hover:bg-secondary hover:text-[#1f2937]"
+              className="agent-quick-prompt rounded-full border border-border bg-[#fbfcfe] text-xs font-semibold text-[#4b5563] transition hover:border-[#f2cf4a] hover:bg-secondary hover:text-[#1f2937]"
             >
               {prompt}
             </button>
@@ -360,6 +500,7 @@ function AgentConversationPanel({
       <ConversationStream
         messages={messages}
         toolCalls={toolCalls}
+        thoughts={thoughts}
         approvals={approvals}
         artifacts={artifacts}
         isRunning={isRunning}
@@ -381,6 +522,7 @@ function AgentConversationPanel({
 function ConversationStream({
   messages,
   toolCalls,
+  thoughts,
   approvals,
   artifacts,
   isRunning,
@@ -389,6 +531,7 @@ function ConversationStream({
 }: {
   messages: AgentMessage[]
   toolCalls: ToolCall[]
+  thoughts: ThoughtEntry[]
   approvals: ApprovalRequest[]
   artifacts: ArtifactPreview[]
   isRunning: boolean
@@ -396,12 +539,14 @@ function ConversationStream({
   onReject: (id: string) => void
 }) {
   return (
-    <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
+    <div className="agent-conversation-stream flex min-h-0 flex-1 flex-col overflow-y-auto">
       {messages.length === 0 && <SystemNoticeMessage />}
 
       {messages.map((message) => (
         <MessageBubble key={message.id} message={message} />
       ))}
+
+      {(thoughts.length > 0 || isRunning) && <ThoughtProgressCard thoughts={thoughts} isRunning={isRunning} />}
 
       {(toolCalls.length > 0 || approvals.length > 0 || artifacts.length > 0) && (
         <div className="ml-8 space-y-3 border-l border-dashed border-border pl-4">
@@ -428,12 +573,50 @@ function ConversationStream({
   )
 }
 
+function ThoughtProgressCard({ thoughts, isRunning }: { thoughts: ThoughtEntry[]; isRunning: boolean }) {
+  const latestThoughts = thoughts.slice(-6)
+  return (
+    <div className="ml-8 rounded-2xl border border-blue-100 bg-blue-50/60 p-4 text-sm text-blue-950">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 font-bold">
+          {isRunning ? (
+            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+          ) : (
+            <Sparkles className="h-4 w-4 text-blue-600" />
+          )}
+          <span>Agent thinking</span>
+        </div>
+        <Badge variant="outline" className="border-blue-200 bg-white/70 text-blue-700">
+          {latestThoughts.length || 1} updates
+        </Badge>
+      </div>
+      <div className="mt-3 max-h-44 space-y-2 overflow-y-auto">
+        {latestThoughts.length === 0 ? (
+          <p className="text-xs leading-5 text-blue-800/80">
+            Preparing a public progress summary while the runtime works.
+          </p>
+        ) : (
+          latestThoughts.map((thought) => (
+            <div key={thought.id} className="rounded-xl bg-white/75 px-3 py-2">
+              <div className="mb-1 flex items-center justify-between gap-3 text-[11px] uppercase text-blue-700/70">
+                <span>{thought.phase || 'thinking'}</span>
+                <span>{formatTime(thought.createdAt)}</span>
+              </div>
+              <p className="whitespace-pre-wrap text-xs leading-5">{thought.content}</p>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
 function SystemNoticeMessage() {
   return (
-    <div className="rounded-2xl border border-dashed border-[#f2cf4a] bg-secondary/70 px-5 py-5 text-center">
-      <Sparkles className="mx-auto h-8 w-8 text-[#d39a00]" />
-      <h2 className="mt-3 text-base font-bold">从一个分析目标开始</h2>
-      <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+    <div className="agent-system-notice rounded-2xl border border-dashed border-[#f2cf4a] bg-secondary/70 text-center">
+      <Sparkles className="mx-auto h-6 w-6 text-[#d39a00]" />
+      <h2 className="mt-2 text-base font-bold">从一个分析目标开始</h2>
+      <p className="mx-auto mt-1 max-w-xl text-sm leading-6 text-muted-foreground">
         输入自然语言问题，Agent 会先读取项目状态，再决定是否校验数据、请求确认、运行分析管道或解释最新结果。
       </p>
     </div>
@@ -600,8 +783,8 @@ function AgentMessageComposer({
   onSend: () => void
 }) {
   return (
-    <div className="border-t border-border p-4">
-      <div className="rounded-2xl border border-border bg-white p-3 shadow-sm focus-within:border-[#f2cf4a]">
+    <div className="agent-composer shrink-0 border-t border-border">
+      <div className="agent-composer-box rounded-2xl border border-border bg-white shadow-sm focus-within:border-[#f2cf4a]">
         <div className="flex gap-3">
           <button className="mt-1 rounded-lg p-2 text-muted-foreground hover:bg-[#f7f8fa]" aria-label="添加附件" type="button">
             <Paperclip className="h-4 w-4" />
@@ -616,14 +799,14 @@ function AgentMessageComposer({
                 onSend()
               }
             }}
-            className="min-h-16 flex-1 resize-none border-0 bg-transparent px-0 py-2 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
+            className="agent-composer-input flex-1 resize-none border-0 bg-transparent px-0 text-sm outline-none placeholder:text-muted-foreground disabled:opacity-60"
             placeholder="请输入您的问题，例如：分析活动效果、资源配置建议等..."
           />
           <Button className="mt-auto h-10 w-10 rounded-xl p-0" onClick={onSend} disabled={!value.trim() || disabled}>
             {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </Button>
         </div>
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
           <span>支持 /run、/explain、/report；Enter 发送，Shift + Enter 换行</span>
           <span>消息统一进入 MessageRuntime</span>
         </div>
@@ -663,12 +846,12 @@ function AgentSideInspector({
 }) {
   const progress = Math.round((activeJob?.progress ?? (runStatus === 'completed' ? 1 : runStatus === 'idle' ? 0 : 0.62)) * 100)
   return (
-    <aside className="space-y-3">
+    <aside className="agent-side-inspector flex h-full min-h-0 flex-col overflow-hidden">
       <InspectorCard title="项目上下文">
         <InfoRow label="项目名称" value={projectName} />
-        <InfoRow label="数据周期" value="2025-09-01 ~ 2025-11-30" />
-        <InfoRow label="活动窗口" value="4 个（33 天）" />
-        <InfoRow label="品类数量" value="366" />
+        <InfoRow label="数据周期" value="2025-09-01 ~ 2025-11-30" optional />
+        <InfoRow label="活动窗口" value="4 个（33 天）" optional />
+        <InfoRow label="品类数量" value="366" optional />
         <InfoRow label="当前状态" value={`${projectStatus} · ${projectStage}`} />
         <InfoRow label="接入文件" value={`${fileCount} 个`} />
       </InspectorCard>
@@ -676,26 +859,25 @@ function AgentSideInspector({
       <InspectorCard title="当前 Run 状态">
         <div className="flex items-center justify-between">
           <Badge variant="outline" className={statusClass[runStatus]}>{statusText[runStatus]}</Badge>
-          <span className="text-xs text-muted-foreground">{sessionProvider}</span>
+          <span className="agent-hide-when-minimum text-xs text-muted-foreground">{sessionProvider}</span>
         </div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#eef2f7]">
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#eef2f7]">
           <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
         </div>
-        <p className="mt-2 text-xs font-semibold">{activeJob?.message || '等待下一次分析指令'}</p>
-        <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+        <p className="agent-hide-when-minimum mt-2 text-xs font-semibold">{activeJob?.message || '等待下一次分析指令'}</p>
+        <div className="mt-2 grid grid-cols-2 gap-1.5 text-xs text-muted-foreground">
           <InfoPill icon={<Timer className="h-3.5 w-3.5" />} label="耗时" value={activeJob ? `${Math.max(1, Math.round(progress / 8))} min` : '-'} />
           <InfoPill icon={<Clock3 className="h-3.5 w-3.5" />} label="完成" value={lastCompletedAt ? formatTime(lastCompletedAt) : '-'} />
         </div>
       </InspectorCard>
 
       <InspectorCard title="分析进度">
-        <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
           {planSteps.map((step) => (
-            <div key={step.id} className="flex items-start gap-3">
-              <span className={`mt-1 h-2.5 w-2.5 rounded-full ${step.status === 'completed' ? 'bg-green-500' : step.status === 'running' ? 'bg-blue-500' : 'bg-gray-300'}`} />
+            <div key={step.id} className="flex items-start gap-2">
+              <span className={`mt-1 h-2 w-2 rounded-full ${step.status === 'completed' ? 'bg-green-500' : step.status === 'running' ? 'bg-blue-500' : 'bg-gray-300'}`} />
               <div>
-                <p className="text-xs font-semibold">{step.title}</p>
-                <p className="text-xs text-muted-foreground">{step.toolName || '待定工具'}</p>
+                <p className="text-xs font-semibold leading-4">{step.title}</p>
               </div>
             </div>
           ))}
@@ -709,7 +891,7 @@ function AgentSideInspector({
           <MiniKpi label="折扣贡献" value="+180 万" tone="orange" />
           <MiniKpi label="建议加码" value="4 个品类" tone="purple" />
         </div>
-        <Link href={dashboardHref} className="mt-2 flex h-8 items-center justify-center gap-2 rounded-lg bg-primary text-xs font-bold text-primary-foreground">
+        <Link href={dashboardHref} className="agent-result-link mt-2 flex items-center justify-center gap-2 rounded-lg bg-primary text-xs font-bold text-primary-foreground">
           查看结果看板
           <ArrowRight className="h-4 w-4" />
         </Link>
@@ -720,16 +902,16 @@ function AgentSideInspector({
           <InfoRow label="工具调用" value={`${toolCalls.length} 次`} />
           <InfoRow label="已生成产物" value={`${Math.max(artifactCount, artifacts.length)} 个`} />
           {artifacts.slice(0, 2).map((artifact) => (
-            <div key={artifact.id} className="rounded-lg border bg-[#fbfcfe] px-3 py-1.5 text-xs">
+            <div key={artifact.id} className="agent-artifact-row rounded-lg border bg-[#fbfcfe] text-xs leading-4">
               <p className="truncate font-semibold">{artifact.name}</p>
               <p className="mt-1 truncate text-muted-foreground">{artifact.path || artifact.id}</p>
             </div>
           ))}
         </div>
         <div className="mt-2 grid grid-cols-3 gap-1.5">
-          <Link className="truncate rounded-lg border border-border px-2 py-1.5 text-center text-xs font-semibold hover:bg-[#f7f8fa]" href={reportHref}>生成报告</Link>
-          <button className="truncate rounded-lg border border-border px-2 py-1.5 text-xs font-semibold hover:bg-[#f7f8fa]">解释 DID</button>
-          <button className="truncate rounded-lg border border-border px-2 py-1.5 text-xs font-semibold hover:bg-[#f7f8fa]">资源复盘</button>
+          <Link className="agent-side-action truncate rounded-lg border border-border text-center text-xs font-semibold hover:bg-[#f7f8fa]" href={reportHref}>生成报告</Link>
+          <button className="agent-side-action truncate rounded-lg border border-border text-xs font-semibold hover:bg-[#f7f8fa]">解释 DID</button>
+          <button className="agent-side-action truncate rounded-lg border border-border text-xs font-semibold hover:bg-[#f7f8fa]">资源复盘</button>
         </div>
       </InspectorCard>
     </aside>
@@ -738,16 +920,16 @@ function AgentSideInspector({
 
 function InspectorCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-2xl border border-border bg-white p-3 shadow-[var(--shadow-soft)]">
-      <h2 className="mb-2 text-sm font-bold">{title}</h2>
+    <section className="agent-inspector-card rounded-xl border border-border bg-white shadow-[var(--shadow-soft)]">
+      <h2 className="mb-1 text-sm font-bold leading-5">{title}</h2>
       {children}
     </section>
   )
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({ label, value, optional = false }: { label: string; value: string; optional?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-border py-1.5 last:border-b-0">
+    <div className={`agent-info-row flex items-center justify-between gap-3 border-b border-border last:border-b-0 ${optional ? 'agent-hide-when-minimum' : ''}`}>
       <span className="text-xs text-muted-foreground">{label}</span>
       <span className="truncate text-right text-xs font-semibold">{value}</span>
     </div>
@@ -756,7 +938,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 function InfoPill({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
-    <div className="rounded-lg bg-[#f7f8fa] px-2 py-1.5">
+    <div className="agent-info-pill rounded-lg bg-[#f7f8fa]">
       <div className="flex items-center gap-1">
         {icon}
         <span>{label}</span>
@@ -774,7 +956,7 @@ function MiniKpi({ label, value, tone }: { label: string; value: string; tone: '
     purple: 'bg-purple-50 text-purple-700',
   }
   return (
-    <div className={`rounded-lg px-2 py-1.5 ${colors[tone]}`}>
+    <div className={`agent-mini-kpi rounded-lg ${colors[tone]}`}>
       <p className="truncate text-[10px] font-semibold opacity-80">{label}</p>
       <p className="truncate text-xs font-bold">{value}</p>
     </div>

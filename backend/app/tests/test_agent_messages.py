@@ -2,19 +2,31 @@ import pytest
 import tempfile
 import shutil
 import os
+import time
 from fastapi.testclient import TestClient
 from app.main import app
-from app.core.database import init_db, get_engine, Base
+from app.core.database import init_db, reset_engine
 
 
 @pytest.fixture
 def test_db():
+    import app.agent.message_runtime as message_runtime
+
+    old_cwd = os.getcwd()
     tmp = tempfile.mkdtemp()
     os.chdir(tmp)
+    reset_engine()
+    message_runtime._message_runtime = None
     init_db()
-    yield
-    os.chdir("..")
-    shutil.rmtree(tmp)
+    try:
+        yield
+    finally:
+        if message_runtime._message_runtime is not None:
+            message_runtime._message_runtime.wait_for_all_turns()
+        message_runtime._message_runtime = None
+        reset_engine()
+        os.chdir(old_cwd)
+        shutil.rmtree(tmp)
 
 
 @pytest.fixture
@@ -26,6 +38,21 @@ def client(test_db):
 def project(client):
     r = client.post("/api/projects", json={"name": "AgentTest"})
     return r.json()
+
+
+def wait_for_runtime_events(session_id, turn_id, predicate, timeout=3.0):
+    from app.agent.message_runtime import get_message_runtime
+
+    runtime = get_message_runtime()
+    deadline = time.time() + timeout
+    collected = []
+    while time.time() < deadline:
+        events = runtime.get_events(session_id, turn_id)
+        collected.extend(events)
+        if predicate(collected):
+            return collected
+        time.sleep(0.05)
+    return collected
 
 
 def test_send_message_returns_turn_id(client, project):
@@ -67,8 +94,6 @@ def test_mock_adapter_analysis_request(client, project):
 
 
 def test_mock_full_pipeline_request_creates_approval_not_data_ingest(client, project):
-    from app.agent.message_runtime import get_message_runtime
-
     r = client.post("/api/agent/messages", json={
         "project_id": project["id"],
         "message": "Run the full promotion analysis pipeline.",
@@ -76,7 +101,11 @@ def test_mock_full_pipeline_request_creates_approval_not_data_ingest(client, pro
     assert r.status_code == 200
     data = r.json()
 
-    events = get_message_runtime().get_events(data["session_id"], data["turn_id"])
+    events = wait_for_runtime_events(
+        data["session_id"],
+        data["turn_id"],
+        lambda collected: any(event.get("type") == "approval_requested" for event in collected),
+    )
     actions = [event.get("action") for event in events if event.get("tool") == "business_analysis"]
 
     assert "analysis.run_full_pipeline" in actions
@@ -87,8 +116,6 @@ def test_mock_full_pipeline_request_creates_approval_not_data_ingest(client, pro
 
 
 def test_mock_dashboard_image_request_calls_render_dashboard(client, project):
-    from app.agent.message_runtime import get_message_runtime
-
     r = client.post("/api/agent/messages", json={
         "project_id": project["id"],
         "message": "请重新生成看板图片",
@@ -96,7 +123,11 @@ def test_mock_dashboard_image_request_calls_render_dashboard(client, project):
     assert r.status_code == 200
     data = r.json()
 
-    events = get_message_runtime().get_events(data["session_id"], data["turn_id"])
+    events = wait_for_runtime_events(
+        data["session_id"],
+        data["turn_id"],
+        lambda collected: any(event.get("action") == "chart.render_dashboard" for event in collected),
+    )
     actions = [event.get("action") for event in events if event.get("tool") == "business_analysis"]
 
     assert "chart.render_dashboard" in actions
@@ -136,6 +167,12 @@ def test_session_messages_include_runtime_final_answer(client, project):
     assert r.status_code == 200
     data = r.json()
 
+    wait_for_runtime_events(
+        data["session_id"],
+        data["turn_id"],
+        lambda collected: any(event.get("type") == "final_answer" for event in collected),
+    )
+
     r2 = client.get(f"/api/agent/sessions/{data['session_id']}/messages")
     assert r2.status_code == 200
     messages = r2.json()["data"]
@@ -144,10 +181,15 @@ def test_session_messages_include_runtime_final_answer(client, project):
 
 
 def test_project_sessions_list(client, project):
-    r = client.post("/api/agent/messages", json={"project_id": project["id"], "message": "hi"})
-    session_id = r.json()["session_id"]
+    r1 = client.post("/api/agent/messages", json={"project_id": project["id"], "message": "hi"})
+    first_session_id = r1.json()["session_id"]
+    time.sleep(0.02)
+    r2 = client.post("/api/agent/messages", json={"project_id": project["id"], "message": "second hi"})
+    second_session_id = r2.json()["session_id"]
 
-    r2 = client.get(f"/api/projects/{project['id']}/sessions")
-    assert r2.status_code == 200
-    data = r2.json()["data"]
-    assert any(s["id"] == session_id for s in data)
+    response = client.get(f"/api/projects/{project['id']}/sessions")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data[0]["id"] == second_session_id
+    assert data[0]["project_id"] == project["id"]
+    assert any(s["id"] == first_session_id for s in data)

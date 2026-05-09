@@ -172,6 +172,14 @@ export type SSEEvent =
       model_usage: Record<string, unknown>
     }
   | { type: 'assistant_message_delta'; turn_id: string; delta: string }
+  | {
+      type: 'assistant_thought_delta'
+      turn_id: string
+      delta: string
+      phase?: string
+      visibility?: string
+      source?: string
+    }
   | { type: 'tool_call_started'; turn_id: string; tool: string; action: string; payload?: Record<string, unknown>; tool_call_id?: string }
   | {
       type: 'tool_call_finished'

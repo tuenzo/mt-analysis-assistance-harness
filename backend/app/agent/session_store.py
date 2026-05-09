@@ -60,6 +60,15 @@ class SessionStore:
     def list_project_sessions(self, project_id: str) -> list[AnalysisSession]:
         db = get_session()
         try:
-            return db.query(AnalysisSession).filter(AnalysisSession.project_id == project_id).all()
+            return (
+                db.query(AnalysisSession)
+                .filter(AnalysisSession.project_id == project_id)
+                .order_by(
+                    AnalysisSession.updated_at.desc(),
+                    AnalysisSession.created_at.desc(),
+                    AnalysisSession.id.desc(),
+                )
+                .all()
+            )
         finally:
             db.close()

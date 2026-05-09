@@ -174,9 +174,9 @@ def run_approved_full_pipeline(
         project.updated_at = finished_at
 
     summary = (
-        "Full pipeline completed: validation, panel, diagnostics, causal checks, charts, and report are ready."
+        "全流程已完成：数据校验、面板构建、诊断分析、因果方向检查、图表和报告均已生成，可以查看结果看板与报告。"
         if all_ok
-        else "Full pipeline finished with failed step(s); partial outputs were saved."
+        else "全流程已结束，但存在失败步骤；已保存可用的阶段性产物，请查看失败步骤摘要后继续修正。"
     )
     final_result = ToolResult(
         ok=all_ok,
@@ -184,7 +184,7 @@ def run_approved_full_pipeline(
         summary=summary,
         artifacts=all_artifacts,
         state_patch={"current_stage": "report_ready"} if all_ok else {},
-        assistant_hint="Open Dashboard or Reports to review the generated outputs.",
+        assistant_hint="请打开结果看板或报告页查看已生成的产物。",
     )
     if tool_call:
         tool_call.status = "succeeded" if all_ok else "failed"

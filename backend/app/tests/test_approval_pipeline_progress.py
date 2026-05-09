@@ -39,6 +39,10 @@ def test_full_pipeline_approval_emits_progress_and_persists_outputs():
         assert events[-3]["tool_call_id"] == "tc_full_pipeline_test"
         assert events[-3]["ok"] is True
         assert event_types[-1] == "final_answer"
+        assert "全流程已完成" in events[-1]["message"]
+        assert "Full pipeline completed" not in events[-1]["message"]
+        assert "全流程已完成" in events[-3]["summary"]
+        assert "全流程已完成" in response["data"]["result"]["summary"]
 
         db = get_session()
         try:

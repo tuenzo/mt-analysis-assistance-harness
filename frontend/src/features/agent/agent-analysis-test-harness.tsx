@@ -198,6 +198,7 @@ export function AgentAnalysisTestHarness() {
     toolCalls,
     approvalRequests,
     jobs,
+    thoughts,
     selectedToolCall,
     sendMessage,
     loadPendingApprovals,
@@ -236,6 +237,7 @@ export function AgentAnalysisTestHarness() {
   )
 
   const allToolCalls = useMemo(() => Object.values(toolCalls).flat(), [toolCalls])
+  const allThoughts = useMemo(() => Object.values(thoughts).flat(), [thoughts])
   const jobList = useMemo(() => Object.values(jobs), [jobs])
   const latestEvents = runtimeEvents.slice(0, 12)
 
@@ -436,6 +438,11 @@ export function AgentAnalysisTestHarness() {
       label: 'Tool calls',
       ok: allToolCalls.length > 0,
       detail: `${allToolCalls.length} observed`,
+    },
+    {
+      label: 'Thought stream',
+      ok: allThoughts.length > 0,
+      detail: `${allThoughts.length} observed`,
     },
     {
       label: 'Approvals',
@@ -780,6 +787,27 @@ export function AgentAnalysisTestHarness() {
               ))}
             </section>
           )}
+
+          <section className="rounded-md border bg-card p-4">
+            <h2 className="mb-3 text-sm font-semibold">Thought Stream</h2>
+            {allThoughts.length === 0 ? (
+              <p className="rounded-md border border-dashed bg-background px-3 py-6 text-center text-sm text-muted-foreground">
+                No thought/progress updates observed
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {allThoughts.slice(-8).reverse().map((thought) => (
+                  <div key={thought.id} className="rounded-md border bg-background p-3">
+                    <div className="mb-1 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                      <span>{thought.phase || 'thinking'}</span>
+                      <span>{formatTime(thought.createdAt)}</span>
+                    </div>
+                    <div className="whitespace-pre-wrap text-sm leading-6">{thought.content}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
 
           <section className="rounded-md border bg-card p-4">
             <h2 className="mb-3 text-sm font-semibold">Tool Calls</h2>

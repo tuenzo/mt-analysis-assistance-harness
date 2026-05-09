@@ -13,6 +13,7 @@ try:
         ClaudeAgentOptions,
         ResultMessage,
         StreamEvent,
+        ThinkingBlock,
         ToolResultBlock,
         ToolUseBlock,
         UserMessage,
@@ -27,6 +28,7 @@ except ImportError:
     ClaudeAgentOptions = None
     ResultMessage = None
     StreamEvent = None
+    ThinkingBlock = None
     ToolResultBlock = None
     ToolUseBlock = None
     UserMessage = None
@@ -36,6 +38,7 @@ except ImportError:
     HAS_CLAUDE_AGENT_SDK = False
 
 from app.agent.claude_adapter import ClaudeRuntimeAdapter
+from app.core.config import resolve_project_path, settings as app_settings
 from app.core.database import get_session
 from app.core.permissions import PermissionLevel, action_to_permission_level
 from app.projects.models import ApprovalRequest, Project, ToolCall
@@ -157,7 +160,11 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
         self._allow_builtin_read_tools = self._settings.get("allow_builtin_read_tools", False)
         self._skills = normalize_skill_names(self._settings.get("skills"))
         self._isolate_claude_config = self._settings.get("isolate_claude_config", True)
-        self._workspace_root = Path(self._settings.get("workspace_root", "./workspaces"))
+        workspace_root_setting = self._settings.get("workspace_root")
+        if workspace_root_setting in {None, "", "./workspaces", "workspaces"}:
+            self._workspace_root = app_settings.workspace_root
+        else:
+            self._workspace_root = resolve_project_path(workspace_root_setting)
         self._active_runtime_context: dict[str, str] = {}
         self._executed_tool_calls: list[dict[str, Any]] = []
 
@@ -213,29 +220,29 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             yield {"type": "error", "error": self._unavailable_reason()}
             return
 
+        loop = asyncio.new_event_loop()
+        async_generator = self._iter_message_events(session_id, message, context)
         try:
-            events = asyncio.run(self._send_message_async(session_id, message, context))
-        except RuntimeError as exc:
-            if "asyncio.run() cannot be called from a running event loop" not in str(exc):
-                yield {"type": "error", "error": str(exc)}
-                return
-            loop = asyncio.new_event_loop()
-            try:
-                events = loop.run_until_complete(self._send_message_async(session_id, message, context))
-            except Exception as nested_exc:
-                yield {"type": "error", "error": str(nested_exc)}
-                return
-            finally:
-                loop.close()
+            while True:
+                try:
+                    event = loop.run_until_complete(async_generator.__anext__())
+                except StopAsyncIteration:
+                    break
+                yield event
         except Exception as exc:
             yield {"type": "error", "error": str(exc)}
             return
-
-        for event in events:
-            yield event
+        finally:
+            try:
+                loop.run_until_complete(async_generator.aclose())
+            except Exception:
+                pass
+            loop.close()
 
     async def _send_message_async(self, session_id: str, message: str, context: dict) -> list[dict]:
-        events: list[dict] = []
+        return [event async for event in self._iter_message_events(session_id, message, context)]
+
+    async def _iter_message_events(self, session_id: str, message: str, context: dict):
         default_workspace_path = self._resolve_project_workspace_path(context.get("project_id", ""))
         default_workspace_path.mkdir(parents=True, exist_ok=True)
         session = self._sessions.setdefault(
@@ -256,7 +263,7 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
 
         options = self._build_options(session_id, session)
         prompt = self._build_prompt(context, message)
-        events.append(self._runtime_diagnostic_event(session))
+        yield self._runtime_diagnostic_event(session)
 
         self._active_runtime_context = {
             "project_id": project_id,
@@ -264,24 +271,24 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             "runtime_turn_id": runtime_turn_id,
         }
         self._executed_tool_calls = []
-        async for sdk_message in query(prompt=prompt, options=options):
-            for event in self._map_sdk_message(
-                sdk_message,
-                tool_uses=tool_uses,
-                project_id=project_id,
-                runtime_session_id=runtime_session_id,
-                runtime_turn_id=runtime_turn_id,
-            ):
-                events.append(event)
+        try:
+            async for sdk_message in query(prompt=prompt, options=options):
+                for event in self._map_sdk_message(
+                    sdk_message,
+                    tool_uses=tool_uses,
+                    project_id=project_id,
+                    runtime_session_id=runtime_session_id,
+                    runtime_turn_id=runtime_turn_id,
+                ):
+                    yield event
 
-            sdk_session_id = getattr(sdk_message, "session_id", None)
-            if sdk_session_id and sdk_session_id != session_id:
-                events.append({"type": "external_session_updated", "external_session_id": sdk_session_id})
-                self._sessions[sdk_session_id] = {**session, "has_started": True}
-
-        session["has_started"] = True
-        self._active_runtime_context = {}
-        return events
+                sdk_session_id = getattr(sdk_message, "session_id", None)
+                if sdk_session_id and sdk_session_id != session_id:
+                    yield {"type": "external_session_updated", "external_session_id": sdk_session_id}
+                    self._sessions[sdk_session_id] = {**session, "has_started": True}
+        finally:
+            session["has_started"] = True
+            self._active_runtime_context = {}
 
     def _build_options(self, session_id: str, session: dict[str, Any]):
         mcp_server = self._create_business_analysis_mcp_server()
@@ -316,6 +323,7 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             "permission_mode": self._permission_mode,
             "env": env,
             "max_turns": 8,
+            "include_partial_messages": True,
         }
         if self._skills is not None:
             kwargs["skills"] = session.get("skills", self._skills)
@@ -355,13 +363,13 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
                 db = get_session()
                 project = db.query(Project).filter(Project.id == project_id).first()
                 if project and project.workspace_path:
-                    return Path(project.workspace_path)
+                    return resolve_project_path(project.workspace_path)
             except Exception:
                 pass
             finally:
                 if db is not None:
                     db.close()
-        return self._workspace_root / "projects" / project_id
+        return self._workspace_root / "projects" / (project_id or "_runtime")
 
     def _should_forward_api_key_env(self) -> bool:
         """Custom Anthropic-compatible proxies often require bearer auth only."""
@@ -478,6 +486,17 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
         events: list[dict] = []
 
         if StreamEvent is not None and isinstance(sdk_message, StreamEvent):
+            thought_delta = self._stream_thought_delta_text(sdk_message.event)
+            if thought_delta:
+                events.append(
+                    {
+                        "type": "assistant_thought_delta",
+                        "delta": thought_delta,
+                        "phase": "provider_thinking",
+                        "visibility": "provider",
+                        "source": "claude_agent_sdk",
+                    }
+                )
             delta = self._stream_delta_text(sdk_message.event)
             if delta:
                 events.append({"type": "assistant_message_delta", "delta": delta})
@@ -527,6 +546,30 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
                             "sdk_executed": True,
                         }
                     )
+                elif ThinkingBlock is not None and isinstance(block, ThinkingBlock):
+                    thinking = getattr(block, "thinking", "")
+                    if thinking:
+                        events.append(
+                            {
+                                "type": "assistant_thought_delta",
+                                "delta": thinking,
+                                "phase": "provider_thinking",
+                                "visibility": "provider",
+                                "source": "claude_agent_sdk",
+                            }
+                        )
+                elif hasattr(block, "thinking"):
+                    thinking = getattr(block, "thinking", "")
+                    if thinking:
+                        events.append(
+                            {
+                                "type": "assistant_thought_delta",
+                                "delta": thinking,
+                                "phase": "provider_thinking",
+                                "visibility": "provider",
+                                "source": "claude_agent_sdk",
+                            }
+                        )
                 elif hasattr(block, "text"):
                     events.append({"type": "assistant_message_delta", "delta": block.text})
             return events
@@ -695,7 +738,8 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             event["risk_level"] = approval["risk_level"]
             event["approval_payload"] = approval["payload"]
             event["tool_call_id"] = approval["tool_call_id"]
-        self._sync_sdk_tool_call_result(event, result, approval)
+        if tool_use.get("persisted"):
+            self._sync_sdk_tool_call_result(event, result, approval)
         return event
 
     def _sync_sdk_tool_call_result(
@@ -824,6 +868,14 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
         return ""
 
     @staticmethod
+    def _stream_thought_delta_text(event: dict) -> str:
+        if event.get("type") == "content_block_delta":
+            delta = event.get("delta") or {}
+            if delta.get("type") == "thinking_delta":
+                return delta.get("thinking", "") or delta.get("text", "")
+        return ""
+
+    @staticmethod
     def _result_error_message(message: Any) -> str:
         if getattr(message, "errors", None):
             return "; ".join(str(error) for error in message.errors)
@@ -887,7 +939,7 @@ When the user asks to refresh or regenerate result-dashboard images, call chart.
 payload {{"charts": "all"}} or {{"chart_ids": [...]}} for a subset.
 
 When the user explicitly asks to run, rerun, recompute, or refresh the full analysis/full pipeline/
-????/?????, call business_analysis with action "analysis.run_full_pipeline" even if
+完整分析/全流程分析, call business_analysis with action "analysis.run_full_pipeline" even if
 project_facts.latest_pipeline already says succeeded. Treat the user request as a new run request,
 not as a status question. Do not answer from cached results until that tool call has completed or
 returned an approval request. Use payload {{"requested_by": "user_message"}} unless the user asks
@@ -900,7 +952,9 @@ strategy-design actions instead of only running the fixed pipeline:
 - strategy.propose_backend_change creates an isolated backend framework proposal artifact.
 These actions create review artifacts under .analysis/strategy_lab/. They do not edit backend source code directly.
 
-Reports and business-facing summaries should default to Chinese unless the user explicitly requests another language.
+Final answers, tool-result summaries, reports, and business-facing replies must default to Chinese unless
+the user explicitly requests another language. If a backend tool returns an English summary, translate and
+explain it in Chinese instead of copying the English wording.
 
 User message:
 {message}"""

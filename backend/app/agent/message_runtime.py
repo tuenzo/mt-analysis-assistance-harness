@@ -1,4 +1,5 @@
 import json
+import threading
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -27,6 +28,8 @@ class MessageRuntime:
         self._event_buffers: dict[str, list[dict]] = {}
         self._turn_order: dict[str, list[str]] = {}
         self._last_confirmed_turn: dict[str, int] = {}
+        self._event_lock = threading.RLock()
+        self._turn_workers: dict[str, threading.Thread] = {}
 
     def handle_message(
         self,
@@ -40,9 +43,10 @@ class MessageRuntime:
             session = self._get_or_create_runtime_session(project_id, session_id)
             session_id = session.id
 
-            if session_id not in self._event_buffers:
-                self._event_buffers[session_id] = []
-            self._turn_order.setdefault(session_id, [])
+            with self._event_lock:
+                if session_id not in self._event_buffers:
+                    self._event_buffers[session_id] = []
+                self._turn_order.setdefault(session_id, [])
 
             turn = AgentTurn(
                 id=f"turn_{uuid.uuid4().hex[:12]}",
@@ -55,7 +59,8 @@ class MessageRuntime:
             db.add(turn)
             db.commit()
             db.refresh(turn)
-            self._turn_order[session_id].append(turn.id)
+            with self._event_lock:
+                self._turn_order[session_id].append(turn.id)
 
             context = self.context_builder.build(project_id, ui_context)
             context["runtime_session_id"] = session_id
@@ -66,8 +71,67 @@ class MessageRuntime:
             prompt = self.prompt_composer.compose(context, message)
             context["composed_prompt"] = prompt
 
-            final_answer = ""
-            for event in self.adapter.send_message(session.external_session_id or session_id, message, context):
+            self._append_event(
+                db,
+                session_id,
+                turn.id,
+                project_id,
+                self._thought_event(
+                    "Reading project context and preparing the agent turn.",
+                    phase="context",
+                    source="message_runtime",
+                ),
+            )
+            db.commit()
+
+            external_session_id = session.external_session_id or session_id
+            worker = threading.Thread(
+                target=self._run_turn_worker,
+                args=(session_id, external_session_id, turn.id, project_id, message, context),
+                name=f"agent-turn-{turn.id}",
+                daemon=True,
+            )
+            with self._event_lock:
+                self._turn_workers[turn.id] = worker
+            worker.start()
+
+            return {
+                "turn_id": turn.id,
+                "session_id": session_id,
+                "status": "running",
+                "event_stream_url": f"/api/agent/sessions/{session_id}/events",
+            }
+        finally:
+            db.close()
+
+    def _run_turn_worker(
+        self,
+        session_id: str,
+        external_session_id: str,
+        turn_id: str,
+        project_id: str,
+        message: str,
+        context: dict,
+    ) -> None:
+        db = get_session()
+        final_answer = ""
+        failed_error = ""
+        try:
+            self._append_event(
+                db,
+                session_id,
+                turn_id,
+                project_id,
+                self._thought_event(
+                    "Agent runtime started. Waiting for model planning or tool activity.",
+                    phase="runtime",
+                    source=self.runtime_provider,
+                ),
+            )
+            db.commit()
+
+            for raw_event in self.adapter.send_message(external_session_id, message, context):
+                event = dict(raw_event)
                 if event.get("type") == "external_session_updated":
                     self.session_store.update_session(
                         session_id,
@@ -79,28 +143,96 @@ class MessageRuntime:
                 if event.get("type") in ("tool_call_finished", "tool_call_failed") and not event.get("sdk_executed"):
                     continue
 
-                event["turn_id"] = turn.id
+                event["turn_id"] = turn_id
+                if event.get("type") == "assistant_thought_delta":
+                    event.setdefault("phase", "thinking")
+                    event.setdefault("visibility", "public")
+                    event.setdefault("source", self.runtime_provider)
+                elif event.get("type") == "tool_call_started":
+                    self._append_event(
+                        db,
+                        session_id,
+                        turn_id,
+                        project_id,
+                        self._thought_event(
+                            f"Preparing tool call: {event.get('action', event.get('tool', 'unknown'))}.",
+                            phase="tool_planning",
+                            source=self.runtime_provider,
+                        ),
+                    )
+
                 if event.get("type") == "final_answer":
                     final_answer = event.get("message", "")
-                self._append_event(db, session_id, turn.id, project_id, event)
+                if event.get("type") in ("error", "runtime_error"):
+                    failed_error = event.get("error", "Agent runtime failed.")
+
+                self._append_event(db, session_id, turn_id, project_id, event)
+                db.commit()
 
                 if event["type"] == "tool_call_started" and not event.get("sdk_executed"):
-                    self._execute_mock_tool_event(db, session_id, turn.id, project_id, event)
+                    self._execute_mock_tool_event(db, session_id, turn_id, project_id, event)
 
-            turn.status = "completed"
-            if final_answer:
-                turn.assistant_message = final_answer
-            turn.completed_at = datetime.now().isoformat()
-            db.commit()
+                if event.get("type") in ("tool_call_finished", "tool_call_failed"):
+                    self._append_event(
+                        db,
+                        session_id,
+                        turn_id,
+                        project_id,
+                        self._thought_event(
+                            f"Tool returned: {event.get('action', event.get('tool', 'unknown'))}.",
+                            phase="tool_result",
+                            source=self.runtime_provider,
+                        ),
+                    )
+                    db.commit()
 
-            return {
-                "turn_id": turn.id,
-                "session_id": session_id,
-                "status": "running",
-                "event_stream_url": f"/api/agent/sessions/{session_id}/events",
-            }
+            self._finish_turn(db, turn_id, final_answer=final_answer, failed_error=failed_error)
+        except Exception as exc:
+            failed_error = str(exc)
+            self._append_event(
+                db,
+                session_id,
+                turn_id,
+                project_id,
+                {"type": "runtime_error", "turn_id": turn_id, "error": failed_error},
+            )
+            self._finish_turn(db, turn_id, failed_error=failed_error)
         finally:
             db.close()
+            with self._event_lock:
+                if self._turn_workers.get(turn_id) is threading.current_thread():
+                    self._turn_workers.pop(turn_id, None)
+
+    def _finish_turn(
+        self,
+        db,
+        turn_id: str,
+        *,
+        final_answer: str = "",
+        failed_error: str = "",
+    ) -> None:
+        turn = db.query(AgentTurn).filter(AgentTurn.id == turn_id).first()
+        if not turn:
+            db.commit()
+            return
+
+        turn.status = "failed" if failed_error else "completed"
+        if final_answer:
+            turn.assistant_message = final_answer
+        if failed_error:
+            turn.error_message = failed_error
+        turn.completed_at = datetime.now().isoformat()
+        db.commit()
+
+    @staticmethod
+    def _thought_event(delta: str, *, phase: str, source: str) -> dict:
+        return {
+            "type": "assistant_thought_delta",
+            "delta": delta,
+            "phase": phase,
+            "visibility": "public",
+            "source": source,
+        }
 
     def _execute_mock_tool_event(self, db, session_id: str, turn_id: str, project_id: str, event: dict) -> None:
         action = event.get("action", "")
@@ -189,7 +321,8 @@ class MessageRuntime:
 
     def _append_event(self, db, session_id: str, turn_id: str, project_id: str, event: dict) -> None:
         event["turn_id"] = turn_id
-        self._event_buffers.setdefault(session_id, []).append(event)
+        with self._event_lock:
+            self._event_buffers.setdefault(session_id, []).append(event)
         db.add(
             AgentEvent(
                 id=f"evt_{uuid.uuid4().hex[:12]}",
@@ -209,30 +342,50 @@ class MessageRuntime:
         If after_turn_id is provided, return buffered events for that turn and any later
         turns according to runtime insertion order, then clear only returned buffered events.
         """
-        events = self._event_buffers.get(session_id, [])
-
         if after_turn_id:
-            turn_order = self._turn_order.get(session_id, [])
-            try:
-                allowed_turns = set(turn_order[turn_order.index(after_turn_id):])
-            except ValueError:
-                return self._replay_turn_events_from_db(session_id, after_turn_id)
+            with self._event_lock:
+                events = self._event_buffers.get(session_id, [])
+                turn_order = self._turn_order.get(session_id, [])
+                try:
+                    allowed_turns = set(turn_order[turn_order.index(after_turn_id):])
+                except ValueError:
+                    allowed_turns = set()
 
-            filtered_events = []
-            remaining_events = []
-            for event in events:
-                event_turn_id = event.get("turn_id", "")
-                if not event_turn_id or event_turn_id in allowed_turns:
-                    filtered_events.append(event)
+                if allowed_turns:
+                    filtered_events = []
+                    remaining_events = []
+                    for event in events:
+                        event_turn_id = event.get("turn_id", "")
+                        if not event_turn_id or event_turn_id in allowed_turns:
+                            filtered_events.append(event)
+                        else:
+                            remaining_events.append(event)
+                    self._event_buffers[session_id] = remaining_events
                 else:
-                    remaining_events.append(event)
-            self._event_buffers[session_id] = remaining_events
+                    filtered_events = []
+
             if not filtered_events:
+                if self._is_turn_running(session_id, after_turn_id):
+                    return []
                 return self._replay_turn_events_from_db(session_id, after_turn_id)
             return filtered_events
 
-        self._event_buffers[session_id] = []
+        with self._event_lock:
+            events = self._event_buffers.get(session_id, [])
+            self._event_buffers[session_id] = []
         return events
+
+    def _is_turn_running(self, session_id: str, turn_id: str) -> bool:
+        db = get_session()
+        try:
+            turn = (
+                db.query(AgentTurn)
+                .filter(AgentTurn.session_id == session_id, AgentTurn.id == turn_id)
+                .first()
+            )
+            return bool(turn and turn.status == "running")
+        finally:
+            db.close()
 
     def _replay_turn_events_from_db(self, session_id: str, turn_id: str) -> list[dict]:
         db = get_session()
@@ -263,16 +416,18 @@ class MessageRuntime:
         if not events:
             return
 
-        self._event_buffers.setdefault(session_id, [])
-        turn_order = self._turn_order.setdefault(session_id, [])
-        if turn_id and turn_id not in turn_order:
-            turn_order.append(turn_id)
+        with self._event_lock:
+            self._event_buffers.setdefault(session_id, [])
+            turn_order = self._turn_order.setdefault(session_id, [])
+            if turn_id and turn_id not in turn_order:
+                turn_order.append(turn_id)
 
         db = get_session()
         try:
             for event in events:
                 event.setdefault("turn_id", turn_id)
-                self._event_buffers[session_id].append(event)
+                with self._event_lock:
+                    self._event_buffers[session_id].append(event)
                 db.add(
                     AgentEvent(
                         id=f"evt_{uuid.uuid4().hex[:12]}",
@@ -293,6 +448,29 @@ class MessageRuntime:
         external_session_id = session.external_session_id if session else session_id
         self.adapter.interrupt(external_session_id or session_id)
         self.session_store.update_session(session_id, status="interrupted")
+
+    def wait_for_turn(self, turn_id: str, timeout: float = 5.0) -> bool:
+        with self._event_lock:
+            worker = self._turn_workers.get(turn_id)
+        if not worker or worker is threading.current_thread():
+            return True
+        worker.join(timeout)
+        if worker.is_alive():
+            return False
+        with self._event_lock:
+            self._turn_workers.pop(turn_id, None)
+        return True
+
+    def wait_for_all_turns(self, timeout: float = 5.0) -> bool:
+        deadline = datetime.now().timestamp() + timeout
+        with self._event_lock:
+            turn_ids = list(self._turn_workers)
+        completed = True
+        for turn_id in turn_ids:
+            remaining = max(0.0, deadline - datetime.now().timestamp())
+            if not self.wait_for_turn(turn_id, remaining):
+                completed = False
+        return completed
 
     def _get_or_create_runtime_session(self, project_id: str, session_id: Optional[str]):
         if session_id:

@@ -55,7 +55,13 @@ def list_project_sessions(project_id: str):
     return {
         "ok": True,
         "data": [
-            {"id": s.id, "runtime_provider": s.runtime_provider, "status": s.status, "created_at": s.created_at}
+            {
+                "id": s.id,
+                "project_id": s.project_id,
+                "runtime_provider": s.runtime_provider,
+                "status": s.status,
+                "created_at": s.created_at,
+            }
             for s in sessions
         ]
     }

@@ -1,6 +1,7 @@
 import os
 import shutil
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,16 +14,34 @@ from app.core.database import get_session, init_db, reset_engine
 from app.projects.models import AnalysisSession
 
 
+def collect_runtime_events(runtime, session_id, turn_id, predicate, timeout=3.0):
+    deadline = time.time() + timeout
+    collected = []
+    while time.time() < deadline:
+        events = runtime.get_events(session_id, turn_id)
+        collected.extend(events)
+        if predicate(collected):
+            return collected
+        time.sleep(0.05)
+    return collected
+
+
 @pytest.fixture
 def isolated_db():
+    import app.agent.message_runtime as message_runtime
+
     old_cwd = os.getcwd()
     tmp = tempfile.mkdtemp()
     os.chdir(tmp)
     reset_engine()
+    message_runtime._message_runtime = None
     init_db()
     try:
         yield tmp
     finally:
+        if message_runtime._message_runtime is not None:
+            message_runtime._message_runtime.wait_for_all_turns()
+        message_runtime._message_runtime = None
         reset_engine()
         os.chdir(old_cwd)
         shutil.rmtree(tmp)
@@ -320,6 +339,75 @@ def test_sdk_event_mapping_includes_expected_stream_events(monkeypatch):
     assert "tool_call_started" in event_types
     assert "tool_call_finished" in event_types
     assert "final_answer" in event_types
+
+
+def test_sdk_event_mapping_emits_thinking_block_as_thought(monkeypatch):
+    import app.agent.claude_agent_sdk_adapter as sdk_adapter
+
+    class FakeThinkingBlock:
+        thinking = "Reviewing project facts before choosing an action."
+
+    class FakeAssistantMessage:
+        content = [FakeThinkingBlock()]
+
+    monkeypatch.setattr(sdk_adapter, "AssistantMessage", FakeAssistantMessage)
+    monkeypatch.setattr(sdk_adapter, "ThinkingBlock", FakeThinkingBlock)
+    monkeypatch.setattr(sdk_adapter, "get_gateway", lambda: SimpleNamespace())
+
+    adapter = sdk_adapter.ClaudeAgentSDKAdapter(
+        {"provider": "claude_agent_sdk", "workspace_root": "./workspaces"}
+    )
+
+    events = adapter._map_sdk_message(
+        FakeAssistantMessage(),
+        tool_uses={},
+        project_id="proj_sdk",
+        runtime_session_id="sess_sdk",
+        runtime_turn_id="turn_sdk",
+    )
+
+    thought = next(event for event in events if event["type"] == "assistant_thought_delta")
+    assert thought["delta"] == "Reviewing project facts before choosing an action."
+    assert thought["phase"] == "provider_thinking"
+    assert thought["visibility"] == "provider"
+
+
+def test_sdk_event_mapping_emits_streamed_thinking_delta(monkeypatch):
+    import app.agent.claude_agent_sdk_adapter as sdk_adapter
+
+    class FakeStreamEvent:
+        event = {
+            "type": "content_block_delta",
+            "delta": {
+                "type": "thinking_delta",
+                "thinking": "Comparing available actions.",
+            },
+        }
+
+    monkeypatch.setattr(sdk_adapter, "StreamEvent", FakeStreamEvent)
+    monkeypatch.setattr(sdk_adapter, "get_gateway", lambda: SimpleNamespace())
+
+    adapter = sdk_adapter.ClaudeAgentSDKAdapter(
+        {"provider": "claude_agent_sdk", "workspace_root": "./workspaces"}
+    )
+
+    events = adapter._map_sdk_message(
+        FakeStreamEvent(),
+        tool_uses={},
+        project_id="proj_sdk",
+        runtime_session_id="sess_sdk",
+        runtime_turn_id="turn_sdk",
+    )
+
+    assert events == [
+        {
+            "type": "assistant_thought_delta",
+            "delta": "Comparing available actions.",
+            "phase": "provider_thinking",
+            "visibility": "provider",
+            "source": "claude_agent_sdk",
+        }
+    ]
 
 
 def test_sdk_event_mapping_overrides_hallucinated_project_id(monkeypatch, isolated_db):
@@ -641,7 +729,63 @@ def test_message_runtime_stores_runtime_provider_and_external_session_id(
     finally:
         db.close()
 
+    runtime.wait_for_all_turns()
     assert fake_adapter.created_for == ["proj_runtime"]
+
+
+def test_message_runtime_returns_before_slow_adapter_finishes(
+    monkeypatch, isolated_db
+):
+    import app.agent.message_runtime as message_runtime
+
+    class SlowAdapter:
+        def create_session(self, project_id):
+            return f"sdk_external_{project_id}"
+
+        def resume_session(self, session_id, project_id):
+            return None
+
+        def send_message(self, session_id, message, context):
+            time.sleep(0.25)
+            yield {
+                "type": "assistant_thought_delta",
+                "delta": "Still evaluating the request.",
+                "phase": "provider_thinking",
+            }
+            yield {"type": "final_answer", "message": "ok"}
+
+        def interrupt(self, session_id):
+            return None
+
+    monkeypatch.setattr(
+        message_runtime,
+        "get_agent_runtime_config",
+        lambda: {"provider": "claude_agent_sdk"},
+    )
+    monkeypatch.setattr(
+        message_runtime,
+        "get_claude_adapter",
+        lambda config: SlowAdapter(),
+    )
+
+    runtime = message_runtime.MessageRuntime()
+    start = time.perf_counter()
+    response = runtime.handle_message("proj_slow", None, "hello", {})
+    elapsed = time.perf_counter() - start
+
+    assert elapsed < 0.2
+
+    events = collect_runtime_events(
+        runtime,
+        response["session_id"],
+        response["turn_id"],
+        lambda collected: any(event.get("type") == "final_answer" for event in collected),
+        timeout=3.0,
+    )
+    event_types = [event["type"] for event in events]
+    assert "assistant_thought_delta" in event_types
+    assert "final_answer" in event_types
+    assert runtime.wait_for_turn(response["turn_id"])
 
 
 def test_session_store_persists_runtime_provider_and_external_session_id(isolated_db):

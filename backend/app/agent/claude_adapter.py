@@ -143,9 +143,11 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
             for kw in ["state", "status", "project", "current", "\u72b6\u6001", "\u9879\u76ee"]
         )
 
+        yield self._thought(turn_id, "Classifying the request and choosing the next analysis action.")
         yield {"type": "assistant_message_delta", "turn_id": turn_id, "delta": "Received. "}
 
         if is_data_load:
+            yield self._thought(turn_id, "Planning data intake: discover files, ingest CSVs, infer schema, and validate.")
             yield {
                 "type": "assistant_message_delta",
                 "turn_id": turn_id,
@@ -176,6 +178,7 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
             return
 
         if is_full_pipeline:
+            yield self._thought(turn_id, "Checking whether this should be a fresh end-to-end pipeline run.")
             yield {
                 "type": "assistant_message_delta",
                 "turn_id": turn_id,
@@ -195,6 +198,7 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
             return
 
         if is_panel_build:
+            yield self._thought(turn_id, "Preparing the category-day panel build request.")
             yield {
                 "type": "assistant_message_delta",
                 "turn_id": turn_id,
@@ -213,6 +217,7 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
             return
 
         if is_report:
+            yield self._thought(turn_id, "Gathering latest results before report generation.")
             yield {
                 "type": "assistant_message_delta",
                 "turn_id": turn_id,
@@ -229,6 +234,7 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
             return
 
         if is_strategy_design:
+            yield self._thought(turn_id, "Separating strategy design artifacts from executable backend changes.")
             yield {
                 "type": "assistant_message_delta",
                 "turn_id": turn_id,
@@ -248,6 +254,7 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
             return
 
         if is_dashboard_chart:
+            yield self._thought(turn_id, "Routing the request to dashboard chart rendering.")
             yield {
                 "type": "assistant_message_delta",
                 "turn_id": turn_id,
@@ -262,6 +269,7 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
             return
 
         if is_analysis:
+            yield self._thought(turn_id, "Inspecting project state before choosing analysis steps.")
             yield {
                 "type": "assistant_message_delta",
                 "turn_id": turn_id,
@@ -281,6 +289,7 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
             return
 
         if is_status:
+            yield self._thought(turn_id, "Reading the project state to answer with current facts.")
             yield {"type": "assistant_message_delta", "turn_id": turn_id, "delta": "I will fetch project state. "}
             yield self._tool_started(turn_id, "project.get_state", {})
             yield {
@@ -322,6 +331,17 @@ class MockClaudeRuntimeAdapter(ClaudeRuntimeAdapter):
             "action": action,
             "payload": payload,
             "reason": MockClaudeRuntimeAdapter._reason_for_action(action),
+        }
+
+    @staticmethod
+    def _thought(turn_id: str, delta: str) -> dict:
+        return {
+            "type": "assistant_thought_delta",
+            "turn_id": turn_id,
+            "delta": delta,
+            "phase": "planning",
+            "visibility": "public",
+            "source": "mock",
         }
 
     @staticmethod

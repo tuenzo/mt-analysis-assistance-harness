@@ -221,6 +221,10 @@ class ApiClient {
     return this.request<AgentSession>(`/api/agent/sessions/${sessionId}`)
   }
 
+  async listProjectSessions(projectId: string): Promise<ApiResponse<AgentSession[]>> {
+    return this.request<AgentSession[]>(`/api/projects/${projectId}/sessions`)
+  }
+
   async getSessionMessages(sessionId: string): Promise<ApiResponse<AgentMessage[]>> {
     return this.request<AgentMessage[]>(`/api/agent/sessions/${sessionId}/messages`)
   }

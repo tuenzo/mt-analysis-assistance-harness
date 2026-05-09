@@ -37,6 +37,16 @@ export interface JobStatus {
   status?: 'running' | 'succeeded' | 'failed'
 }
 
+export interface ThoughtEntry {
+  id: string
+  turnId: string
+  content: string
+  phase?: string
+  visibility?: string
+  source?: string
+  createdAt: string
+}
+
 interface AgentStore {
   // Existing state
   sessions: Record<string, AgentSession>
@@ -49,6 +59,7 @@ interface AgentStore {
   toolCalls: Record<string, ToolCall[]> // turnId -> toolCalls
   approvalRequests: ApprovalRequest[]
   jobs: Record<string, JobStatus> // jobId -> JobStatus
+  thoughts: Record<string, ThoughtEntry[]> // turnId -> thought/progress entries
   selectedToolCall: ToolCall | null
 
   // Actions
@@ -77,6 +88,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   toolCalls: {},
   approvalRequests: [],
   jobs: {},
+  thoughts: {},
   selectedToolCall: null,
 
   createSession: async (projectId: string) => {
@@ -213,6 +225,48 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           }
           return { messageQueue: messages, error: null }
         })
+        break
+
+      case 'assistant_thought_delta':
+        if (event.delta) {
+          set((state) => {
+            const turnThoughts = state.thoughts[event.turn_id] || []
+            const lastThought = turnThoughts[turnThoughts.length - 1]
+            const shouldMerge =
+              lastThought &&
+              lastThought.phase === event.phase &&
+              lastThought.source === event.source &&
+              event.phase === 'provider_thinking'
+
+            const updatedThoughts = shouldMerge
+              ? [
+                  ...turnThoughts.slice(0, -1),
+                  {
+                    ...lastThought,
+                    content: `${lastThought.content}${event.delta}`,
+                  },
+                ]
+              : [
+                  ...turnThoughts,
+                  {
+                    id: `thought_${event.turn_id}_${turnThoughts.length}_${Date.now()}`,
+                    turnId: event.turn_id,
+                    content: event.delta,
+                    phase: event.phase,
+                    visibility: event.visibility,
+                    source: event.source,
+                    createdAt: new Date().toISOString(),
+                  },
+                ]
+
+            return {
+              thoughts: {
+                ...state.thoughts,
+                [event.turn_id]: updatedThoughts.slice(-60),
+              },
+            }
+          })
+        }
         break
 
       case 'tool_call_started':
@@ -478,7 +532,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     }
   },
 
-  clearMessages: () => set({ messageQueue: [], toolCalls: {}, approvalRequests: [], jobs: {} }),
+  clearMessages: () => set({ messageQueue: [], toolCalls: {}, approvalRequests: [], jobs: {}, thoughts: {} }),
 
   clearError: () => set({ error: null }),
 
