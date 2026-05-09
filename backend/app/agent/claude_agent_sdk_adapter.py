@@ -759,7 +759,10 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
 
         db = get_session()
         try:
-            tool_call = db.query(ToolCall).filter(ToolCall.id == tool_call_id).first()
+            try:
+                tool_call = db.query(ToolCall).filter(ToolCall.id == tool_call_id).first()
+            except Exception:
+                return
             if not tool_call:
                 return
             if approval:

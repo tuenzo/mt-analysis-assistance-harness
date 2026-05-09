@@ -25,7 +25,7 @@
 - [x] 4.1 Add exposure and discount heterogeneity slices for category size and payday/non-payday windows.
 - [x] 4.2 Add rank-curve and continuous resource quadrant artifacts.
 - [x] 4.3 Add focused pytest coverage and commit the GPS/uplift upgrade.
-- [ ] 4.4 Run backend pytest for stage 1 and commit a stage-1 checkpoint.
+- [x] 4.4 Run backend pytest for stage 1 and commit a stage-1 checkpoint.
 
 ## 5. Stage 2 - Add Report-PDF Flow Capabilities
 
