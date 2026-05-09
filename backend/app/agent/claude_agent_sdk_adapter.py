@@ -290,7 +290,8 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
         allowed_tools.extend(builtins)
 
         env = {}
-        if self._api_key:
+        forward_api_key_env = self._should_forward_api_key_env()
+        if self._api_key and forward_api_key_env:
             env["ANTHROPIC_API_KEY"] = self._api_key
         if self._auth_token:
             env["ANTHROPIC_AUTH_TOKEN"] = self._auth_token
@@ -335,6 +336,7 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             "adapter": "ClaudeAgentSDKAdapter",
             "sdk_available": HAS_CLAUDE_AGENT_SDK,
             "api_key_present": bool(self._api_key),
+            "api_key_env_forwarded": self._should_forward_api_key_env(),
             "auth_token_present": bool(self._auth_token),
             "model": self._model,
             "base_url_host": parsed_base_url.netloc if parsed_base_url else "",
@@ -360,6 +362,17 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
                 if db is not None:
                     db.close()
         return self._workspace_root / "projects" / project_id
+
+    def _should_forward_api_key_env(self) -> bool:
+        """Custom Anthropic-compatible proxies often require bearer auth only."""
+        if not self._base_url:
+            return True
+        host = urlparse(self._base_url).netloc.lower()
+        if not host:
+            return True
+        if os.getenv("ANTHROPIC_FORWARD_API_KEY", "").strip().lower() in {"1", "true", "yes", "on"}:
+            return True
+        return host.endswith("anthropic.com")
 
     def _ensure_claude_config_dir(self, workspace_path: Path, session_id: str) -> Path:
         safe_session_id = "".join(
@@ -476,14 +489,16 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
                     tool_input = dict(block.input or {})
                     if project_id:
                         tool_input["project_id"] = project_id
+                    tool_name = self._display_tool_name(block.name)
+                    action = tool_input.get("action") or SDK_TOOL_NAME
                     runtime_tool_call_id = self._claim_executed_tool_call(
-                        action=tool_input.get("action", SDK_TOOL_NAME),
+                        action=action,
                         payload=tool_input.get("payload") or {},
                     )
                     if not runtime_tool_call_id:
                         runtime_tool_call_id = self._persist_sdk_tool_call(
                             project_id=tool_input.get("project_id") or project_id,
-                            action=tool_input.get("action", SDK_TOOL_NAME),
+                            action=action,
                             payload=tool_input.get("payload") or {},
                             reason=tool_input.get("reason", ""),
                             runtime_session_id=runtime_session_id,
@@ -494,8 +509,8 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
                     tool_input["_runtime_turn_id"] = runtime_turn_id
                     block.input = tool_input
                     tool_uses[block.id] = {
-                        "tool": block.name,
-                        "action": tool_input.get("action", block.name),
+                        "tool": tool_name,
+                        "action": action,
                         "payload": tool_input,
                         "tool_call_id": runtime_tool_call_id,
                         "persisted": bool(runtime_session_id and runtime_turn_id),
@@ -505,8 +520,8 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
                     events.append(
                         {
                             "type": "tool_call_started",
-                            "tool": block.name,
-                            "action": tool_input.get("action", block.name),
+                            "tool": tool_name,
+                            "action": action,
                             "payload": self._public_tool_payload(tool_input),
                             "tool_call_id": runtime_tool_call_id,
                             "sdk_executed": True,
@@ -680,7 +695,40 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             event["risk_level"] = approval["risk_level"]
             event["approval_payload"] = approval["payload"]
             event["tool_call_id"] = approval["tool_call_id"]
+        self._sync_sdk_tool_call_result(event, result, approval)
         return event
+
+    def _sync_sdk_tool_call_result(
+        self,
+        event: dict[str, Any],
+        result: Any,
+        approval: dict[str, Any] | None,
+    ) -> None:
+        tool_call_id = event.get("tool_call_id")
+        if not tool_call_id:
+            return
+
+        db = get_session()
+        try:
+            tool_call = db.query(ToolCall).filter(ToolCall.id == tool_call_id).first()
+            if not tool_call:
+                return
+            if approval:
+                tool_call.status = "waiting_approval"
+                tool_call.approval_request_id = approval["id"]
+            else:
+                tool_call.status = "succeeded" if event.get("ok") else "failed"
+                tool_call.completed_at = datetime.now().isoformat()
+
+            if isinstance(result, dict):
+                tool_call.result_json = json.dumps(result, ensure_ascii=False)
+                error = result.get("error")
+                tool_call.error_message = json.dumps(error, ensure_ascii=False) if error else None
+            elif not event.get("ok"):
+                tool_call.error_message = event.get("summary") or "SDK tool call failed."
+            db.commit()
+        finally:
+            db.close()
 
     @staticmethod
     def _approval_requested_event(event: dict) -> dict | None:
@@ -762,6 +810,12 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
         return {key: value for key, value in payload.items() if not key.startswith("_runtime_")}
 
     @staticmethod
+    def _display_tool_name(tool_name: str | None) -> str:
+        if not tool_name or tool_name == SDK_ALLOWED_TOOL:
+            return SDK_TOOL_NAME
+        return tool_name
+
+    @staticmethod
     def _stream_delta_text(event: dict) -> str:
         if event.get("type") == "content_block_delta":
             delta = event.get("delta") or {}
@@ -805,6 +859,10 @@ Project state:
 You may answer directly for discussion or clarification. When project state, data, analysis pipelines,
 artifacts, reports, or memory candidates are needed, use exactly this tool:
 business_analysis(project_id, action, payload, reason)
+In the Claude Agent SDK this tool is exposed to you as
+mcp__business_analysis__business_analysis. When you need business_analysis,
+invoke mcp__business_analysis__business_analysis with project_id, action,
+payload, and reason. Do not merely describe the planned call.
 
 When calling business_analysis, always pass exactly this project_id: "{project_id}".
 Do not use the route name, page name, project name, or any guessed identifier as project_id.
@@ -827,6 +885,13 @@ and exploratory language for stub outputs. When generating reports, use report.g
 .analysis/report_plan.json as the evidence skeleton.
 When the user asks to refresh or regenerate result-dashboard images, call chart.render_dashboard with
 payload {{"charts": "all"}} or {{"chart_ids": [...]}} for a subset.
+
+When the user explicitly asks to run, rerun, recompute, or refresh the full analysis/full pipeline/
+????/?????, call business_analysis with action "analysis.run_full_pipeline" even if
+project_facts.latest_pipeline already says succeeded. Treat the user request as a new run request,
+not as a status question. Do not answer from cached results until that tool call has completed or
+returned an approval request. Use payload {{"requested_by": "user_message"}} unless the user asks
+for a narrower scope.
 
 When the user asks you to design or rethink the analysis strategy, you may lead that work through
 strategy-design actions instead of only running the fixed pipeline:

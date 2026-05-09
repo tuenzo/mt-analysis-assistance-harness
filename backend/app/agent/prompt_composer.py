@@ -47,9 +47,15 @@ Rules:
 15. When the user asks to refresh result-dashboard images, call chart.render_dashboard with payload {{"charts": "all"}} or a chart_ids list.
 16. Reports and business-facing summaries should default to Chinese unless the user explicitly requests another language.
 17. When asked whether the current agent runtime is real or mock, use runtime_provider from this prompt; do not infer runtime from demo artifacts or seeded pipeline outputs.
+18. When the user explicitly asks to run, rerun, recompute, or refresh the full analysis/full pipeline/完整分析/全流程分析, call business_analysis with action "analysis.run_full_pipeline" even if latest_result or latest_pipeline already exists. Do not answer from cached results until that tool call has completed or returned an approval request.
 
 Tool:
 business_analysis(project_id, action, payload, reason)
+In the Claude Agent SDK, this tool is exposed to you as
+mcp__business_analysis__business_analysis. When a rule says to call
+business_analysis, invoke mcp__business_analysis__business_analysis with the
+same project_id/action/payload/reason fields. Do not merely say you will call
+the tool.
 
 Available actions:
 {actions_str}

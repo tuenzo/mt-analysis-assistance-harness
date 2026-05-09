@@ -219,11 +219,40 @@ def test_sdk_options_isolate_claude_config_from_user_account(monkeypatch):
         assert config_dir.exists()
         assert config_dir == expected_workspace / ".analysis" / "claude-sdk-config" / session_id
         assert Path.home() / ".claude" not in config_dir.parents
-        assert options.env["ANTHROPIC_API_KEY"] == "test-key"
+        assert "ANTHROPIC_API_KEY" not in options.env
         assert options.env["ANTHROPIC_AUTH_TOKEN"] == "test-key"
         assert options.env["ANTHROPIC_API_BASE_URL"] == "http://127.0.0.1:9/anthropic"
         assert options.env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:9/anthropic"
         assert options.env["CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK"] == "1"
+    finally:
+        shutil.rmtree(tmp)
+
+
+def test_sdk_options_forward_api_key_for_official_anthropic_host(monkeypatch):
+    import app.agent.claude_agent_sdk_adapter as sdk_adapter
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_BASE_URL", "https://api.anthropic.com")
+    monkeypatch.setattr(sdk_adapter, "HAS_CLAUDE_AGENT_SDK", True)
+    monkeypatch.setattr(sdk_adapter, "ClaudeAgentOptions", lambda **kwargs: SimpleNamespace(**kwargs))
+    monkeypatch.setattr(sdk_adapter, "tool", lambda *_, **__: (lambda fn: fn))
+    monkeypatch.setattr(sdk_adapter, "create_sdk_mcp_server", lambda *_, **__: SimpleNamespace())
+    monkeypatch.setattr(sdk_adapter, "get_gateway", lambda: SimpleNamespace())
+
+    tmp = tempfile.mkdtemp()
+    try:
+        adapter = sdk_adapter.ClaudeAgentSDKAdapter(
+            {
+                "provider": "claude_agent_sdk",
+                "workspace_root": str(Path(tmp) / "workspaces"),
+                "skills": ["business-analysis"],
+            }
+        )
+        session_id = adapter.create_session("proj_sdk")
+        options = adapter._build_options(session_id, adapter._sessions[session_id])
+
+        assert options.env["ANTHROPIC_API_KEY"] == "test-key"
+        assert options.env["ANTHROPIC_AUTH_TOKEN"] == "test-key"
     finally:
         shutil.rmtree(tmp)
 

@@ -82,22 +82,10 @@ class MessageRuntime:
                 event["turn_id"] = turn.id
                 if event.get("type") == "final_answer":
                     final_answer = event.get("message", "")
-                self._event_buffers[session_id].append(event)
+                self._append_event(db, session_id, turn.id, project_id, event)
 
                 if event["type"] == "tool_call_started" and not event.get("sdk_executed"):
                     self._execute_mock_tool_event(db, session_id, turn.id, project_id, event)
-
-                db.add(
-                    AgentEvent(
-                        id=f"evt_{uuid.uuid4().hex[:12]}",
-                        session_id=session_id,
-                        turn_id=turn.id,
-                        project_id=project_id,
-                        type=event["type"],
-                        payload_json=json.dumps(event, ensure_ascii=False),
-                        created_at=datetime.now().isoformat(),
-                    )
-                )
 
             turn.status = "completed"
             if final_answer:
@@ -156,7 +144,11 @@ class MessageRuntime:
             .first()
         )
         if approval:
-            self._event_buffers[session_id].append(
+            self._append_event(
+                db,
+                session_id,
+                turn_id,
+                project_id,
                 {
                     "type": "approval_requested",
                     "turn_id": turn_id,
@@ -165,10 +157,15 @@ class MessageRuntime:
                     "reason": approval.reason or "",
                     "risk_level": approval.risk_level,
                     "payload": json.loads(approval.payload_json or "{}"),
-                }
+                    "tool_call_id": tc.id,
+                },
             )
 
-        self._event_buffers[session_id].append(
+        self._append_event(
+            db,
+            session_id,
+            turn_id,
+            project_id,
             {
                 "type": "tool_call_finished" if result.ok else "tool_call_failed",
                 "turn_id": turn_id,
@@ -182,13 +179,28 @@ class MessageRuntime:
                 "approval_reason": approval.reason if approval else None,
                 "risk_level": approval.risk_level if approval else None,
                 "approval_payload": json.loads(approval.payload_json or "{}") if approval else None,
-            }
+            },
         )
 
         tc.result_json = json.dumps(result.model_dump(), ensure_ascii=False)
         tc.status = "waiting_approval" if approval else ("succeeded" if result.ok else "failed")
         tc.completed_at = datetime.now().isoformat()
         db.commit()
+
+    def _append_event(self, db, session_id: str, turn_id: str, project_id: str, event: dict) -> None:
+        event["turn_id"] = turn_id
+        self._event_buffers.setdefault(session_id, []).append(event)
+        db.add(
+            AgentEvent(
+                id=f"evt_{uuid.uuid4().hex[:12]}",
+                session_id=session_id,
+                turn_id=turn_id,
+                project_id=project_id,
+                type=event["type"],
+                payload_json=json.dumps(event, ensure_ascii=False),
+                created_at=datetime.now().isoformat(),
+            )
+        )
 
     def get_events(self, session_id: str, after_turn_id: str | None = None) -> list[dict]:
         """
