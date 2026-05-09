@@ -11,13 +11,14 @@ from app.tools.analysis_tools import (
     analysis_run_diagnostics,
     analysis_run_conversion_diagnostics,
     analysis_run_gps_uplift,
+    analysis_run_hmm_state_path,
     analysis_run_localgap,
     analysis_run_mechanism_regression,
     analysis_run_psm_did,
 )
 from app.tools.chart_tools import chart_render, chart_render_dashboard
 from app.tools.data_tools import data_validate
-from app.tools.panel_tools import panel_build_category_day
+from app.tools.panel_tools import panel_build_category_day, panel_build_user_week
 from app.tools.report_tools import report_generate
 from app.tools.result_tools import result_get_latest
 from app.tools.schemas import ToolResult
@@ -29,6 +30,8 @@ StepFunc = Callable[[str, dict], ToolResult]
 PIPELINE_STEPS: list[tuple[str, str, StepFunc, dict]] = [
     ("Data validation", "data.validate", data_validate, {}),
     ("Panel build", "panel.build_category_day", panel_build_category_day, {}),
+    ("User-week panel", "panel.build_user_week", panel_build_user_week, {}),
+    ("HMM state path", "analysis.run_hmm_state_path", analysis_run_hmm_state_path, {}),
     ("Diagnostics", "analysis.run_diagnostics", analysis_run_diagnostics, {}),
     ("PSM-DID", "analysis.run_psm_did", analysis_run_psm_did, {}),
     ("LocalGap", "analysis.run_localgap", analysis_run_localgap, {}),

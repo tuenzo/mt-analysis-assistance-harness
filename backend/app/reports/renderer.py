@@ -11,6 +11,8 @@ from app.tools.schemas import ToolResult
 
 RESULT_SOURCES = {
     "diagnostics": ".analysis/diagnostics_result.json",
+    "user_week": ".analysis/user_week_panel_result.json",
+    "hmm_state_path": ".analysis/hmm_state_path_result.json",
     "localgap": ".analysis/localgap_result.json",
     "psm_did": ".analysis/psm_did_result.json",
     "mechanism": ".analysis/mechanism_regression_result.json",
@@ -245,15 +247,17 @@ def _collect_charts(workspace: Path) -> dict[str, dict[str, Any]]:
 
 
 def _build_sections(context: ReportContext) -> list[ReportSection]:
-    return [
+    sections = [
         _executive_snapshot_section(context),
         _evidence_coverage_section(context),
         _observed_performance_section(context),
         _increment_causal_section(context),
         _mechanism_conversion_section(context),
-        _action_plan_section(context),
-        _assumptions_next_checks_section(context),
     ]
+    if "user_week" in context.results or "hmm_state_path" in context.results:
+        sections.append(_user_state_path_section(context))
+    sections.extend([_action_plan_section(context), _assumptions_next_checks_section(context)])
+    return sections
 
 
 def _executive_snapshot_section(context: ReportContext) -> ReportSection:
@@ -491,6 +495,50 @@ def _action_plan_section(context: ReportContext) -> ReportSection:
         ],
     )
     body = _markdown_table(["品类", "动作", "证据", "护栏"], rows)
+    return ReportSection(plan, body)
+
+
+def _user_state_path_section(context: ReportContext) -> ReportSection:
+    user_week = context.results.get("user_week", {})
+    hmm = context.results.get("hmm_state_path", {})
+    state_rows = [
+        [item.get("state", "-"), _fmt_int(item.get("rows")), _fmt_money(item.get("avg_gmv"))]
+        for item in hmm.get("states", [])
+        if isinstance(item, dict)
+    ]
+    transition_rows = [
+        [item.get("from_state", "-"), item.get("to_state", "-"), _fmt_int(item.get("count")), _fmt_percent(_as_float(item.get("share")) * 100)]
+        for item in hmm.get("transitions", [])[:8]
+        if isinstance(item, dict)
+    ]
+    findings = [
+        f"User-week status={user_week.get('method_status', 'missing')}, rows={user_week.get('summary', {}).get('row_count', 0)}.",
+        f"HMM state-path status={hmm.get('method_status', 'missing')}, states={len(state_rows)}, transitions={len(transition_rows)}.",
+    ]
+    plan = _plan(
+        "user_state_path",
+        "User State Path",
+        "Add optional user-week and state-path context when user-level artifacts exist or explicitly downgraded artifacts were generated.",
+        "Use user-week and HMM state-path outputs as optional segmentation context after aggregate mechanism diagnostics.",
+        [
+            _tool_call("panel.build_user_week", "Refresh user-week panel when user-level order data changes."),
+            _tool_call("analysis.run_hmm_state_path", "Refresh state-path artifact with method-status downgrade when support is thin."),
+        ],
+        _artifact_paths(context, ["user_week", "hmm_state_path"]),
+        ["User state paths require user_id-level orders and multiple weeks of history."],
+        _limitations_for(context, ["user_week", "hmm_state_path"]),
+        ["Treat limited HMM outputs as segmentation scaffolding until a probabilistic HMM backend is enabled."],
+        findings=findings,
+    )
+    body = "\n".join(
+        [
+            _bullets(findings),
+            "\n**States**\n",
+            _markdown_table(["state", "rows", "avg GMV"], state_rows),
+            "\n**Top Transitions**\n",
+            _markdown_table(["from", "to", "count", "share"], transition_rows),
+        ]
+    )
     return ReportSection(plan, body)
 
 
@@ -753,6 +801,22 @@ def _result_key_metrics(name: str, data: dict[str, Any]) -> dict[str, Any]:
             "total_categories": summary.get("total_categories"),
             "activity_lift_pct": data.get("activity_vs_non", {}).get("lift"),
         }
+    if name == "user_week":
+        summary = data.get("summary", {})
+        return {
+            "row_count": summary.get("row_count"),
+            "user_count": summary.get("user_count"),
+            "week_count": summary.get("week_count"),
+            "method_status": data.get("method_status"),
+        }
+    if name == "hmm_state_path":
+        sample = data.get("sample", {})
+        return {
+            "state_count": data.get("state_count"),
+            "transition_count": len(data.get("transitions", [])) if isinstance(data.get("transitions"), list) else 0,
+            "row_count": sample.get("row_count"),
+            "method_status": data.get("method_status"),
+        }
     if name == "localgap":
         categories = data.get("categories", [])
         return {
@@ -877,6 +941,9 @@ def _global_limitations(context: ReportContext) -> list[str]:
         limitations.append("Mechanism regression evidence is missing; traffic/order/AOV channel claims remain limited.")
     if "conversion" not in context.results:
         limitations.append("Conversion-by-exposure-tier evidence is missing; discount scaling claims remain limited.")
+    hmm = context.results.get("hmm_state_path")
+    if hmm and hmm.get("method_status") != "implemented":
+        limitations.append("HMM state-path output is limited; use it as segmentation context rather than causal evidence.")
 
     if not context.panel_summary:
         limitations.append("Panel summary 缺失，因此行数和日期覆盖可能不完整。")
@@ -902,6 +969,10 @@ def _report_confidence(context: ReportContext) -> dict[str, Any]:
         score += 0.05
     if "conversion" in evidence_names:
         score += 0.05
+    if "user_week" in evidence_names:
+        score += 0.02
+    if "hmm_state_path" in evidence_names:
+        score += 0.02
     if context.panel_summary:
         score += 0.05
     if context.charts:
@@ -940,6 +1011,10 @@ def _recommended_next_actions(context: ReportContext) -> list[str]:
         actions.append("Run `analysis.run_conversion_diagnostics` before scaling discount recommendations by exposure tier.")
     if "uplift" not in context.results:
         actions.append("在提出分群策略前运行 `analysis.run_gps_uplift`。")
+    if "user_week" not in context.results:
+        actions.append("Run `panel.build_user_week` when user_id-level order data is available.")
+    if "hmm_state_path" not in context.results:
+        actions.append("Run `analysis.run_hmm_state_path` after user-week panel generation for optional state-path context.")
     if "diagnostics" in context.results and "gmv_trend" not in context.charts:
         actions.append("使用 `{type: 'gmv_trend'}` 运行 `chart.render`。")
     if "localgap" in context.results and "localgap" not in context.charts:

@@ -11,6 +11,8 @@ from app.tools.schemas import ToolResult
 
 RESULT_FILES = {
     "diagnostics": ".analysis/diagnostics_result.json",
+    "user_week": ".analysis/user_week_panel_result.json",
+    "hmm_state_path": ".analysis/hmm_state_path_result.json",
     "localgap": ".analysis/localgap_result.json",
     "psm_did": ".analysis/psm_did_result.json",
     "mechanism": ".analysis/mechanism_regression_result.json",
@@ -187,6 +189,22 @@ def _key_metrics(name: str, payload: dict[str, Any]) -> dict[str, Any]:
             "total_categories": summary.get("total_categories"),
             "activity_lift_pct": payload.get("activity_vs_non", {}).get("lift"),
         }
+    if name == "user_week":
+        summary = payload.get("summary", {})
+        return {
+            "row_count": summary.get("row_count"),
+            "user_count": summary.get("user_count"),
+            "week_count": summary.get("week_count"),
+            "method_status": payload.get("method_status"),
+        }
+    if name == "hmm_state_path":
+        sample = payload.get("sample", {})
+        return {
+            "state_count": payload.get("state_count"),
+            "transition_count": len(payload.get("transitions", [])) if isinstance(payload.get("transitions"), list) else 0,
+            "row_count": sample.get("row_count"),
+            "method_status": payload.get("method_status"),
+        }
     if name == "localgap":
         categories = payload.get("categories", [])
         return {
@@ -252,6 +270,12 @@ def _result_findings(latest_data: dict[str, Any]) -> list[str]:
     if conversion:
         tiers = conversion.get("exposure_tiers", [])
         findings.append(f"Conversion diagnostics produced {len(tiers) if isinstance(tiers, list) else 0} exposure tier(s).")
+    user_week = latest_data.get("user_week", {})
+    if user_week:
+        findings.append(f"User-week panel rows: {user_week.get('summary', {}).get('row_count', 0)}.")
+    hmm = latest_data.get("hmm_state_path", {})
+    if hmm:
+        findings.append(f"HMM state-path status is {hmm.get('method_status')}.")
     return findings or ["No interpreted findings are available from current results."]
 
 
@@ -267,6 +291,10 @@ def _result_confidence(latest_data: dict[str, Any], available_results: list[str]
         score += 0.05
     if "conversion" in latest_data:
         score += 0.05
+    if "user_week" in latest_data:
+        score += 0.02
+    if "hmm_state_path" in latest_data:
+        score += 0.02
     if latest_data.get("uplift", {}).get("method_status") == "stub":
         score -= 0.05
     score = max(0.1, min(round(score, 2), 0.9))
@@ -293,6 +321,8 @@ def _result_limitations(latest_data: dict[str, Any], missing_results: list[str])
         limitations.append("No mechanism regression result is available; resource mechanism claims remain limited.")
     if "conversion" not in latest_data:
         limitations.append("No conversion diagnostics result is available; discount-by-exposure claims remain limited.")
+    if latest_data.get("hmm_state_path", {}).get("method_status") == "limited":
+        limitations.append("HMM state-path output is limited and should be treated as segmentation context only.")
     if latest_data.get("uplift", {}).get("method_status") == "stub":
         limitations.append("GPS-Uplift is a stub; segment strategy remains illustrative.")
     if "localgap" in latest_data:
@@ -313,6 +343,10 @@ def _result_follow_up(missing_results: list[str], latest_data: dict[str, Any]) -
             actions.append("Run `analysis.run_mechanism_regression` before explaining traffic/order/AOV mechanisms.")
         elif name == "conversion":
             actions.append("Run `analysis.run_conversion_diagnostics` before discount-by-exposure scaling claims.")
+        elif name == "user_week":
+            actions.append("Run `panel.build_user_week` when user_id-level order data is available.")
+        elif name == "hmm_state_path":
+            actions.append("Run `analysis.run_hmm_state_path` after user-week panel generation for optional state-path context.")
         elif name == "diagnostics":
             actions.append("Run `analysis.run_diagnostics` before descriptive performance claims.")
     if "psm_did" in latest_data:

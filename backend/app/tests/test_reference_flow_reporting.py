@@ -31,7 +31,14 @@ def test_latest_results_and_report_include_reference_flow_outputs(isolated_backe
     latest = result_get_latest(project.id, {})
 
     assert latest.ok is True
-    assert set(latest.artifacts[0]["available"]) >= {"mechanism", "conversion", "localgap", "psm_did"}
+    assert set(latest.artifacts[0]["available"]) >= {
+        "user_week",
+        "hmm_state_path",
+        "mechanism",
+        "conversion",
+        "localgap",
+        "psm_did",
+    }
     index = latest.artifacts[0]["metadata"]
     assert any(item["name"] == "mechanism" for item in index["results"])
     assert any(item["name"] == "conversion" for item in index["results"])
@@ -47,12 +54,17 @@ def test_latest_results_and_report_include_reference_flow_outputs(isolated_backe
     assert "conversion" in result_names
     assert ".analysis/mechanism_regression_result.json" in metadata["evidence_artifacts"]
     assert ".analysis/conversion_diagnostics_result.json" in metadata["evidence_artifacts"]
+    assert ".analysis/user_week_panel_result.json" in metadata["evidence_artifacts"]
+    assert ".analysis/hmm_state_path_result.json" in metadata["evidence_artifacts"]
 
     plan = json.loads((workspace / "reports" / "report_plan.json").read_text(encoding="utf-8"))
     section_ids = [section["section_id"] for section in plan["sections"]]
     assert "mechanism_conversion" in section_ids
+    assert "user_state_path" in section_ids
     assert section_ids.index("increment_causal_direction") < section_ids.index("mechanism_conversion")
     assert section_ids.index("mechanism_conversion") < section_ids.index("action_plan")
+    assert section_ids.index("mechanism_conversion") < section_ids.index("user_state_path")
+    assert section_ids.index("user_state_path") < section_ids.index("action_plan")
     mechanism_section = next(section for section in plan["sections"] if section["section_id"] == "mechanism_conversion")
     assert mechanism_section["evidence_artifacts"] == [
         ".analysis/mechanism_regression_result.json",
@@ -60,6 +72,9 @@ def test_latest_results_and_report_include_reference_flow_outputs(isolated_backe
     ]
     assert any(call["action"] == "analysis.run_mechanism_regression" for call in mechanism_section["tool_calls"])
     assert any(call["action"] == "analysis.run_conversion_diagnostics" for call in mechanism_section["tool_calls"])
+    user_state_section = next(section for section in plan["sections"] if section["section_id"] == "user_state_path")
+    assert any(call["action"] == "panel.build_user_week" for call in user_state_section["tool_calls"])
+    assert any(call["action"] == "analysis.run_hmm_state_path" for call in user_state_section["tool_calls"])
 
 
 def _write_reference_flow_outputs(workspace: Path) -> None:
@@ -131,6 +146,19 @@ def _write_reference_flow_outputs(workspace: Path) -> None:
             },
         ],
     }
+    user_week = {
+        "method": "user_week_panel",
+        "method_status": "implemented",
+        "summary": {"row_count": 12, "user_count": 3, "week_count": 4, "total_gmv": 680.0},
+    }
+    hmm_state_path = {
+        "method": "hmm_state_path_interface",
+        "method_status": "limited",
+        "state_count": 3,
+        "states": [{"state": "core", "rows": 4, "avg_gmv": 80.0}],
+        "transitions": [{"from_state": "active", "to_state": "core", "count": 3, "share": 0.5}],
+        "sample": {"row_count": 12, "user_count": 3, "week_count": 4},
+    }
     uplift = {
         "method": "gps_uplift",
         "method_status": "implemented",
@@ -145,6 +173,8 @@ def _write_reference_flow_outputs(workspace: Path) -> None:
         "diagnostics_result.json": diagnostics,
         "psm_did_result.json": psm_did,
         "localgap_result.json": localgap,
+        "user_week_panel_result.json": user_week,
+        "hmm_state_path_result.json": hmm_state_path,
         "mechanism_regression_result.json": mechanism,
         "conversion_diagnostics_result.json": conversion,
         "uplift_result.json": uplift,

@@ -50,6 +50,8 @@ def test_full_pipeline_approval_emits_progress_and_persists_outputs():
             assert job.status == "succeeded"
             assert job.progress == 1
             steps = json.loads(job.output_json)["steps"]
+            assert any(step["action"] == "panel.build_user_week" and step["ok"] for step in steps)
+            assert any(step["action"] == "analysis.run_hmm_state_path" and step["ok"] for step in steps)
             assert any(step["action"] == "analysis.run_mechanism_regression" and step["ok"] for step in steps)
             assert any(step["action"] == "analysis.run_conversion_diagnostics" and step["ok"] for step in steps)
             assert any(step["action"] == "analysis.run_gps_uplift" and step["ok"] for step in steps)
@@ -76,6 +78,8 @@ def test_full_pipeline_approval_emits_progress_and_persists_outputs():
         assert latest.ok
         assert set(latest.artifacts[0]["available"]) == {
             "diagnostics",
+            "user_week",
+            "hmm_state_path",
             "localgap",
             "psm_did",
             "mechanism",

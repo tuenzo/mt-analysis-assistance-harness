@@ -61,14 +61,16 @@ def test_user_week_panel_and_hmm_interface_outputs(isolated_backend):
     assert "standard pipeline" in " ".join(hmm_payload["interpretation_rules"])
 
 
-def test_user_week_and_hmm_actions_are_registered_but_not_standard_pipeline():
+def test_user_week_and_hmm_actions_are_registered_and_standard_pipeline():
     registry = get_registry()
 
     assert registry.get_tool(BusinessAnalysisAction.PANEL_BUILD_USER_WEEK) is not None
     assert registry.get_tool(BusinessAnalysisAction.ANALYSIS_RUN_HMM_STATE_PATH) is not None
     pipeline_actions = [action for _, action, _, _ in PIPELINE_STEPS]
-    assert "panel.build_user_week" not in pipeline_actions
-    assert "analysis.run_hmm_state_path" not in pipeline_actions
+    assert "panel.build_user_week" in pipeline_actions
+    assert "analysis.run_hmm_state_path" in pipeline_actions
+    assert pipeline_actions.index("panel.build_user_week") < pipeline_actions.index("analysis.run_hmm_state_path")
+    assert pipeline_actions.index("analysis.run_hmm_state_path") < pipeline_actions.index("analysis.run_diagnostics")
 
 
 def test_user_week_panel_without_user_id_writes_limited_artifact(isolated_backend):

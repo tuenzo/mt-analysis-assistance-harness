@@ -43,9 +43,9 @@
 
 ## 7. Stage 4 - Integrate Stage-3 Capabilities
 
-- [ ] 7.1 Insert user-week/HMM steps into the full pipeline with method-status gating.
-- [ ] 7.2 Update report synthesis to include HMM only when artifacts exist or explicitly show downgrade status.
-- [ ] 7.3 Add tests for standard-flow integration and commit stage-4 changes.
+- [x] 7.1 Insert user-week/HMM steps into the full pipeline with method-status gating.
+- [x] 7.2 Update report synthesis to include HMM only when artifacts exist or explicitly show downgrade status.
+- [x] 7.3 Add tests for standard-flow integration and commit stage-4 changes.
 
 ## 8. Final Verification
 
