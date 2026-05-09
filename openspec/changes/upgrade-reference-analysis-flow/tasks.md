@@ -1,14 +1,14 @@
 ## 1. Planning And Commit Hygiene
 
 - [x] 1.1 Create the OpenSpec proposal, design, specs, and task list for the four-stage roadmap.
-- [ ] 1.2 Commit the OpenSpec planning artifacts separately from implementation changes.
+- [x] 1.2 Commit the OpenSpec planning artifacts separately from implementation changes.
 
 ## 2. Stage 1A - Upgrade Existing PSM-DID
 
-- [ ] 2.1 Replace activity-share treatment with exposure-lift and discount-lift treatment definitions.
-- [ ] 2.2 Add pre/non-activity covariates, propensity scoring, nearest-neighbor matching, and SMD balance diagnostics.
-- [ ] 2.3 Add event-window and placebo/pretrend diagnostics with method-status downgrades for thin support.
-- [ ] 2.4 Preserve existing `psm_did_result.json` compatibility keys and add pytest coverage.
+- [x] 2.1 Replace activity-share treatment with exposure-lift and discount-lift treatment definitions.
+- [x] 2.2 Add pre/non-activity covariates, propensity scoring, nearest-neighbor matching, and SMD balance diagnostics.
+- [x] 2.3 Add event-window and placebo/pretrend diagnostics with method-status downgrades for thin support.
+- [x] 2.4 Preserve existing `psm_did_result.json` compatibility keys and add pytest coverage.
 - [ ] 2.5 Commit the PSM-DID upgrade as a small feature commit.
 
 ## 3. Stage 1B - Upgrade Existing LocalGap
