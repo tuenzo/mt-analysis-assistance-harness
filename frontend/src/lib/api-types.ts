@@ -300,6 +300,11 @@ export interface DemoStatus {
   session_id: string | null
 }
 
+export interface AgentRuntimeMetadata {
+  runtime_provider: string
+  model: string
+}
+
 export interface PendingApproval {
   id: string
   turn_id: string

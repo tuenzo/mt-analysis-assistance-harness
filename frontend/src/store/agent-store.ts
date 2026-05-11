@@ -54,6 +54,7 @@ interface AgentStore {
   messageQueue: AgentMessage[]
   isRunning: boolean
   error: string | null
+  runtimeModelName: string | null
 
   // New state for Agent Command Center
   toolCalls: Record<string, ToolCall[]> // turnId -> toolCalls
@@ -84,6 +85,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   messageQueue: [],
   isRunning: false,
   error: null,
+  runtimeModelName: null,
 
   toolCalls: {},
   approvalRequests: [],
@@ -208,6 +210,12 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   handleSSEEvent: (event: SSEEvent) => {
     switch (event.type) {
+      case 'runtime_diagnostic':
+        set({
+          runtimeModelName: event.model || null,
+        })
+        break
+
       case 'assistant_message_delta':
         set((state) => {
           const messages = [...state.messageQueue]

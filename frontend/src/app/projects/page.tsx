@@ -6,6 +6,7 @@ import { useProjectStore } from '@/store/project-store'
 import { api } from '@/lib/api-client'
 import type { DemoStatus, Project } from '@/lib/api-types'
 import { useApiBaseHref } from '@/lib/use-api-base-href'
+import { KEEMART_PROJECT_NAME } from '@/features/demo/keemart-demo-data'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -143,16 +144,16 @@ export default function ProjectsPage() {
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <p className="font-medium">演示模式</p>
-                  <span className="rounded-md bg-primary px-2 py-0.5 text-xs text-primary-foreground">已启用</span>
+                  <p className="font-medium">Keemart 业务复盘</p>
+                  <span className="rounded-md bg-primary px-2 py-0.5 text-xs text-primary-foreground">分析就绪</span>
                 </div>
-                <p className="text-sm text-muted-foreground">{demoStatus.project_name}</p>
+                <p className="text-sm text-muted-foreground">{KEEMART_PROJECT_NAME}</p>
               </div>
             </div>
             <Link href={hrefFor(`/projects/${demoStatus.project_id}/agent`)}>
               <Button>
                 <Sparkles className="mr-2 h-4 w-4" />
-                进入演示项目
+                进入分析工作区
               </Button>
             </Link>
           </CardContent>

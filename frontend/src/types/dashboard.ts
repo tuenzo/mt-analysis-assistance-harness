@@ -52,9 +52,14 @@ export type QuadrantItem = {
   x: number
   y: number
   size: number
-  group: 'boost' | 'maintain' | 'reduce' | 'avoid'
+  group: 'boost' | 'maintain' | 'reduce' | 'avoid' | 'control_discount' | 'watch'
   color: string
   suggestedAction: string
+  resourceType?: '曝光' | '折扣'
+  quadrant?: 'Persuadables' | 'Sure Things' | 'Lost Causes' | 'Do Not Disturb'
+  count?: number
+  contribution?: number
+  representativeCategories?: string[]
 }
 
 export type RecommendationGroup = {

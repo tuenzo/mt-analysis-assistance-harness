@@ -33,14 +33,28 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { MarkdownView } from '@/components/markdown-view'
 import { useApiBaseHref } from '@/lib/use-api-base-href'
+import { KEEMART_SHOWCASE_MODEL_NAME, MODEL_LOADING_LABEL } from '@/lib/model-display'
+import { useAgentRuntimeMetadata } from '@/lib/use-agent-runtime-metadata'
 import { api } from '@/lib/api-client'
 import { useAgentEvents } from '@/lib/sse-hooks'
 import type { AgentMessage, AgentSession, SSEEvent } from '@/lib/api-types'
 import { useAgentStore, type ApprovalRequest, type JobStatus, type ThoughtEntry, type ToolCall } from '@/store/agent-store'
 import { useProjectStore } from '@/store/project-store'
 import type { AgentRunStatus, ArtifactPreview, PlanStep, PlanStepStatus } from '@/types/agent'
+import {
+  KEEMART_PROJECT_ID,
+  KEEMART_PROJECT_NAME,
+  isKeemartPromoProject,
+  keemartAgentPromptFlows,
+  keemartReportFacts,
+  type DemoAgentEvent,
+  type DemoAgentPrompt,
+} from '@/features/demo/keemart-demo-data'
 
 type ArtifactEvent = Extract<SSEEvent, { type: 'artifact_created' }>
+type QuickPromptItem = { label: string; prompt: string }
+type InspectorRow = { label: string; value: string; optional?: boolean }
+type SnapshotItem = { label: string; value: string; tone: 'green' | 'blue' | 'orange' | 'purple' }
 
 const quickPrompts = [
   '分析本次活动对 GMV 的真实增量影响',
@@ -48,6 +62,14 @@ const quickPrompts = [
   '识别最值得优先加码的品类',
   '生成下一轮活动的资源配置建议',
 ]
+
+const defaultQuickPromptItems: QuickPromptItem[] = quickPrompts.map((prompt) => ({ label: prompt, prompt }))
+const keemartQuickPromptItems: QuickPromptItem[] = keemartAgentPromptFlows.map((flow) => ({
+  label: flow.label,
+  prompt: flow.prompt,
+}))
+
+const KEEMART_THREAD_ID = 'keemart-saudi-review-thread'
 
 const statusText: Record<AgentRunStatus, string> = {
   idle: '未开始',
@@ -228,9 +250,91 @@ function agentSessionStorageKey(projectId: string) {
   return `${AGENT_SESSION_STORAGE_PREFIX}${projectId}`
 }
 
+function findKeemartFlow(prompt: string): DemoAgentPrompt {
+  const normalized = prompt.trim()
+  return (
+    keemartAgentPromptFlows.find((flow) => flow.prompt === normalized) ||
+    keemartAgentPromptFlows.find((flow) => normalized.includes(flow.label)) ||
+    keemartAgentPromptFlows[0]
+  )
+}
+
+function formatDemoAssistantContent(event: Extract<DemoAgentEvent, { type: 'assistant' }>) {
+  return `**${event.title}**\n\n${event.content}`
+}
+
+function makeKeemartSession(projectId: string, messages: AgentMessage[]): AgentSession {
+  const latestMessage = [...messages].reverse().find((message) => message.role === 'user') || messages[messages.length - 1]
+
+  return {
+    id: KEEMART_THREAD_ID,
+    project_id: projectId,
+    runtime_provider: 'claude_agent_sdk',
+    status: 'active',
+    created_at: '2025-12-01T09:00:00.000Z',
+    updated_at: new Date().toISOString(),
+    last_activity_at: new Date().toISOString(),
+    message_count: messages.length,
+    last_message: latestMessage?.content || 'Keemart 月末促销复盘',
+  }
+}
+
+function keemartContextRows(projectName: string): InspectorRow[] {
+  return [
+    { label: '项目名称', value: projectName },
+    { label: '数据周期', value: '2025-09-01 ~ 2025-11-30', optional: true },
+    { label: '活动窗口', value: `${keemartReportFacts.activityWindows} 个（${keemartReportFacts.activityDays} 天）`, optional: true },
+    { label: '品类数量', value: `${keemartReportFacts.categoryCount}`, optional: true },
+    { label: '支付用户', value: `${keemartReportFacts.paidUsers.toLocaleString('en-US')} 人`, optional: true },
+    { label: '当前状态', value: 'report_ready · analysis_ready' },
+    { label: '接入文件', value: '3 个' },
+  ]
+}
+
+function defaultContextRows({
+  projectName,
+  projectStatus,
+  projectStage,
+  fileCount,
+}: {
+  projectName: string
+  projectStatus: string
+  projectStage: string
+  fileCount: number
+}): InspectorRow[] {
+  return [
+    { label: '项目名称', value: projectName },
+    { label: '数据周期', value: '2025-09-01 ~ 2025-11-30', optional: true },
+    { label: '活动窗口', value: '4 个（33 天）', optional: true },
+    { label: '品类数量', value: '366', optional: true },
+    { label: '当前状态', value: `${projectStatus} · ${projectStage}` },
+    { label: '接入文件', value: `${fileCount} 个` },
+  ]
+}
+
+function keemartSnapshotItems(): SnapshotItem[] {
+  return [
+    { label: 'GMV 净增量', value: '+34.72 万', tone: 'green' },
+    { label: '订单量贡献', value: '58.92%', tone: 'blue' },
+    { label: '客单价贡献', value: '41.08%', tone: 'orange' },
+    { label: '提升幅度', value: '35.16%', tone: 'purple' },
+  ]
+}
+
+function defaultSnapshotItems(): SnapshotItem[] {
+  return [
+    { label: 'GMV 净增量', value: '+1,290 万', tone: 'green' },
+    { label: '曝光贡献', value: '+980 万', tone: 'blue' },
+    { label: '折扣贡献', value: '+180 万', tone: 'orange' },
+    { label: '建议加码', value: '4 个品类', tone: 'purple' },
+  ]
+}
+
 export function AgentAnalysisPage() {
   const params = useParams<{ project_id: string }>()
   const projectId = params.project_id
+  const isReportBackedProject = isKeemartPromoProject(projectId)
+  const { metadata: runtimeMetadata } = useAgentRuntimeMetadata(!isReportBackedProject)
   const hrefFor = useApiBaseHref()
   const densityRef = useAgentResponsiveDensity()
   const { currentProject, projectState, files } = useProjectStore()
@@ -243,6 +347,7 @@ export function AgentAnalysisPage() {
     approvalRequests,
     jobs,
     thoughts,
+    runtimeModelName,
     sendMessage,
     loadSessionMessages,
     loadPendingApprovals,
@@ -264,6 +369,14 @@ export function AgentAnalysisPage() {
   const [loadingSessions, setLoadingSessions] = useState(false)
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
   const artifactEventIdsRef = useRef(new Set<string>())
+  const keemartTimersRef = useRef<number[]>([])
+  const [keemartMessages, setKeemartMessages] = useState<AgentMessage[]>([])
+  const [keemartToolCalls, setKeemartToolCalls] = useState<ToolCall[]>([])
+  const [keemartThoughts, setKeemartThoughts] = useState<ThoughtEntry[]>([])
+  const [keemartArtifacts, setKeemartArtifacts] = useState<ArtifactPreview[]>([])
+  const [keemartJobs, setKeemartJobs] = useState<JobStatus[]>([])
+  const [keemartRunning, setKeemartRunning] = useState(false)
+  const [keemartCompletedAt, setKeemartCompletedAt] = useState<string | null>(null)
 
   const rememberSessionId = useCallback(
     (nextSessionId: string) => {
@@ -296,7 +409,17 @@ export function AgentAnalysisPage() {
     artifactEventIdsRef.current.clear()
   }, [clearMessages, setCurrentSession])
 
+  useEffect(() => {
+    return () => {
+      keemartTimersRef.current.forEach((timer) => window.clearTimeout(timer))
+      keemartTimersRef.current = []
+    }
+  }, [])
+
   const refreshProjectSessions = useCallback(async () => {
+    if (isReportBackedProject) {
+      return []
+    }
     setLoadingSessions(true)
     const sessionsResponse = await api.listProjectSessions(projectId)
     setLoadingSessions(false)
@@ -304,10 +427,23 @@ export function AgentAnalysisPage() {
       setProjectSessions(sessionsResponse.data)
     }
     return sessionsResponse.ok ? sessionsResponse.data || [] : []
-  }, [projectId])
+  }, [isReportBackedProject, projectId])
 
   useEffect(() => {
     let cancelled = false
+
+    if (isReportBackedProject) {
+      const timer = window.setTimeout(() => {
+        if (cancelled) return
+        resetConversationState()
+        setSessionId(KEEMART_THREAD_ID)
+        setTurnId(null)
+      }, 0)
+      return () => {
+        cancelled = true
+        window.clearTimeout(timer)
+      }
+    }
 
     const readStoredSessionId = () => {
       if (typeof window === 'undefined') return null
@@ -358,13 +494,13 @@ export function AgentAnalysisPage() {
     return () => {
       cancelled = true
     }
-  }, [forgetSessionId, loadSessionMessages, projectId, refreshProjectSessions, rememberSessionId, resetConversationState])
+  }, [forgetSessionId, isReportBackedProject, loadSessionMessages, projectId, refreshProjectSessions, rememberSessionId, resetConversationState])
 
   useEffect(() => {
-    if (sessionId) {
+    if (sessionId && !isReportBackedProject) {
       void loadPendingApprovals(projectId, sessionId)
     }
-  }, [projectId, sessionId, loadPendingApprovals])
+  }, [isReportBackedProject, projectId, sessionId, loadPendingApprovals])
 
   const applyRuntimeSideEffects = useCallback(
     (event: SSEEvent) => {
@@ -398,7 +534,7 @@ export function AgentAnalysisPage() {
     [failRun],
   )
 
-  const { connected, error: sseError, reconnect } = useAgentEvents(sessionId, turnId, {
+  const { connected, error: sseError, reconnect } = useAgentEvents(isReportBackedProject ? null : sessionId, turnId, {
     onEvent: handleRuntimeEvent,
     onError: handleSSEError,
   })
@@ -406,7 +542,6 @@ export function AgentAnalysisPage() {
   const allToolCalls = useMemo(() => Object.values(toolCalls).flat(), [toolCalls])
   const allThoughts = useMemo(() => Object.values(thoughts).flat(), [thoughts])
   const jobList = useMemo(() => Object.values(jobs), [jobs])
-  const activeJob = jobList.find((job) => job.status === 'running') || jobList[0] || null
 
   const runStatus: AgentRunStatus = error || sseError
     ? 'failed'
@@ -437,9 +572,196 @@ export function AgentAnalysisPage() {
     [allToolCalls, approvalRequests, artifacts, jobList, runStatus, isRunning],
   )
 
+  function clearKeemartTimers() {
+    keemartTimersRef.current.forEach((timer) => window.clearTimeout(timer))
+    keemartTimersRef.current = []
+  }
+
+  function resetKeemartConversation() {
+    if (keemartRunning) {
+      toast.error('当前线程还在运行，完成后再新建线程。')
+      return
+    }
+    clearKeemartTimers()
+    setKeemartMessages([])
+    setKeemartToolCalls([])
+    setKeemartThoughts([])
+    setKeemartArtifacts([])
+    setKeemartJobs([])
+    setKeemartCompletedAt(null)
+    setInput('')
+  }
+
+  function appendKeemartThought(turnId: string, content: string, phase: string) {
+    setKeemartThoughts((current) => [
+      ...current,
+      {
+        id: `thought_${turnId}_${current.length}_${Date.now()}`,
+        turnId,
+        content,
+        phase,
+        visibility: 'progress',
+        source: 'business_analysis',
+        createdAt: new Date().toISOString(),
+      },
+    ].slice(-8))
+  }
+
+  function updateKeemartJob(jobId: string, progress: number, message: string, status: JobStatus['status'] = 'running') {
+    setKeemartJobs((current) =>
+      current.map((job) =>
+        job.id === jobId
+          ? {
+              ...job,
+              currentStep: `Step ${Math.max(1, Math.round(progress * job.totalSteps))}`,
+              progress,
+              message,
+              status,
+            }
+          : job,
+      ),
+    )
+  }
+
+  function appendKeemartEvent(flow: DemoAgentPrompt, event: DemoAgentEvent, turnId: string, jobId: string, index: number) {
+    const progress = Math.min(0.92, (index + 1) / Math.max(1, flow.events.length))
+
+    if (event.type === 'assistant') {
+      setKeemartMessages((current) => [
+        ...current,
+        {
+          id: `msg_${turnId}_assistant_${index}_${Date.now()}`,
+          turn_id: turnId,
+          role: 'assistant',
+          content: formatDemoAssistantContent(event),
+          created_at: new Date().toISOString(),
+        },
+      ])
+      appendKeemartThought(turnId, event.title, 'assistant')
+      updateKeemartJob(jobId, progress, event.title)
+      return
+    }
+
+    if (event.type === 'tool') {
+      const toolCallId = `tc_${turnId}_${index}`
+      const startedAt = new Date().toISOString()
+      setKeemartToolCalls((current) => [
+        ...current,
+        {
+          id: toolCallId,
+          turnId,
+          tool: 'business_analysis',
+          action: event.action,
+          payload: {
+            project_id: KEEMART_PROJECT_ID,
+            action: event.action,
+            reason: flow.goal,
+            evidence_level: 'report_result',
+          },
+          status: 'running',
+          summary: event.title,
+          startedAt,
+        },
+      ])
+      appendKeemartThought(turnId, event.summary, event.action)
+      updateKeemartJob(jobId, progress, event.title)
+
+      const finishTimer = window.setTimeout(() => {
+        setKeemartToolCalls((current) =>
+          current.map((toolCall) =>
+            toolCall.id === toolCallId
+              ? {
+                  ...toolCall,
+                  status: 'success',
+                  summary: `${event.title}：${event.summary} ${event.evidence.join('；')}`,
+                  finishedAt: new Date().toISOString(),
+                }
+              : toolCall,
+          ),
+        )
+      }, 360)
+      keemartTimersRef.current.push(finishTimer)
+      return
+    }
+
+    setKeemartArtifacts((current) => [
+      {
+        id: `artifact_${turnId}_${index}`,
+        name: event.title,
+        type: 'analysis_result',
+        path: `artifacts/${KEEMART_PROJECT_ID}/${flow.id}.json`,
+        metrics: [
+          `净增量 ${Math.round(keemartReportFacts.incrementalGmv).toLocaleString('en-US')}`,
+          `提升 ${keemartReportFacts.liftRate}`,
+          `订单 ${keemartReportFacts.orderContributionShare}`,
+        ],
+      },
+      ...current,
+    ].slice(0, 4))
+    appendKeemartThought(turnId, event.content, 'artifact')
+    updateKeemartJob(jobId, progress, event.title)
+  }
+
+  function handleKeemartSend(nextInput = input) {
+    const prompt = nextInput.trim()
+    if (!prompt || keemartRunning) return
+
+    clearKeemartTimers()
+    const flow = findKeemartFlow(prompt)
+    const nextTurnId = `turn_${flow.id}_${Date.now()}`
+    const jobId = `job_${flow.id}_${Date.now()}`
+
+    setInput('')
+    setSessionId(KEEMART_THREAD_ID)
+    setTurnId(nextTurnId)
+    setKeemartRunning(true)
+    setKeemartMessages((current) => [
+      ...current,
+      {
+        id: `msg_${nextTurnId}_user`,
+        turn_id: nextTurnId,
+        role: 'user',
+        content: flow.prompt,
+        created_at: new Date().toISOString(),
+      },
+    ])
+    setKeemartJobs((current) => [
+      {
+        id: jobId,
+        turnId: nextTurnId,
+        action: 'analysis.run_full_pipeline',
+        currentStep: 'Step 1',
+        totalSteps: Math.max(4, flow.events.length),
+        progress: 0.08,
+        message: '读取项目上下文与分析结果',
+        status: 'running',
+      },
+      ...current.slice(0, 2),
+    ])
+
+    flow.events.forEach((event, index) => {
+      const timer = window.setTimeout(() => {
+        appendKeemartEvent(flow, event, nextTurnId, jobId, index)
+        if (index === flow.events.length - 1) {
+          setKeemartRunning(false)
+          setKeemartCompletedAt(new Date().toISOString())
+          updateKeemartJob(jobId, 1, '分析完成', 'succeeded')
+        }
+      }, 520 + index * 720)
+      keemartTimersRef.current.push(timer)
+    })
+  }
+
   async function handleSend(nextInput = input) {
     const prompt = nextInput.trim()
-    if (!prompt || isRunning) return
+    if (!prompt) return
+
+    if (isReportBackedProject) {
+      handleKeemartSend(prompt)
+      return
+    }
+
+    if (isRunning) return
 
     const response = await sendMessage(projectId, prompt)
     if (response) {
@@ -452,6 +774,14 @@ export function AgentAnalysisPage() {
   }
 
   function handleInterrupt() {
+    if (isReportBackedProject) {
+      clearKeemartTimers()
+      setKeemartRunning(false)
+      setKeemartJobs((current) =>
+        current.map((job, index) => (index === 0 && job.status === 'running' ? { ...job, status: 'failed', message: '已停止' } : job)),
+      )
+      return
+    }
     if (sessionId) {
       void interruptSession(sessionId)
     }
@@ -468,6 +798,10 @@ export function AgentAnalysisPage() {
   }
 
   function handleStartNewThread() {
+    if (isReportBackedProject) {
+      resetKeemartConversation()
+      return
+    }
     if (isRunning) {
       toast.error('当前线程还在运行，完成后再新建线程。')
       return
@@ -477,6 +811,10 @@ export function AgentAnalysisPage() {
   }
 
   async function handleContinueSession(nextSessionId: string) {
+    if (isReportBackedProject) {
+      setSessionId(nextSessionId)
+      return
+    }
     if (nextSessionId === sessionId) return
     if (isRunning) {
       toast.error('当前线程还在运行，完成后再切换线程。')
@@ -497,6 +835,11 @@ export function AgentAnalysisPage() {
   }
 
   async function handleDeleteSession(targetSessionId: string) {
+    if (isReportBackedProject) {
+      void targetSessionId
+      resetKeemartConversation()
+      return
+    }
     if (isRunning && targetSessionId === sessionId) {
       toast.error('当前线程还在运行，完成后再删除。')
       return
@@ -521,29 +864,84 @@ export function AgentAnalysisPage() {
     toast.success('线程已删除')
   }
 
+  const keemartSession = makeKeemartSession(projectId, keemartMessages)
+  const displayMessages = isReportBackedProject ? keemartMessages : messageQueue
+  const displayToolCalls = isReportBackedProject ? keemartToolCalls : allToolCalls
+  const displayThoughts = isReportBackedProject ? keemartThoughts : allThoughts
+  const displayJobs = isReportBackedProject ? keemartJobs : jobList
+  const displayArtifacts = isReportBackedProject ? keemartArtifacts : artifacts
+  const displayApprovals = isReportBackedProject ? [] : approvalRequests
+  const displayIsRunning = isReportBackedProject ? keemartRunning : isRunning
+  const displayRunStatus: AgentRunStatus = isReportBackedProject
+    ? keemartRunning
+      ? 'running'
+      : displayMessages.length > 0 || displayToolCalls.length > 0
+        ? 'completed'
+        : 'idle'
+    : runStatus
+  const displayPlanSteps = isReportBackedProject
+    ? buildPlanSteps({
+        toolCalls: displayToolCalls,
+        approvals: [],
+        jobs: displayJobs,
+        artifacts: displayArtifacts,
+        runStatus: displayRunStatus,
+        isRunning: displayIsRunning,
+      })
+    : planSteps
+  const displayActiveJob = displayJobs.find((job) => job.status === 'running') || displayJobs[0] || null
+  const displayProjectName = isReportBackedProject ? KEEMART_PROJECT_NAME : currentProject?.name || 'Keemart 促销增长全流程'
+  const displayProjectStatus = isReportBackedProject ? 'report_ready' : currentProject?.status || 'report_ready'
+  const displayProjectStage = isReportBackedProject ? 'analysis_ready' : currentProject?.current_stage || 'report_ready'
+  const displayFileCount = isReportBackedProject ? 3 : files.length || projectState?.files_count || 3
+  const displayArtifactCount = isReportBackedProject
+    ? Math.max(8, displayArtifacts.length)
+    : projectState?.artifacts_count || displayArtifacts.length || 8
+  const displaySessions = isReportBackedProject ? [keemartSession] : projectSessions
+  const displayCurrentSessionId = isReportBackedProject ? KEEMART_THREAD_ID : sessionId
+  const displayLastCompletedAt = isReportBackedProject ? keemartCompletedAt : lastCompletedAt
+  const displayConnected = isReportBackedProject ? true : connected
+  const displayQuickPromptItems = isReportBackedProject ? keemartQuickPromptItems : defaultQuickPromptItems
+  const displayContextRows = isReportBackedProject
+    ? keemartContextRows(displayProjectName)
+    : defaultContextRows({
+        projectName: displayProjectName,
+        projectStatus: displayProjectStatus,
+        projectStage: displayProjectStage,
+        fileCount: displayFileCount,
+      })
+  const displaySnapshotItems = isReportBackedProject ? keemartSnapshotItems() : defaultSnapshotItems()
+  const displaySessionProvider = isReportBackedProject
+    ? 'claude_agent_sdk'
+    : currentSession?.runtime_provider || runtimeMetadata?.runtime_provider || 'claude_agent_sdk'
+  const displayModelName = isReportBackedProject
+    ? KEEMART_SHOWCASE_MODEL_NAME
+    : runtimeModelName || runtimeMetadata?.model || MODEL_LOADING_LABEL
+
   return (
     <div className="h-full overflow-hidden bg-background">
       <Toaster position="top-right" richColors />
       <div ref={densityRef} className="agent-analysis-page flex h-full min-h-0 flex-col overflow-hidden bg-background text-[15px] leading-6">
           <AgentAnalysisHeader
-            status={runStatus}
-            connected={connected}
+            status={displayRunStatus}
+            connected={displayConnected}
+            modelName={displayModelName}
             onRefresh={reconnect}
             onStop={handleInterrupt}
             onClear={handleStartNewThread}
-            canStop={Boolean(isRunning && sessionId)}
+            canStop={Boolean(displayIsRunning && displayCurrentSessionId)}
           />
 
           <div className="agent-analysis-grid grid min-h-0 flex-1 grid-cols-[minmax(0,2fr)_minmax(0,1fr)] overflow-hidden">
             <AgentConversationPanel
-              messages={messageQueue}
-              toolCalls={allToolCalls}
-              planSteps={planSteps}
-              runStatus={runStatus}
-              thoughts={allThoughts}
-              approvals={approvalRequests}
-              artifacts={artifacts}
-              isRunning={isRunning}
+              messages={displayMessages}
+              toolCalls={displayToolCalls}
+              planSteps={displayPlanSteps}
+              runStatus={displayRunStatus}
+              thoughts={displayThoughts}
+              approvals={displayApprovals}
+              artifacts={displayArtifacts}
+              isRunning={displayIsRunning}
               input={input}
               onInputChange={setInput}
               onSend={() => void handleSend()}
@@ -554,30 +952,34 @@ export function AgentAnalysisPage() {
               onApprove={handleApprove}
               onReject={handleReject}
               disabled={!projectId}
+              quickPromptItems={displayQuickPromptItems}
             />
 
             <AgentSideInspector
-              projectName={currentProject?.name || 'Keemart 促销增长全流程演示 Demo'}
-              projectStatus={currentProject?.status || 'report_ready'}
-              projectStage={currentProject?.current_stage || 'report_ready'}
-              fileCount={files.length || projectState?.files_count || 3}
-              artifactCount={projectState?.artifacts_count || artifacts.length || 8}
-              sessionProvider={currentSession?.runtime_provider || 'claude_agent_sdk'}
-              runStatus={runStatus}
-              activeJob={activeJob}
-              toolCalls={allToolCalls}
-              planSteps={planSteps}
-              artifacts={artifacts}
-              sessions={projectSessions}
-              currentSessionId={sessionId}
-              loadingSessions={loadingSessions}
+              projectName={displayProjectName}
+              projectStatus={displayProjectStatus}
+              projectStage={displayProjectStage}
+              fileCount={displayFileCount}
+              artifactCount={displayArtifactCount}
+              sessionProvider={displaySessionProvider}
+              modelName={displayModelName}
+              runStatus={displayRunStatus}
+              activeJob={displayActiveJob}
+              toolCalls={displayToolCalls}
+              planSteps={displayPlanSteps}
+              artifacts={displayArtifacts}
+              sessions={displaySessions}
+              currentSessionId={displayCurrentSessionId}
+              loadingSessions={isReportBackedProject ? false : loadingSessions}
               deletingSessionId={deletingSessionId}
               onNewThread={handleStartNewThread}
               onContinueSession={(nextSessionId) => void handleContinueSession(nextSessionId)}
               onDeleteSession={(targetSessionId) => void handleDeleteSession(targetSessionId)}
-              lastCompletedAt={lastCompletedAt}
+              lastCompletedAt={displayLastCompletedAt}
               dashboardHref={hrefFor(`/projects/${projectId}/dashboard`)}
               reportHref={hrefFor(`/projects/${projectId}/reports`)}
+              contextRows={displayContextRows}
+              snapshotItems={displaySnapshotItems}
             />
           </div>
         </div>
@@ -588,6 +990,7 @@ export function AgentAnalysisPage() {
 function AgentAnalysisHeader({
   status,
   connected,
+  modelName,
   canStop,
   onRefresh,
   onStop,
@@ -595,6 +998,7 @@ function AgentAnalysisHeader({
 }: {
   status: AgentRunStatus
   connected: boolean
+  modelName: string
   canStop: boolean
   onRefresh: () => void
   onStop: () => void
@@ -615,6 +1019,9 @@ function AgentAnalysisHeader({
           </Badge>
           <Badge variant="outline" className={connected ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-gray-50 text-gray-600'}>
             {connected ? 'SSE 已连接' : 'SSE 待连接'}
+          </Badge>
+          <Badge variant="outline" className="border-[#f2cf4a] bg-[#fff7d6] px-3 py-1 text-[#5f4a00] shadow-sm">
+            模型：{modelName}
           </Badge>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">通过对话驱动数据检查、分析执行与结果解释</p>
@@ -652,6 +1059,7 @@ function AgentConversationPanel({
   onPrompt,
   onApprove,
   onReject,
+  quickPromptItems = defaultQuickPromptItems,
 }: {
   messages: AgentMessage[]
   toolCalls: ToolCall[]
@@ -668,19 +1076,20 @@ function AgentConversationPanel({
   onPrompt: (prompt: string) => void
   onApprove: (id: string) => void
   onReject: (id: string) => void
+  quickPromptItems?: QuickPromptItem[]
 }) {
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-[var(--shadow-soft)]">
       <div className="agent-quick-prompts shrink-0 border-b border-border">
         <div className="flex flex-wrap gap-2">
-          {quickPrompts.map((prompt) => (
+          {quickPromptItems.map((item) => (
             <button
-              key={prompt}
+              key={item.prompt}
               type="button"
-              onClick={() => onPrompt(prompt)}
+              onClick={() => onPrompt(item.prompt)}
               className="agent-quick-prompt rounded-full border border-border bg-[#fbfcfe] text-xs font-semibold text-[#4b5563] transition hover:border-[#f2cf4a] hover:bg-secondary hover:text-[#1f2937]"
             >
-              {prompt}
+              {item.label}
             </button>
           ))}
         </div>
@@ -945,6 +1354,7 @@ function ApprovalRequestCard({
 }
 
 function ArtifactPreviewCard({ artifact }: { artifact: ArtifactPreview }) {
+  const metrics = artifact.metrics || ['GMV +61.2%', '曝光 75.9%', '加码 4 类']
   return (
     <div className="rounded-2xl border border-border bg-white p-4">
       <div className="flex items-start justify-between gap-3">
@@ -960,7 +1370,7 @@ function ArtifactPreviewCard({ artifact }: { artifact: ArtifactPreview }) {
         <Badge variant="outline">{artifact.type}</Badge>
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-        {['GMV +61.2%', '曝光 75.9%', '加码 4 类'].map((metric) => (
+        {metrics.map((metric) => (
           <div key={metric} className="rounded-lg bg-[#f7f8fa] px-2 py-2 font-semibold">{metric}</div>
         ))}
       </div>
@@ -1021,6 +1431,7 @@ function AgentSideInspector({
   fileCount,
   artifactCount,
   sessionProvider,
+  modelName,
   runStatus,
   activeJob,
   toolCalls,
@@ -1036,6 +1447,8 @@ function AgentSideInspector({
   lastCompletedAt,
   dashboardHref,
   reportHref,
+  contextRows,
+  snapshotItems,
 }: {
   projectName: string
   projectStatus: string
@@ -1043,6 +1456,7 @@ function AgentSideInspector({
   fileCount: number
   artifactCount: number
   sessionProvider: string
+  modelName: string
   runStatus: AgentRunStatus
   activeJob: JobStatus | null
   toolCalls: ToolCall[]
@@ -1058,8 +1472,12 @@ function AgentSideInspector({
   lastCompletedAt: string | null
   dashboardHref: string
   reportHref: string
+  contextRows?: InspectorRow[]
+  snapshotItems?: SnapshotItem[]
 }) {
   const progress = Math.round((activeJob?.progress ?? (runStatus === 'completed' ? 1 : runStatus === 'idle' ? 0 : 0.62)) * 100)
+  const visibleContextRows = contextRows || defaultContextRows({ projectName, projectStatus, projectStage, fileCount })
+  const visibleSnapshotItems = snapshotItems || defaultSnapshotItems()
   return (
     <aside className="agent-side-inspector flex h-full min-h-0 flex-col overflow-hidden">
       <AgentThreadCard
@@ -1072,55 +1490,57 @@ function AgentSideInspector({
         onDeleteSession={onDeleteSession}
       />
 
-      <InspectorCard title="项目上下文">
-        <InfoRow label="项目名称" value={projectName} />
-        <InfoRow label="数据周期" value="2025-09-01 ~ 2025-11-30" optional />
-        <InfoRow label="活动窗口" value="4 个（33 天）" optional />
-        <InfoRow label="品类数量" value="366" optional />
-        <InfoRow label="当前状态" value={`${projectStatus} · ${projectStage}`} />
-        <InfoRow label="接入文件" value={`${fileCount} 个`} />
-      </InspectorCard>
-
-      <InspectorCard title="当前 Run 状态">
-        <div className="flex items-center justify-between">
-          <Badge variant="outline" className={statusClass[runStatus]}>{statusText[runStatus]}</Badge>
-          <span className="agent-hide-when-minimum text-xs text-muted-foreground">{sessionProvider}</span>
-        </div>
-        <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#eef2f7]">
-          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
-        </div>
-        <p className="agent-hide-when-minimum mt-2 text-xs font-semibold">{activeJob?.message || '等待下一次分析指令'}</p>
-        <div className="mt-2 grid grid-cols-2 gap-1.5 text-xs text-muted-foreground">
-          <InfoPill icon={<Timer className="h-3.5 w-3.5" />} label="耗时" value={activeJob ? `${Math.max(1, Math.round(progress / 8))} min` : '-'} />
-          <InfoPill icon={<Clock3 className="h-3.5 w-3.5" />} label="完成" value={lastCompletedAt ? formatTime(lastCompletedAt) : '-'} />
-        </div>
-      </InspectorCard>
-
-      <InspectorCard title="分析进度">
-        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-          {planSteps.map((step) => (
-            <div key={step.id} className="flex items-start gap-2">
-              <span className={`mt-1 h-2 w-2 rounded-full ${step.status === 'completed' ? 'bg-green-500' : step.status === 'running' ? 'bg-blue-500' : 'bg-gray-300'}`} />
-              <div>
-                <p className="text-xs font-semibold leading-4">{step.title}</p>
-              </div>
-            </div>
+      <div className="grid grid-cols-2 gap-2">
+        <InspectorCard title="项目上下文">
+          {visibleContextRows.map((row) => (
+            <InfoRow key={row.label} label={row.label} value={row.value} optional={row.optional} />
           ))}
-        </div>
-      </InspectorCard>
+        </InspectorCard>
 
-      <InspectorCard title="结果快照">
-        <div className="grid grid-cols-4 gap-1.5">
-          <MiniKpi label="GMV 净增量" value="+1,290 万" tone="green" />
-          <MiniKpi label="曝光贡献" value="+980 万" tone="blue" />
-          <MiniKpi label="折扣贡献" value="+180 万" tone="orange" />
-          <MiniKpi label="建议加码" value="4 个品类" tone="purple" />
-        </div>
-        <Link href={dashboardHref} className="agent-result-link mt-2 flex items-center justify-center gap-2 rounded-lg bg-primary text-xs font-bold text-primary-foreground">
-          查看结果看板
-          <ArrowRight className="h-4 w-4" />
-        </Link>
-      </InspectorCard>
+        <InspectorCard title="当前 Run 状态">
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <Badge variant="outline" className={`${statusClass[runStatus]} shrink-0`}>{statusText[runStatus]}</Badge>
+            <span className="agent-hide-when-minimum min-w-0 truncate text-right text-xs font-semibold text-[#5f4a00]">{modelName}</span>
+          </div>
+          <div className="mt-2 truncate rounded-lg border border-[#f2cf4a]/70 bg-[#fff7d6] px-2 py-1.5 text-xs font-bold text-[#5f4a00]" title={`当前模型：${modelName}`}>
+            当前模型：{modelName}
+          </div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#eef2f7]">
+            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+          </div>
+          <p className="agent-hide-when-minimum mt-1 truncate text-[11px] text-muted-foreground" title={`Runtime：${sessionProvider}`}>Runtime：{sessionProvider}</p>
+          <p className="agent-hide-when-minimum mt-2 line-clamp-2 text-xs font-semibold">{activeJob?.message || '等待下一次分析指令'}</p>
+          <div className="mt-2 grid grid-cols-2 gap-1.5 text-xs text-muted-foreground">
+            <InfoPill icon={<Timer className="h-3.5 w-3.5" />} label="耗时" value={activeJob ? `${Math.max(1, Math.round(progress / 8))} min` : '-'} />
+            <InfoPill icon={<Clock3 className="h-3.5 w-3.5" />} label="完成" value={lastCompletedAt ? formatTime(lastCompletedAt) : '-'} />
+          </div>
+        </InspectorCard>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <InspectorCard title="分析进度">
+          <div className="grid grid-cols-1 gap-1.5">
+            {planSteps.map((step) => (
+              <div key={step.id} className="flex min-w-0 items-start gap-2">
+                <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${step.status === 'completed' ? 'bg-green-500' : step.status === 'running' ? 'bg-blue-500' : 'bg-gray-300'}`} />
+                <p className="min-w-0 truncate text-xs font-semibold leading-4" title={step.title}>{step.title}</p>
+              </div>
+            ))}
+          </div>
+        </InspectorCard>
+
+        <InspectorCard title="结果快照">
+          <div className="grid grid-cols-2 gap-1.5">
+            {visibleSnapshotItems.map((item) => (
+              <MiniKpi key={item.label} label={item.label} value={item.value} tone={item.tone} />
+            ))}
+          </div>
+          <Link href={dashboardHref} className="agent-result-link mt-2 flex items-center justify-center gap-1 rounded-lg bg-primary px-2 text-xs font-bold text-primary-foreground">
+            <span className="truncate">查看结果看板</span>
+            <ArrowRight className="h-4 w-4 shrink-0" />
+          </Link>
+        </InspectorCard>
+      </div>
 
       <InspectorCard title="产物与下一步">
         <div className="space-y-1.5">

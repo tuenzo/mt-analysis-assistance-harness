@@ -11,6 +11,7 @@ import type {
   SchemaInferResponse,
   FieldMapping,
   AgentSession,
+  AgentRuntimeMetadata,
   MessageResponse,
   AgentMessage,
   DemoStatus,
@@ -125,6 +126,10 @@ class ApiClient {
 
   async getDemoStatus(): Promise<ApiResponse<DemoStatus>> {
     return this.request<DemoStatus>('/api/demo/status')
+  }
+
+  async getAgentRuntimeMetadata(): Promise<ApiResponse<AgentRuntimeMetadata>> {
+    return this.request<AgentRuntimeMetadata>('/api/agent/runtime')
   }
 
   async getProject(projectId: string): Promise<ApiResponse<Project>> {

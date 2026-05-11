@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { useApiBaseHref } from '@/lib/use-api-base-href'
 import { useProjectStore } from '@/store/project-store'
+import { KEEMART_PROJECT_ID, KEEMART_PROJECT_NAME } from '@/features/demo/keemart-demo-data'
 
 const navItems = [
   { key: 'overview', label: '概览', route: (projectId: string) => `/projects/${projectId}`, icon: Home },
@@ -31,10 +32,18 @@ const navItems = [
 ]
 
 const fallbackRecentProjects = [
-  { id: 'demo-project', name: 'Keemart 促销增长全流程演示 Demo' },
-  { id: 'demo-project-2', name: '新项目演示 2' },
-  { id: 'demo-project-3', name: '新项目' },
+  { id: KEEMART_PROJECT_ID, name: KEEMART_PROJECT_NAME },
+  { id: 'promo-growth-project', name: 'Keemart 促销增长全流程项目' },
+  { id: 'monthly-review-project', name: '月末促销复盘项目' },
 ]
+
+function displayProjectName(name: string) {
+  return name
+    .replace(/\s*Demo\b/gi, '')
+    .replace(/演示\s*/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
 
 function getProjectIdFromPathname(pathname: string) {
   const match = pathname.match(/^\/projects\/([^/]+)/)
@@ -49,7 +58,13 @@ export function Sidebar() {
     typeof window !== 'undefined' && window.localStorage.getItem('baa.sidebarCollapsed') === 'true',
   )
   const projectId = getProjectIdFromPathname(pathname) || projects[0]?.id || ''
-  const recentProjects = projects.length > 0 ? projects.slice(0, 4) : fallbackRecentProjects
+  const recentProjects =
+    projects.length > 0
+      ? [
+          { id: KEEMART_PROJECT_ID, name: KEEMART_PROJECT_NAME },
+          ...projects.filter((project) => project.id !== KEEMART_PROJECT_ID),
+        ].slice(0, 4)
+      : fallbackRecentProjects
 
   useEffect(() => {
     loadProjects()
@@ -121,24 +136,25 @@ export function Sidebar() {
           <div className="mt-6">
             <div className="px-3 text-xs font-bold text-muted-foreground">最近项目</div>
             <div className="mt-2 space-y-1">
-              {recentProjects.map((project) => {
-                const active = pathname.startsWith(`/projects/${project.id}`)
-                return (
-                  <Link
-                    key={project.id}
-                    href={hrefFor(`/projects/${project.id}/agent`)}
+          {recentProjects.map((project) => {
+            const active = pathname.startsWith(`/projects/${project.id}`)
+            const projectName = displayProjectName(project.name)
+            return (
+              <Link
+                key={project.id}
+                href={hrefFor(`/projects/${project.id}/agent`)}
                     className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition ${
                       active
                         ? 'border border-[#f2cf4a] bg-secondary text-secondary-foreground'
                         : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                     }`}
-                    title={project.name}
-                  >
-                    <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{project.name}</span>
-                  </Link>
-                )
-              })}
+                title={projectName}
+              >
+                <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">{projectName}</span>
+              </Link>
+            )
+          })}
             </div>
           </div>
         )}

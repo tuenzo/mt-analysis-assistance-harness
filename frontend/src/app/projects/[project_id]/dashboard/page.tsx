@@ -6,10 +6,21 @@ import { api } from '@/lib/api-client'
 import type { Artifact, LatestReport, ProjectState } from '@/lib/api-types'
 import { ResultDashboardPage } from '@/features/dashboard/result-dashboard-page'
 import { buildDashboardSummary } from '@/features/dashboard/dashboard-data'
+import { isKeemartPromoProject } from '@/features/demo/keemart-demo-data'
+import { KeemartDemoDashboardPage } from '@/features/demo/keemart-demo-dashboard-page'
 
 export default function DashboardPage() {
   const params = useParams<{ project_id: string }>()
   const projectId = params.project_id
+
+  if (isKeemartPromoProject(projectId)) {
+    return <KeemartDemoDashboardPage />
+  }
+
+  return <ApiBackedDashboardPage projectId={projectId} />
+}
+
+function ApiBackedDashboardPage({ projectId }: { projectId: string }) {
   const [state, setState] = useState<ProjectState | null>(null)
   const [artifacts, setArtifacts] = useState<Artifact[]>([])
   const [report, setReport] = useState<LatestReport | null>(null)

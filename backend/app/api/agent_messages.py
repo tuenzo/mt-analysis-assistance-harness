@@ -1,11 +1,25 @@
+import os
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from typing import Optional
 import json
 from app.projects.schemas import AgentMessageRequest, AgentMessageResponse
 from app.agent.message_runtime import get_message_runtime
+from app.core.config import settings
 
 router = APIRouter(prefix="/agent", tags=["agent"])
+
+
+@router.get("/runtime")
+def get_agent_runtime_metadata():
+    return {
+        "ok": True,
+        "data": {
+            "runtime_provider": settings.agent_runtime_provider,
+            "model": os.environ.get("ANTHROPIC_API_MODEL") or settings.anthropic_api_model,
+        },
+        "error": None,
+    }
 
 
 @router.post("/messages", response_model=AgentMessageResponse)

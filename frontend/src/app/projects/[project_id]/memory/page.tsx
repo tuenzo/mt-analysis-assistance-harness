@@ -8,10 +8,21 @@ import type { MemoryCandidate, ProjectMemory } from '@/lib/api-types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { MarkdownView } from '@/components/markdown-view'
+import { isKeemartPromoProject } from '@/features/demo/keemart-demo-data'
+import { KeemartDemoMemoryPage } from '@/features/demo/keemart-demo-memory-page'
 
 export default function MemoryPage() {
   const params = useParams<{ project_id: string }>()
   const projectId = params.project_id
+
+  if (isKeemartPromoProject(projectId)) {
+    return <KeemartDemoMemoryPage />
+  }
+
+  return <ApiBackedMemoryPage projectId={projectId} />
+}
+
+function ApiBackedMemoryPage({ projectId }: { projectId: string }) {
   const [candidates, setCandidates] = useState<MemoryCandidate[]>([])
   const [memory, setMemory] = useState<ProjectMemory[]>([])
   const [loading, setLoading] = useState(true)

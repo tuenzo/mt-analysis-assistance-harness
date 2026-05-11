@@ -29,4 +29,5 @@ export type ArtifactPreview = {
   name: string
   type: string
   path?: string
+  metrics?: string[]
 }

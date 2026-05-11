@@ -4,11 +4,19 @@ import { useProjectStore } from '@/store/project-store'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Database, Bot, FileText, Brain, Clock, FolderOpen } from 'lucide-react'
 import Link from 'next/link'
+import { useParams } from 'next/navigation'
 import { useApiBaseHref } from '@/lib/use-api-base-href'
+import { isKeemartPromoProject } from '@/features/demo/keemart-demo-data'
+import { KeemartDemoOverviewPage } from '@/features/demo/keemart-demo-overview-page'
 
 export default function ProjectHomePage() {
+  const params = useParams<{ project_id: string }>()
   const { currentProject, projectState, files } = useProjectStore()
   const hrefFor = useApiBaseHref()
+
+  if (isKeemartPromoProject(params.project_id)) {
+    return <KeemartDemoOverviewPage />
+  }
 
   if (!currentProject) {
     return (

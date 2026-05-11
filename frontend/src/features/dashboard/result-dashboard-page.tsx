@@ -32,7 +32,7 @@ import type {
   WaterfallDatum,
 } from '@/types/dashboard'
 
-const initialFilters: DashboardFilters = {
+const defaultInitialFilters: DashboardFilters = {
   timeRange: ['2025-05-06', '2025-06-04'],
   activityWindow: 'all',
   categoryLevel: 'all',
@@ -66,6 +66,38 @@ const colorClass = {
   },
 }
 
+const WAN_UNIT_SCALE = 10000
+
+function inferCurrencyScale(values: number[]) {
+  const maxValue = Math.max(0, ...values.filter(Number.isFinite).map((value) => Math.abs(value)))
+  return maxValue >= WAN_UNIT_SCALE ? WAN_UNIT_SCALE : 1
+}
+
+function formatCurrencyNumber(value: number, scale: number, signed = false) {
+  const displayValue = value / scale
+  const prefix = signed && value > 0 ? '+' : ''
+  return `${prefix}${displayValue.toLocaleString('en-US', {
+    maximumFractionDigits: scale === WAN_UNIT_SCALE ? 2 : 0,
+  })}`
+}
+
+function formatScaledCurrencyNumber(value: number, scale: number, signed = false) {
+  const prefix = signed && value > 0 ? '+' : ''
+  return `${prefix}${value.toLocaleString('en-US', {
+    maximumFractionDigits: scale === WAN_UNIT_SCALE ? 2 : 0,
+  })}`
+}
+
+function formatCurrencyWithUnit(value: number, scale: number, signed = false) {
+  return `${formatCurrencyNumber(value, scale, signed)} 万元`
+}
+
+function getNiceAxisMax(maxValue: number) {
+  if (maxValue <= 0) return 1
+  const step = maxValue <= 10 ? 2 : maxValue <= 100 ? 20 : maxValue <= 1000 ? 200 : 400
+  return Math.ceil(maxValue / step) * step
+}
+
 const categoryLevelByName: Record<string, DashboardFilters['categoryLevel']> = {
   饮料: 'top',
   零食: 'top',
@@ -77,14 +109,34 @@ const categoryLevelByName: Record<string, DashboardFilters['categoryLevel']> = {
   家清: 'longtail',
   粮油: 'longtail',
   其他: 'longtail',
+  一段婴儿奶粉: 'top',
+  可乐汽水: 'top',
+  夹心巧克力: 'top',
+  方便面: 'top',
+  洗衣液: 'mid',
+  天然矿泉水: 'mid',
+  '乳液/面霜': 'mid',
+  '牙膏/牙粉': 'mid',
+  一次性杯子: 'longtail',
+  研磨咖啡: 'longtail',
+  一次性手套: 'longtail',
+  '保鲜膜/套': 'longtail',
+  其他冰淇淋: 'longtail',
+  黑巧克力: 'longtail',
 }
 
-function applyDashboardFilters(summary: DashboardSummary, filters: DashboardFilters): DashboardSummary {
+function applyDashboardFilters(
+  summary: DashboardSummary,
+  filters: DashboardFilters,
+  options: { preserveLocalGap?: boolean } = {},
+): DashboardSummary {
   const trend = summary.trend.filter(
     (item) => matchesActivityWindow(item, filters.activityWindow) && matchesCalendarType(item, filters.calendarType),
   )
   const pareto = recalculatePareto(summary.pareto.filter((item) => matchesCategoryLevel(item.category, filters.categoryLevel)))
-  const quadrants = summary.quadrants.filter((item) => matchesCategoryLevel(item.category, filters.categoryLevel))
+  const quadrants = summary.quadrants.filter(
+    (item) => item.resourceType || matchesCategoryLevel(item.category, filters.categoryLevel),
+  )
   const recommendations = summary.recommendations.map((group) => {
     const categories = group.categories.filter((category) => matchesCategoryLevel(category, filters.categoryLevel))
 
@@ -100,7 +152,7 @@ function applyDashboardFilters(summary: DashboardSummary, filters: DashboardFilt
     ...summary,
     kpis: buildFilteredKpis(summary.kpis, trend, recommendations),
     pareto,
-    localGap: buildFilteredLocalGap(trend),
+    localGap: options.preserveLocalGap ? summary.localGap : buildFilteredLocalGap(trend),
     trend,
     quadrants,
     recommendations,
@@ -158,13 +210,17 @@ function buildFilteredKpis(
   const netTotal = sumSparklineValues(netSeries)
   const exposureTotal = sumSparklineValues(exposureSeries)
   const discountTotal = sumSparklineValues(discountSeries)
+  const currencyScale = inferCurrencyScale(
+    trend.flatMap((item) => [item.gmv, item.baselineGmv, item.exposure ?? 0, item.discount ?? 0]),
+  )
   const boostCount = recommendations.find((group) => group.key === 'boost')?.categories.length ?? 0
 
   return kpis.map((kpi) => {
     if (kpi.key === 'gmv_increment') {
       return {
         ...kpi,
-        value: formatPlainNumber(netTotal),
+        value: formatCurrencyNumber(netTotal, currencyScale),
+        unit: '万元',
         subText: `较基线 ${formatSignedPercent(netTotal, baselineTotal)}`,
         trendDirection: toTrendDirection(netTotal),
         series: netSeries,
@@ -174,7 +230,8 @@ function buildFilteredKpis(
     if (kpi.key === 'exposure_contribution') {
       return {
         ...kpi,
-        value: formatSignedNumber(exposureTotal),
+        value: formatCurrencyNumber(exposureTotal, currencyScale, true),
+        unit: '万元',
         subText: `占净增量 ${formatSharePercent(exposureTotal, netTotal)}`,
         trendDirection: toTrendDirection(exposureTotal),
         series: exposureSeries,
@@ -184,7 +241,8 @@ function buildFilteredKpis(
     if (kpi.key === 'discount_contribution') {
       return {
         ...kpi,
-        value: formatSignedNumber(discountTotal),
+        value: formatCurrencyNumber(discountTotal, currencyScale, true),
+        unit: '万元',
         subText: `占净增量 ${formatSharePercent(discountTotal, netTotal)}`,
         trendDirection: toTrendDirection(discountTotal),
         series: discountSeries,
@@ -244,15 +302,6 @@ function sumSparklineValues(data: SparklinePoint[]) {
   return data.reduce((sum, item) => sum + item.value, 0)
 }
 
-function formatPlainNumber(value: number) {
-  return Math.round(value).toLocaleString('en-US')
-}
-
-function formatSignedNumber(value: number) {
-  const rounded = Math.round(value)
-  return `${rounded > 0 ? '+' : ''}${rounded.toLocaleString('en-US')}`
-}
-
 function formatSignedPercent(numerator: number, denominator: number) {
   if (denominator === 0) return '+0.0%'
   const percent = (numerator / denominator) * 100
@@ -270,11 +319,26 @@ function toTrendDirection(value: number): KpiCardData['trendDirection'] {
   return 'flat'
 }
 
-export function ResultDashboardPage({ summary }: { summary: DashboardSummary }) {
+export function ResultDashboardPage({
+  summary,
+  initialFilters = defaultInitialFilters,
+  timeRangeLabel = '最近 30 天（05.06~06.04）',
+  preserveLocalGap = false,
+  showcaseLayout = false,
+}: {
+  summary: DashboardSummary
+  initialFilters?: DashboardFilters
+  timeRangeLabel?: string
+  preserveLocalGap?: boolean
+  showcaseLayout?: boolean
+}) {
   const [filters, setFilters] = useState<DashboardFilters>(initialFilters)
   const [drilldown, setDrilldown] = useState<string | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
-  const filteredSummary = useMemo(() => applyDashboardFilters(summary, filters), [summary, filters])
+  const filteredSummary = useMemo(
+    () => applyDashboardFilters(summary, filters, { preserveLocalGap }),
+    [summary, filters, preserveLocalGap],
+  )
 
   return (
     <div className="h-full bg-background">
@@ -284,16 +348,17 @@ export function ResultDashboardPage({ summary }: { summary: DashboardSummary }) 
         minScale={0.25}
         contentClassName="h-full"
       >
-        <div className="flex h-full flex-col bg-background px-6 py-4">
+        <div className="flex h-full flex-col bg-background px-6 pb-0 pt-4">
           <DashboardFilterBar
             filters={filters}
             onChange={setFilters}
             onReset={() => setFilters(initialFilters)}
             onExport={() => setExportOpen(true)}
+            timeRangeLabel={timeRangeLabel}
           />
           <CoreConclusionBanner conclusion={filteredSummary.conclusion} onExplain={() => setDrilldown('核心结论')} />
           <KpiSummaryStrip kpis={filteredSummary.kpis} onOpen={setDrilldown} />
-          <DashboardMainGrid summary={filteredSummary} onOpen={setDrilldown} />
+          <DashboardMainGrid summary={filteredSummary} onOpen={setDrilldown} showcaseLayout={showcaseLayout} />
         </div>
       </ScaledPageFrame>
 
@@ -313,16 +378,18 @@ function DashboardFilterBar({
   onChange,
   onReset,
   onExport,
+  timeRangeLabel,
 }: {
   filters: DashboardFilters
   onChange: (filters: DashboardFilters) => void
   onReset: () => void
   onExport: () => void
+  timeRangeLabel: string
 }) {
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div data-dashboard-filter-bar className="flex items-center justify-between gap-3">
       <div className="grid flex-1 grid-cols-4 gap-3">
-        <FilterButton icon={<CalendarDays className="h-4 w-4" />} label="时间范围" value="最近 30 天（05.06~06.04）" />
+        <FilterButton icon={<CalendarDays className="h-4 w-4" />} label="时间范围" value={timeRangeLabel} />
         <FilterSelect
           icon={<Target className="h-4 w-4" />}
           label="活动窗口"
@@ -360,11 +427,11 @@ function DashboardFilterBar({
         />
       </div>
       <div className="flex shrink-0 gap-2">
-        <Button variant="outline" onClick={onReset}>
+        <Button variant="outline" className="h-[62px] rounded-xl px-4 text-base font-bold" onClick={onReset}>
           <RotateCcw className="mr-2 h-4 w-4" />
           重置
         </Button>
-        <Button onClick={onExport}>
+        <Button className="h-[62px] rounded-xl px-5 text-base font-bold" onClick={onExport}>
           <Download className="mr-2 h-4 w-4" />
           导出
         </Button>
@@ -375,11 +442,11 @@ function DashboardFilterBar({
 
 function FilterButton({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
-    <button className="flex h-12 items-center gap-3 rounded-xl border border-border bg-white px-4 text-left shadow-sm">
+    <button className="flex h-[62px] items-center gap-3 rounded-xl border border-border bg-white px-4 text-left shadow-sm">
       <span className="text-[#1f2937]">{icon}</span>
       <span className="min-w-0">
         <span className="block text-[11px] font-semibold text-muted-foreground">{label}</span>
-        <span className="block truncate text-sm font-bold">{value}</span>
+        <span className="block truncate text-base font-bold">{value}</span>
       </span>
     </button>
   )
@@ -408,14 +475,14 @@ function FilterSelect({
         data-filter-select={label}
         onClick={() => setOpen((current) => !current)}
         onBlur={() => window.setTimeout(() => setOpen(false), 120)}
-        className={`flex h-12 w-full items-center gap-3 rounded-xl border bg-white px-4 text-left shadow-sm transition ${
+        className={`flex h-[62px] w-full items-center gap-3 rounded-xl border bg-white px-4 text-left shadow-sm transition ${
           open ? 'border-[#f2cf4a] ring-2 ring-[#fff1a8]' : 'border-border hover:border-[#f2cf4a]'
         }`}
       >
         <span className="text-[#1f2937]">{icon}</span>
         <span className="min-w-0 flex-1">
           <span className="block text-[11px] font-semibold text-muted-foreground">{label}</span>
-          <span className="block truncate text-sm font-bold">{selectedLabel}</span>
+          <span className="block truncate text-base font-bold">{selectedLabel}</span>
         </span>
         <ChevronDown className={`h-4 w-4 text-muted-foreground transition ${open ? 'rotate-180' : ''}`} />
       </button>
@@ -450,7 +517,7 @@ function FilterSelect({
 
 function CoreConclusionBanner({ conclusion, onExplain }: { conclusion: string; onExplain: () => void }) {
   return (
-    <section className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-white px-5 py-3 text-blue-950">
+    <section data-dashboard-conclusion-banner className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-white px-5 py-3 text-blue-950">
       <div className="flex min-w-0 items-center gap-3">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600">
           <Target className="h-5 w-5" />
@@ -508,18 +575,35 @@ function KpiCard({ kpi, onClick }: { kpi: KpiCardData; onClick: () => void }) {
   )
 }
 
-function DashboardMainGrid({ summary, onOpen }: { summary: DashboardSummary; onOpen: (title: string) => void }) {
+function DashboardMainGrid({
+  summary,
+  onOpen,
+  showcaseLayout = false,
+}: {
+  summary: DashboardSummary
+  onOpen: (title: string) => void
+  showcaseLayout?: boolean
+}) {
   return (
-    <section className="mt-3 grid flex-1 items-stretch gap-4 xl:grid-cols-[minmax(0,1.18fr)_minmax(0,1.18fr)_320px]">
-      <div className="grid content-start gap-4">
+    <section
+      data-dashboard-main-grid
+      className="mt-3 grid min-h-0 flex-1 items-stretch gap-4 pb-4 xl:grid-cols-[minmax(0,1.18fr)_minmax(0,1.18fr)_320px]"
+    >
+      <div
+        data-dashboard-left-column
+        className={showcaseLayout ? 'grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4' : 'grid content-start gap-4'}
+      >
         <ParetoChartCard data={summary.pareto} onOpen={onOpen} />
-        <GmvTrendComparisonCard data={summary.trend} onOpen={onOpen} />
+        <GmvTrendComparisonCard data={summary.trend} onOpen={onOpen} stretchToFill={showcaseLayout} />
       </div>
-      <div className="grid content-start gap-4">
+      <div
+        data-dashboard-middle-column
+        className={showcaseLayout ? 'grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4' : 'grid content-start gap-4'}
+      >
         <LocalGapWaterfallCard data={summary.localGap} onOpen={onOpen} />
-        <StrategyQuadrantCard data={summary.quadrants} onOpen={onOpen} />
+        <StrategyQuadrantCard data={summary.quadrants} onOpen={onOpen} stretchToFill={showcaseLayout} />
       </div>
-      <RecommendationPanel groups={summary.recommendations} onOpen={onOpen} className="h-full" />
+      <RecommendationPanel groups={summary.recommendations} onOpen={onOpen} className="h-full min-h-0" />
     </section>
   )
 }
@@ -529,14 +613,16 @@ function ChartCard({
   children,
   footer,
   onOpen,
+  className = '',
 }: {
   title: string
   children: ReactNode
   footer?: ReactNode
   onOpen?: () => void
+  className?: string
 }) {
   return (
-    <article className="rounded-2xl border border-border bg-white p-3 shadow-[var(--shadow-soft)]">
+    <article className={`rounded-2xl border border-border bg-white p-3 shadow-[var(--shadow-soft)] ${className}`}>
       <ChartCardHeader title={title} onOpen={onOpen} />
       {children}
       {footer}
@@ -568,7 +654,9 @@ function ParetoChartCard({ data, onOpen }: { data: ParetoDatum[]; onOpen: (title
   const plotLeft = 35
   const plotRight = 590
   const rightAxisX = 598
-  const gmvAxisMax = Math.max(600, Math.ceil(Math.max(...data.map((item) => item.gmv), 1) / 600) * 600)
+  const currencyScale = inferCurrencyScale(data.map((item) => item.gmv))
+  const displayData = data.map((item) => ({ ...item, displayGmv: item.gmv / currencyScale }))
+  const gmvAxisMax = getNiceAxisMax(Math.max(...displayData.map((item) => item.displayGmv), 1))
   const gmvTicks = Array.from({ length: 5 }, (_, index) => Math.round((gmvAxisMax / 4) * index))
   const xForIndex = (index: number) => {
     if (data.length <= 1) return (plotLeft + plotRight) / 2
@@ -600,8 +688,8 @@ function ParetoChartCard({ data, onOpen }: { data: ParetoDatum[]; onOpen: (title
             </g>
           )
         })}
-        {data.map((item, index) => {
-          const height = (item.gmv / gmvAxisMax) * chartHeight
+        {displayData.map((item, index) => {
+          const height = (item.displayGmv / gmvAxisMax) * chartHeight
           const x = xForIndex(index) - barWidth / 2
           return (
             <g
@@ -612,18 +700,29 @@ function ParetoChartCard({ data, onOpen }: { data: ParetoDatum[]; onOpen: (title
               }}
               className="cursor-pointer"
             >
-              <rect x={x} y={chartBottom - height} width={barWidth} height={height} rx="4" fill="#60a5fa">
-                <title>{`${item.category}: ${item.gmv} 万元`}</title>
-              </rect>
+              <rect
+                x={x}
+                y={chartBottom - height}
+                width={barWidth}
+                height={height}
+                rx="4"
+                fill="#60a5fa"
+                aria-label={`${item.category}: ${formatCurrencyWithUnit(item.gmv, currencyScale)}`}
+              />
               <text x={xForIndex(index)} y="180" textAnchor="middle" fontSize="11" fill="#374151">{item.category}</text>
             </g>
           )
         })}
         <polyline points={points} fill="none" stroke="#2563eb" strokeWidth="3" />
         {data.map((item, index) => (
-          <circle key={`${item.category}-line`} cx={xForIndex(index)} cy={chartBottom - (item.cumulativeRatio / 100) * chartHeight} r="4" fill="#2563eb">
-            <title>{`累计占比 ${item.cumulativeRatio}%`}</title>
-          </circle>
+          <circle
+            key={`${item.category}-line`}
+            cx={xForIndex(index)}
+            cy={chartBottom - (item.cumulativeRatio / 100) * chartHeight}
+            r="4"
+            fill="#2563eb"
+            aria-label={`累计占比 ${item.cumulativeRatio}%`}
+          />
         ))}
       </svg>
     </ChartCard>
@@ -637,10 +736,16 @@ function LocalGapWaterfallCard({ data, onOpen }: { data: WaterfallDatum[]; onOpe
   const barWidth = 70
   const step = 94
   const startX = 42
-  const { bars } = data.reduce<{
+  const currencyScale = inferCurrencyScale(data.map((item) => item.value))
+  const displayData = data.map((item) => ({
+    ...item,
+    rawValue: item.value,
+    value: item.value / currencyScale,
+  }))
+  const { bars } = displayData.reduce<{
     cumulative: number
     bars: Array<{
-      item: WaterfallDatum
+      item: WaterfallDatum & { rawValue: number }
       x: number
       start: number
       end: number
@@ -659,7 +764,8 @@ function LocalGapWaterfallCard({ data, onOpen }: { data: WaterfallDatum[]; onOpe
     }
   }, { cumulative: 0, bars: [] })
   const maxValue = Math.max(...bars.flatMap((bar) => [bar.start, bar.end]), 1)
-  const chartMax = Math.ceil(maxValue / 400) * 400
+  const chartMax = getNiceAxisMax(maxValue)
+  const ticks = Array.from({ length: 5 }, (_, index) => Math.round((chartMax / 4) * index))
   const scaleY = (value: number) => chartBottom - (value / chartMax) * chartHeight
 
   return (
@@ -672,12 +778,14 @@ function LocalGapWaterfallCard({ data, onOpen }: { data: WaterfallDatum[]; onOpe
       <svg viewBox="0 0 635 188" className="h-48 w-full" role="img" aria-label="LocalGap 增量分解瀑布图">
         <text x="5" y="8" fontSize="11" fill="#374151">GMV（万元）</text>
         <line x1="34" y1={chartBottom} x2="610" y2={chartBottom} stroke="#d9e1ec" />
-        {[0, 400, 800, 1200, 1600].map((tick) => {
+        {ticks.map((tick) => {
           const y = scaleY(tick)
           return (
             <g key={tick}>
               <line x1="34" y1={y} x2="610" y2={y} stroke="#eef2f7" />
-              <text x="5" y={y + 4} fontSize="10" fill="#6b7280">{tick}</text>
+              <text x="5" y={y + 4} fontSize="10" fill="#6b7280">
+                {formatScaledCurrencyNumber(tick, currencyScale)}
+              </text>
             </g>
           )
         })}
@@ -700,7 +808,7 @@ function LocalGapWaterfallCard({ data, onOpen }: { data: WaterfallDatum[]; onOpe
           const top = Math.min(scaleY(start), scaleY(end))
           const height = Math.max(6, Math.abs(scaleY(start) - scaleY(end)))
           const color = item.type === 'positive' ? '#22c55e' : item.type === 'negative' ? '#ef4444' : '#9ca3af'
-          const label = item.type === 'positive' ? `+${item.value}` : `${item.value}`
+          const label = formatScaledCurrencyNumber(item.value, currencyScale, item.type === 'positive')
           return (
             <g
               key={item.name}
@@ -718,9 +826,8 @@ function LocalGapWaterfallCard({ data, onOpen }: { data: WaterfallDatum[]; onOpe
                 rx="6"
                 fill={color}
                 className="transition hover:opacity-80"
-              >
-                <title>{`${item.name}: ${item.value}`}</title>
-              </rect>
+                aria-label={`${item.name}: ${formatCurrencyWithUnit(item.rawValue, currencyScale)}`}
+              />
               <text x={x + barWidth / 2} y={top - 7} textAnchor="middle" fontSize="12" fontWeight="700" fill="#111827">
                 {label}
               </text>
@@ -735,7 +842,15 @@ function LocalGapWaterfallCard({ data, onOpen }: { data: WaterfallDatum[]; onOpe
   )
 }
 
-function GmvTrendComparisonCard({ data, onOpen }: { data: TrendDatum[]; onOpen: (title: string) => void }) {
+function GmvTrendComparisonCard({
+  data,
+  onOpen,
+  stretchToFill = false,
+}: {
+  data: TrendDatum[]
+  onOpen: (title: string) => void
+  stretchToFill?: boolean
+}) {
   const chartRef = useRef<HTMLDivElement>(null)
   const periodSummaries = buildPeriodSummaries(data)
 
@@ -745,25 +860,33 @@ function GmvTrendComparisonCard({ data, onOpen }: { data: TrendDatum[]; onOpen: 
     const chart = echarts.init(chartRef.current, undefined, { renderer: 'svg' })
     chart.setOption(buildGmvTrendOption(data))
     const frame = window.requestAnimationFrame(() => chart.resize())
+    const resizeObserver = new ResizeObserver(() => chart.resize())
+    resizeObserver.observe(chartRef.current)
 
     return () => {
       window.cancelAnimationFrame(frame)
+      resizeObserver.disconnect()
       chart.dispose()
     }
   }, [data])
 
   return (
-    <ChartCard title="活动前中后：GMV 趋势与活动期对比" onOpen={() => onOpen('活动前中后：GMV 趋势与活动期对比')}>
+    <ChartCard
+      title="活动前中后：GMV 趋势与活动期对比"
+      onOpen={() => onOpen('活动前中后：GMV 趋势与活动期对比')}
+      className={stretchToFill ? 'flex h-full min-h-0 flex-col' : ''}
+    >
       <div className="mb-2 flex justify-end gap-3 text-xs text-muted-foreground">
         <Legend color="#3b82f6" label="实际 GMV" />
         <Legend color="#9ca3af" label="自然基线" />
         <Legend color="#fed7aa" label="活动期窗口" />
         <Legend color="#ef4444" label="发薪日" />
       </div>
-      <div className="grid grid-cols-[minmax(0,1fr)_150px] gap-3">
+      <div className={`grid grid-cols-[minmax(0,1fr)_150px] gap-3 ${stretchToFill ? 'min-h-0 flex-1' : ''}`}>
         <div
+          data-dashboard-gmv-trend-chart
           ref={chartRef}
-          className="h-48 min-w-0"
+          className={stretchToFill ? 'h-full min-h-0 min-w-0' : 'h-48 min-w-0'}
           role="img"
           aria-label="活动前中后 GMV 趋势与活动期对比"
         />
@@ -790,12 +913,13 @@ function GmvTrendComparisonCard({ data, onOpen }: { data: TrendDatum[]; onOpen: 
 
 function buildGmvTrendOption(data: TrendDatum[]): echarts.EChartsOption {
   const dates = data.map((item) => item.date)
+  const currencyScale = inferCurrencyScale(data.flatMap((item) => [item.gmv, item.baselineGmv]))
   const paydayPoints = data
     .filter((item) => item.isPayday)
     .map((item) => ({
       name: '发薪日',
-      coord: [item.date, item.gmv],
-      value: item.gmv,
+      coord: [item.date, item.gmv / currencyScale],
+      value: item.gmv / currencyScale,
     }))
 
   return {
@@ -819,7 +943,7 @@ function buildGmvTrendOption(data: TrendDatum[]): echarts.EChartsOption {
             const point = item as { marker?: string; seriesName?: string; value?: number | string }
             const value =
               typeof point.value === 'number'
-                ? point.value.toLocaleString()
+                ? formatScaledCurrencyNumber(point.value, currencyScale)
                 : point.value
 
             return `${point.marker ?? ''}${point.seriesName ?? ''}: ${value} 万元`
@@ -866,7 +990,7 @@ function buildGmvTrendOption(data: TrendDatum[]): echarts.EChartsOption {
       {
         name: '实际 GMV',
         type: 'line',
-        data: data.map((item) => item.gmv),
+        data: data.map((item) => item.gmv / currencyScale),
         smooth: true,
         symbol: 'circle',
         symbolSize: 5,
@@ -912,7 +1036,7 @@ function buildGmvTrendOption(data: TrendDatum[]): echarts.EChartsOption {
       {
         name: '自然基线',
         type: 'line',
-        data: data.map((item) => item.baselineGmv),
+        data: data.map((item) => item.baselineGmv / currencyScale),
         smooth: true,
         symbol: 'none',
         lineStyle: {
@@ -945,6 +1069,7 @@ function buildActivityMarkAreas(data: TrendDatum[]) {
 }
 
 function buildPeriodSummaries(data: TrendDatum[]) {
+  const currencyScale = inferCurrencyScale(data.flatMap((item) => [item.gmv, item.baselineGmv]))
   const preGmv = sumGmvByPeriod(data, 'pre')
   const duringGmv = sumGmvByPeriod(data, 'during')
   const postGmv = sumGmvByPeriod(data, 'post')
@@ -952,19 +1077,19 @@ function buildPeriodSummaries(data: TrendDatum[]) {
   return [
     {
       label: '活动前',
-      value: `GMV ${formatGmv(preGmv)}`,
+      value: `GMV ${formatCurrencyWithUnit(preGmv, currencyScale)}`,
       delta: '基准阶段',
       tone: 'text-muted-foreground',
     },
     {
       label: '活动中',
-      value: `GMV ${formatGmv(duringGmv)}`,
+      value: `GMV ${formatCurrencyWithUnit(duringGmv, currencyScale)}`,
       delta: formatLift(duringGmv, preGmv),
       tone: 'text-blue-600',
     },
     {
       label: '活动后',
-      value: `GMV ${formatGmv(postGmv)}`,
+      value: `GMV ${formatCurrencyWithUnit(postGmv, currencyScale)}`,
       delta: formatLift(postGmv, preGmv),
       tone: 'text-blue-600',
     },
@@ -983,11 +1108,15 @@ function formatLift(current: number, base: number) {
   return `${lift >= 0 ? '+' : ''}${lift.toFixed(1)}%`
 }
 
-function formatGmv(value: number) {
-  return value.toLocaleString('en-US')
-}
-
-function StrategyQuadrantCard({ data, onOpen }: { data: QuadrantItem[]; onOpen: (title: string) => void }) {
+function StrategyQuadrantCard({
+  data,
+  onOpen,
+  stretchToFill = false,
+}: {
+  data: QuadrantItem[]
+  onOpen: (title: string) => void
+  stretchToFill?: boolean
+}) {
   const visualLayout: Record<string, { x: number; y: number; size: number; color: string; textColor?: string }> = {
     饮料: { x: 78, y: 64, size: 54, color: '#60a5fa', textColor: '#0f172a' },
     零食: { x: 64, y: 60, size: 40, color: '#a3e635', textColor: '#1f2937' },
@@ -999,20 +1128,37 @@ function StrategyQuadrantCard({ data, onOpen }: { data: QuadrantItem[]; onOpen: 
     家清: { x: 78, y: 31, size: 30, color: '#fde68a', textColor: '#713f12' },
     粮油: { x: 27, y: 31, size: 30, color: '#fda4af', textColor: '#7f1d1d' },
   }
+  const hasUpliftSummary = data.some((item) => item.count || item.resourceType || item.quadrant)
+  const maxBubbleContribution = Math.max(...data.map((item) => item.contribution ?? item.size ?? 0), 1)
+  const getBubbleSize = (item: QuadrantItem) => {
+    if (!hasUpliftSummary) return Math.max(30, item.size)
+    const contribution = Math.max(0, item.contribution ?? item.size)
+    return 36 + Math.sqrt(contribution / maxBubbleContribution) * 22
+  }
 
   const laidOutData = data.map((item) => {
     const visual = visualLayout[item.category] ?? {
       x: Math.min(88, Math.max(22, item.x)),
       y: Math.min(72, Math.max(28, item.y)),
-      size: Math.max(30, item.size),
+      size: getBubbleSize(item),
       color: item.color,
+      textColor: item.contribution || item.count ? '#ffffff' : undefined,
     }
     return { ...item, visual }
   })
 
   return (
-    <ChartCard title="品类策略四象限（气泡图）" onOpen={() => onOpen('品类策略四象限（气泡图）')}>
-      <div className="relative h-60 overflow-hidden rounded-xl border border-border bg-[#fbfcfe]">
+    <ChartCard
+      title={hasUpliftSummary ? '连续 Uplift 四象限（气泡图）' : '品类策略四象限（气泡图）'}
+      onOpen={() => onOpen(hasUpliftSummary ? '连续 Uplift 四象限（气泡图）' : '品类策略四象限（气泡图）')}
+      className={stretchToFill ? 'flex h-full min-h-0 flex-col' : ''}
+    >
+      <div
+        data-dashboard-quadrant-plot
+        className={`relative overflow-hidden rounded-xl border border-border bg-[#fbfcfe] ${
+          stretchToFill ? 'min-h-0 flex-1' : 'h-60'
+        }`}
+      >
         <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
           <line x1="14" y1="84" x2="92" y2="84" stroke="#94a3b8" strokeWidth="0.6" />
           <polyline points="89,81.5 92,84 89,86.5" fill="none" stroke="#94a3b8" strokeWidth="0.6" />
@@ -1028,15 +1174,19 @@ function StrategyQuadrantCard({ data, onOpen }: { data: QuadrantItem[]; onOpen: 
           ))}
         </svg>
 
-        <QuadrantLabel className="left-[18%] top-3" text="小规模试验区" />
-        <QuadrantLabel className="right-[5%] top-3" text="优先加码区" />
-        <QuadrantLabel className="bottom-[34px] left-[18%]" text="减少投入区" />
-        <QuadrantLabel className="bottom-[34px] right-[5%]" text="保护基本盘区" />
+        <QuadrantLabel className="left-[18%] top-3" text={hasUpliftSummary ? '优先加码' : '小规模试验区'} toneClass="text-emerald-600" />
+        <QuadrantLabel className="right-[7%] top-3" text={hasUpliftSummary ? '稳定维持' : '优先加码区'} toneClass="text-blue-600" />
+        <QuadrantLabel className="bottom-[34px] left-[18%]" text={hasUpliftSummary ? '控制折扣' : '减少投入区'} toneClass="text-orange-600" />
+        <QuadrantLabel className="bottom-[34px] right-[7%]" text={hasUpliftSummary ? '避免打扰' : '保护基本盘区'} toneClass="text-purple-600" />
 
-        <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs font-medium text-muted-foreground">增量贡献</span>
+        <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs font-medium text-muted-foreground">
+          {hasUpliftSummary ? '自然购买倾向' : '增量贡献'}
+        </span>
         <span className="absolute bottom-2 left-[14%] text-xs text-muted-foreground">低</span>
         <span className="absolute bottom-2 right-[6%] text-xs text-muted-foreground">高</span>
-        <span className="absolute left-2 top-1/2 -translate-y-1/2 -rotate-90 text-xs font-medium text-muted-foreground">效果改善</span>
+        <span className="absolute left-2 top-1/2 -translate-y-1/2 -rotate-90 text-xs font-medium text-muted-foreground">
+          {hasUpliftSummary ? '资源后响应' : '效果改善'}
+        </span>
         <span className="absolute left-[5%] top-[14%] text-xs text-muted-foreground">高</span>
         <span className="absolute bottom-[14%] left-[5%] text-xs text-muted-foreground">低</span>
 
@@ -1062,9 +1212,23 @@ function StrategyQuadrantCard({ data, onOpen }: { data: QuadrantItem[]; onOpen: 
                   ? '0 12px 24px rgba(37, 99, 235, 0.28)'
                   : '0 8px 18px rgba(15, 23, 42, 0.16)',
             }}
-            title={`${item.category}: ${item.suggestedAction}`}
+            title={[
+              `${item.category}: ${item.suggestedAction}`,
+              item.contribution ? `品类贡献：${item.contribution.toFixed(1)} 万元` : '',
+              item.count ? `品类数：${item.count}` : '',
+              item.resourceType ? `资源类型：${item.resourceType}` : '',
+              item.representativeCategories?.length
+                ? `代表品类：${item.representativeCategories.join('、')}`
+                : '',
+            ].filter(Boolean).join('；')}
           >
-            <span className="whitespace-nowrap">{item.category}</span>
+            {hasUpliftSummary ? (
+              <span className="max-w-full overflow-hidden px-1 text-center text-[8.75px] leading-[1.05] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3] [overflow-wrap:anywhere]">
+                {item.category}
+              </span>
+            ) : (
+              <span className="whitespace-nowrap">{item.category}</span>
+            )}
           </button>
         ))}
       </div>
@@ -1082,7 +1246,11 @@ function RecommendationPanel({
   className?: string
 }) {
   return (
-    <aside className={`grid auto-rows-fr content-stretch gap-4 ${className}`}>
+    <aside
+      data-dashboard-recommendation-panel
+      className={`grid content-stretch gap-4 ${className}`}
+      style={{ gridTemplateRows: `repeat(${groups.length}, minmax(0, 1fr))` }}
+    >
       {groups.map((group) => (
         <RecommendationCard key={group.key} group={group} onOpen={onOpen} />
       ))}
@@ -1092,8 +1260,11 @@ function RecommendationPanel({
 
 function RecommendationCard({ group, onOpen }: { group: RecommendationGroup; onOpen: (title: string) => void }) {
   const color = colorClass[group.color]
+  const visibleCategories = group.categories.length > 2 ? group.categories.slice(0, 2) : group.categories
+  const hiddenCategoryCount = group.categories.length - visibleCategories.length
+
   return (
-    <article className={`flex min-h-0 flex-col rounded-2xl border ${color.border} bg-white p-3 shadow-[var(--shadow-soft)]`}>
+    <article className={`flex min-h-0 flex-col overflow-hidden rounded-2xl border ${color.border} bg-white p-3 shadow-[var(--shadow-soft)]`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
           <span className={`rounded-xl p-2 ${color.tile}`}>
@@ -1104,19 +1275,29 @@ function RecommendationCard({ group, onOpen }: { group: RecommendationGroup; onO
             <p className="mt-1 overflow-hidden text-xs leading-4 text-muted-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">{group.description}</p>
           </div>
         </div>
-        <Badge variant="outline" className={`shrink-0 ${color.tile} ${color.border}`}>{group.countLabel}</Badge>
+        <Badge variant="outline" className={`max-w-[104px] shrink-0 truncate ${color.tile} ${color.border}`}>{group.countLabel}</Badge>
       </div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        {group.categories.map((category) => (
+      <div className="mt-2 flex min-h-[24px] gap-1.5 overflow-hidden">
+        {visibleCategories.map((category) => (
           <button
             key={category}
             type="button"
             onClick={() => onOpen(category)}
-            className="rounded-lg border border-border bg-[#fbfcfe] px-2 py-1 text-xs font-semibold hover:border-[#f2cf4a] hover:bg-secondary"
+            className="max-w-[96px] flex-none truncate rounded-lg border border-border bg-[#fbfcfe] px-2 py-0.5 text-left text-[11px] font-semibold leading-5 hover:border-[#f2cf4a] hover:bg-secondary"
+            title={category}
           >
             {category}
           </button>
         ))}
+        {hiddenCategoryCount > 0 && (
+          <button
+            type="button"
+            onClick={() => onOpen(group.title)}
+            className="flex-none rounded-lg border border-dashed border-border bg-[#fbfcfe] px-2 py-0.5 text-left text-[11px] font-bold leading-5 text-muted-foreground hover:border-[#f2cf4a] hover:bg-secondary"
+          >
+            +{hiddenCategoryCount}
+          </button>
+        )}
       </div>
       <button onClick={() => onOpen(group.title)} className="mt-auto pt-2 text-left text-xs font-bold text-blue-600">查看全部</button>
     </article>
@@ -1276,12 +1457,17 @@ function buildKpiDetail(kpi: KpiCardData, summary: DashboardSummary) {
   const min = getMinPoint(kpi.series)
   const negativeCount = kpi.series.filter((item) => item.value < 0).length
   const boostCategories = summary.recommendations.find((item) => item.key === 'boost')?.categories ?? []
+  const currencyScale = inferCurrencyScale([
+    ...summary.trend.flatMap((item) => [item.gmv, item.baselineGmv, item.exposure ?? 0, item.discount ?? 0]),
+    ...kpi.series.map((item) => item.value),
+  ])
   const baseMetricCards = [
     { label: '当前值', value: `${kpi.value}${kpi.unit ? ` ${kpi.unit}` : ''}` },
     { label: '最近点', value: latest ? formatDetailPoint(latest, kpi.unit) : '-' },
     { label: '峰值点', value: peak ? formatDetailPoint(peak, kpi.unit) : '-' },
     { label: '低点', value: min ? formatDetailPoint(min, kpi.unit) : '-' },
   ]
+  const kpiDisplayValue = `${kpi.value}${kpi.unit ? ` ${kpi.unit}` : ''}`
 
   if (kpi.key === 'gmv_increment') {
     return {
@@ -1292,21 +1478,21 @@ function buildKpiDetail(kpi: KpiCardData, summary: DashboardSummary) {
       chartHint: '小图口径与卡片主值一致，展示 daily_actual_gmv - daily_baseline_gmv。',
       metricCards: [
         { label: '累计净增量', value: `${kpi.value} ${kpi.unit}` },
-        { label: '最近日净增', value: latest ? formatSignedAmount(latest.value, '万') : '-' },
-        { label: '峰值日期', value: peak ? `${peak.label} ${formatSignedAmount(peak.value, '万')}` : '-' },
+        { label: '最近日净增', value: latest ? formatCurrencyWithUnit(latest.value, currencyScale, true) : '-' },
+        { label: '峰值日期', value: peak ? `${peak.label} ${formatCurrencyWithUnit(peak.value, currencyScale, true)}` : '-' },
         { label: '负向天数', value: `${negativeCount} 天` },
       ],
       tableTitle: '日度净增量明细',
       columns: ['日期', '实际 GMV', '自然基线', '净增量'],
       rows: summary.trend.map((item) => [
         item.date,
-        formatPlainAmount(item.gmv, '万'),
-        formatPlainAmount(item.baselineGmv, '万'),
-        formatSignedAmount(item.gmv - item.baselineGmv, '万'),
+        formatCurrencyWithUnit(item.gmv, currencyScale),
+        formatCurrencyWithUnit(item.baselineGmv, currencyScale),
+        formatCurrencyWithUnit(item.gmv - item.baselineGmv, currencyScale, true),
       ]),
       tags: [],
       methodTitle: '口径说明',
-      methodText: 'GMV 净增量按日计算为实际 GMV 减自然基线 GMV，累计后对应顶部卡片的 1,290 万元；它不等同于 GMV 总量曲线。',
+      methodText: `GMV 净增量按日计算为实际 GMV 减自然基线 GMV，累计后对应顶部卡片的 ${kpiDisplayValue}；它不等同于 GMV 总量曲线。`,
     }
   }
 
@@ -1319,8 +1505,8 @@ function buildKpiDetail(kpi: KpiCardData, summary: DashboardSummary) {
       chartHint: '曝光贡献是增量分解项，因此使用小柱表达每日贡献量。',
       metricCards: [
         { label: '累计曝光贡献', value: `${kpi.value} ${kpi.unit}` },
-        { label: '最近日贡献', value: latest ? formatSignedAmount(latest.value, '万') : '-' },
-        { label: '峰值贡献', value: peak ? `${peak.label} ${formatSignedAmount(peak.value, '万')}` : '-' },
+        { label: '最近日贡献', value: latest ? formatCurrencyWithUnit(latest.value, currencyScale, true) : '-' },
+        { label: '峰值贡献', value: peak ? `${peak.label} ${formatCurrencyWithUnit(peak.value, currencyScale, true)}` : '-' },
         { label: '净增量占比', value: '75.9%' },
       ],
       tableTitle: '日度曝光贡献明细',
@@ -1331,7 +1517,7 @@ function buildKpiDetail(kpi: KpiCardData, summary: DashboardSummary) {
 
         return [
           item.date,
-          formatSignedAmount(exposure, '万'),
+          formatCurrencyWithUnit(exposure, currencyScale, true),
           formatPercent(exposure, net),
           getCalendarLabel(item),
         ]
@@ -1351,7 +1537,7 @@ function buildKpiDetail(kpi: KpiCardData, summary: DashboardSummary) {
       chartHint: '折扣贡献允许为负，因此趋势图保留 0 轴，区分拉动与拖累。',
       metricCards: [
         { label: '累计折扣贡献', value: `${kpi.value} ${kpi.unit}` },
-        { label: '最近日贡献', value: latest ? formatSignedAmount(latest.value, '万') : '-' },
+        { label: '最近日贡献', value: latest ? formatCurrencyWithUnit(latest.value, currencyScale, true) : '-' },
         { label: '负贡献天数', value: `${negativeCount} 天` },
         { label: '净增量占比', value: '14.0%' },
       ],
@@ -1362,7 +1548,7 @@ function buildKpiDetail(kpi: KpiCardData, summary: DashboardSummary) {
 
         return [
           item.date,
-          formatSignedAmount(discount, '万'),
+          formatCurrencyWithUnit(discount, currencyScale, true),
           discount >= 0 ? '拉动净增量' : '压低净增量',
           getCalendarLabel(item),
         ]
@@ -1438,7 +1624,9 @@ function DetailSeriesChart({
   const right = 14
   const top = 18
   const bottom = 136
-  const values = series.map((item) => item.value).filter(Number.isFinite)
+  const currencyScale = inferCurrencyScale(series.map((item) => item.value))
+  const displaySeries = series.map((item) => ({ ...item, value: item.value / currencyScale }))
+  const values = displaySeries.map((item) => item.value).filter(Number.isFinite)
 
   if (values.length === 0) {
     return <div className="mt-4 rounded-xl bg-white p-6 text-center text-sm text-muted-foreground">暂无趋势数据</div>
@@ -1458,19 +1646,19 @@ function DetailSeriesChart({
   }
 
   const xForIndex = (index: number) =>
-    series.length === 1
+    displaySeries.length === 1
       ? (left + width - right) / 2
-      : left + (index / (series.length - 1)) * (width - left - right)
+      : left + (index / (displaySeries.length - 1)) * (width - left - right)
   const yForValue = (value: number) => top + (1 - (value - min) / (max - min)) * (bottom - top)
   const zeroY = yForValue(0)
   const palette = sparklinePalette[color]
-  const points = series.map((item, index) => ({
+  const points = displaySeries.map((item, index) => ({
     ...item,
     x: xForIndex(index),
     y: yForValue(item.value),
   }))
   const linePath = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
-  const barWidth = Math.max(16, Math.min(34, (width - left - right) / Math.max(series.length, 1) - 18))
+  const barWidth = Math.max(16, Math.min(34, (width - left - right) / Math.max(displaySeries.length, 1) - 18))
   const gridTicks = [min, (min + max) / 2, max]
 
   return (
@@ -1482,7 +1670,7 @@ function DetailSeriesChart({
           <g key={tick}>
             <line x1={left} x2={width - right} y1={y} y2={y} stroke="#eef2f7" />
             <text x="4" y={y + 4} fontSize="10" fill="#6b7280">
-              {Math.round(tick)}
+              {formatScaledCurrencyNumber(tick, currencyScale)}
             </text>
           </g>
         )
@@ -1567,15 +1755,12 @@ function getMinPoint(series: SparklinePoint[]) {
 }
 
 function formatDetailPoint(point: SparklinePoint, unit?: string) {
+  if (unit === '万元') {
+    const scale = inferCurrencyScale([point.value])
+    return `${point.label} ${formatCurrencyWithUnit(point.value, scale)}`
+  }
+
   return `${point.label} ${point.value.toLocaleString('en-US')}${unit ? ` ${unit}` : ''}`
-}
-
-function formatSignedAmount(value: number, unit: string) {
-  return `${value >= 0 ? '+' : ''}${value.toLocaleString('en-US')}${unit}`
-}
-
-function formatPlainAmount(value: number, unit: string) {
-  return `${value.toLocaleString('en-US')}${unit}`
 }
 
 function formatPercent(value: number, base: number) {
@@ -1799,11 +1984,8 @@ function Sparkline({
               rx="2"
               fill={palette.stroke}
               opacity="0.72"
-            >
-              <title>
-                {point.label}: {point.value}
-              </title>
-            </rect>
+              aria-label={`${point.label}: ${point.value}`}
+            />
           )
         })
       ) : (
@@ -1824,11 +2006,8 @@ function Sparkline({
             fill="#ffffff"
             stroke={palette.stroke}
             strokeWidth="2"
-          >
-            <title>
-              {last.label}: {last.value}
-            </title>
-          </circle>
+            aria-label={`${last.label}: ${last.value}`}
+          />
         </>
       )}
     </svg>
@@ -1838,8 +2017,7 @@ function Sparkline({
 function InsightMiniPanel({ text }: { text: string }) {
   return (
     <div className="mt-3 rounded-xl border border-border bg-[#fbfcfe] px-3 py-2">
-      <p className="text-xs font-bold">洞察</p>
-      <p className="mt-1 text-xs leading-4 text-muted-foreground">{text}</p>
+      <p className="text-xs leading-4 text-muted-foreground">{text}</p>
     </div>
   )
 }
@@ -1853,8 +2031,16 @@ function Legend({ color, label }: { color: string; label: string }) {
   )
 }
 
-function QuadrantLabel({ text, className }: { text: string; className: string }) {
-  return <span className={`absolute text-xs font-bold text-blue-600 ${className}`}>{text}</span>
+function QuadrantLabel({
+  text,
+  className,
+  toneClass = 'text-blue-600',
+}: {
+  text: string
+  className: string
+  toneClass?: string
+}) {
+  return <span className={`absolute text-xs font-bold ${toneClass} ${className}`}>{text}</span>
 }
 
 function MiniDetail({ label, value }: { label: string; value: string }) {

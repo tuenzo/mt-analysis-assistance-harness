@@ -40,6 +40,15 @@ def test_health(client):
     assert r.json()["status"] == "ok"
 
 
+def test_agent_runtime_metadata(client):
+    r = client.get("/api/agent/runtime")
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["ok"] is True
+    assert payload["data"]["runtime_provider"]
+    assert payload["data"]["model"]
+
+
 def test_create_project(client):
     r = client.post("/api/projects", json={"name": "Test Project", "domain": "promo_analysis"})
     assert r.status_code == 200
