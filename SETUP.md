@@ -1,5 +1,10 @@
 # Local Setup
 
+> Status: unverified. The `setup.ps1` / `setup.sh` / `scripts/local_setup.py`
+> flow is not part of the current agent-flow acceptance path yet. For this
+> phase, use the manual development commands documented in `AGENTS.md` and
+> `README.md` until the setup flow is separately validated.
+
 This repository includes a cross-platform setup program for local Windows and macOS deployment.
 
 ## First Run

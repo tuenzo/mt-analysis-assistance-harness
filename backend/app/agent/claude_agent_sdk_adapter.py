@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -52,6 +53,15 @@ SDK_MCP_SERVER_NAME = "business_analysis"
 SDK_TOOL_NAME = "business_analysis"
 SDK_ALLOWED_TOOL = "mcp__business_analysis__business_analysis"
 READ_ONLY_BUILTINS = ["Read", "Glob", "Grep", "LS"]
+LONGCAT_TOOL_CALL_RE = re.compile(
+    r"<longcat_tool_call>(?P<body>.*?)</longcat_tool_call>",
+    re.DOTALL,
+)
+LONGCAT_ARG_RE = re.compile(
+    r"<longcat_arg_key>(?P<key>.*?)</longcat_arg_key>\s*"
+    r"<longcat_arg_value>(?P<value>.*?)</longcat_arg_value>",
+    re.DOTALL,
+)
 
 
 class BusinessAnalysisMCPServer:
@@ -168,6 +178,10 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             self._workspace_root = resolve_project_path(workspace_root_setting)
         self._active_runtime_context: dict[str, str] = {}
         self._executed_tool_calls: list[dict[str, Any]] = []
+        self._text_tool_call_signatures: set[str] = set()
+        self._text_tool_results: list[dict[str, Any]] = []
+        self._text_tool_final_emitted = False
+        self._pending_longcat_stream_text = ""
 
     @property
     def available(self) -> bool:
@@ -231,6 +245,10 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
                     break
                 yield event
         except Exception as exc:
+            if self._text_tool_results and not self._text_tool_final_emitted:
+                self._text_tool_final_emitted = True
+                yield {"type": "final_answer", "message": self._text_tool_compat_final_answer()}
+                return
             yield {"type": "error", "error": str(exc)}
             return
         finally:
@@ -272,6 +290,10 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             "runtime_turn_id": runtime_turn_id,
         }
         self._executed_tool_calls = []
+        self._text_tool_call_signatures = set()
+        self._text_tool_results = []
+        self._text_tool_final_emitted = False
+        self._pending_longcat_stream_text = ""
         try:
             async for sdk_message in query(prompt=prompt, options=options):
                 for event in self._map_sdk_message(
@@ -504,7 +526,14 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
                 )
             delta = self._stream_delta_text(sdk_message.event)
             if delta:
-                events.append({"type": "assistant_message_delta", "delta": delta})
+                events.extend(
+                    self._map_text_delta(
+                        delta,
+                        project_id=project_id,
+                        runtime_session_id=runtime_session_id,
+                        runtime_turn_id=runtime_turn_id,
+                    )
+                )
             return events
 
         if AssistantMessage is not None and isinstance(sdk_message, AssistantMessage):
@@ -579,7 +608,20 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
                             }
                         )
                 elif hasattr(block, "text"):
-                    events.append({"type": "assistant_message_delta", "delta": block.text})
+                    text = block.text
+                    text_tool_events = self._longcat_text_tool_events(
+                        text,
+                        project_id=project_id,
+                        runtime_session_id=runtime_session_id,
+                        runtime_turn_id=runtime_turn_id,
+                    )
+                    if text_tool_events:
+                        events.extend(text_tool_events)
+                        cleaned = self._strip_longcat_tool_markup(text).strip()
+                        if cleaned and "<longcat_" not in cleaned:
+                            events.append({"type": "assistant_message_delta", "delta": cleaned})
+                    else:
+                        events.append({"type": "assistant_message_delta", "delta": text})
             return events
 
         if UserMessage is not None and isinstance(sdk_message, UserMessage):
@@ -596,13 +638,24 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
         if ResultMessage is not None and isinstance(sdk_message, ResultMessage):
             events.append(self._result_usage_event(sdk_message))
             if sdk_message.is_error:
-                events.append(
-                    {
-                        "type": "error",
-                        "error": self._result_error_message(sdk_message),
-                        "external_session_id": sdk_message.session_id,
-                    }
-                )
+                error_message = self._result_error_message(sdk_message)
+                if self._text_tool_results and self._is_text_tool_max_turn_error(error_message):
+                    self._text_tool_final_emitted = True
+                    events.append(
+                        {
+                            "type": "final_answer",
+                            "message": self._text_tool_compat_final_answer(),
+                            "external_session_id": sdk_message.session_id,
+                        }
+                    )
+                else:
+                    events.append(
+                        {
+                            "type": "error",
+                            "error": error_message,
+                            "external_session_id": sdk_message.session_id,
+                        }
+                    )
             else:
                 events.append(
                     {
@@ -614,6 +667,213 @@ class ClaudeAgentSDKAdapter(ClaudeRuntimeAdapter):
             return events
 
         return events
+
+    def _map_text_delta(
+        self,
+        delta: str,
+        *,
+        project_id: str,
+        runtime_session_id: str,
+        runtime_turn_id: str,
+    ) -> list[dict]:
+        text = f"{self._pending_longcat_stream_text}{delta}"
+        if "<longcat_tool_call" in text and "</longcat_tool_call>" not in text:
+            self._pending_longcat_stream_text = text
+            return []
+
+        self._pending_longcat_stream_text = ""
+        events = self._longcat_text_tool_events(
+            text,
+            project_id=project_id,
+            runtime_session_id=runtime_session_id,
+            runtime_turn_id=runtime_turn_id,
+        )
+        cleaned = self._strip_longcat_tool_markup(text)
+        if cleaned and "<longcat_" not in cleaned:
+            events.append({"type": "assistant_message_delta", "delta": cleaned})
+        return events
+
+    def _longcat_text_tool_events(
+        self,
+        text: str,
+        *,
+        project_id: str,
+        runtime_session_id: str,
+        runtime_turn_id: str,
+    ) -> list[dict]:
+        events: list[dict] = []
+        for call in self._parse_longcat_tool_calls(text, project_id=project_id):
+            signature = self._text_tool_signature(call)
+            if signature in self._text_tool_call_signatures:
+                continue
+            self._text_tool_call_signatures.add(signature)
+            events.extend(
+                self._execute_text_tool_call(
+                    call,
+                    runtime_session_id=runtime_session_id,
+                    runtime_turn_id=runtime_turn_id,
+                )
+            )
+        return events
+
+    def _execute_text_tool_call(
+        self,
+        call: dict[str, Any],
+        *,
+        runtime_session_id: str,
+        runtime_turn_id: str,
+    ) -> list[dict]:
+        project_id = call["project_id"]
+        action = call["action"]
+        payload = call.get("payload") or {}
+        reason = call.get("reason") or ""
+        tool_call_id = self._persist_sdk_tool_call(
+            project_id=project_id,
+            action=action,
+            payload=payload,
+            reason=reason,
+            runtime_session_id=runtime_session_id,
+            runtime_turn_id=runtime_turn_id,
+        )
+
+        started = {
+            "type": "tool_call_started",
+            "tool": SDK_TOOL_NAME,
+            "action": action,
+            "payload": {
+                "project_id": project_id,
+                "action": action,
+                "payload": payload,
+                "reason": reason,
+            },
+            "tool_call_id": tool_call_id,
+            "sdk_executed": True,
+            "text_tool_compat": True,
+        }
+        server = BusinessAnalysisMCPServer(self._gateway)
+        body = server.handle_tool_call(
+            SDK_TOOL_NAME,
+            {
+                "project_id": project_id,
+                "action": action,
+                "payload": payload,
+                "reason": reason,
+            },
+            tool_call_id=tool_call_id,
+            session_id=runtime_session_id,
+            turn_id=runtime_turn_id,
+        )
+        ok = bool(body.get("ok"))
+        result = {
+            "type": "tool_call_finished" if ok else "tool_call_failed",
+            "tool": SDK_TOOL_NAME,
+            "action": action,
+            "ok": ok,
+            "summary": body.get("summary", ""),
+            "tool_call_id": tool_call_id,
+            "sdk_executed": True,
+            "text_tool_compat": True,
+        }
+        approval = self._pending_approval(
+            tool_call_id,
+            session_id=runtime_session_id,
+            turn_id=runtime_turn_id,
+            action=action,
+        )
+        if approval:
+            result["approval_required"] = True
+            result["approval_id"] = approval["id"]
+            result["approval_reason"] = approval["reason"]
+            result["risk_level"] = approval["risk_level"]
+            result["approval_payload"] = approval["payload"]
+            result["tool_call_id"] = approval["tool_call_id"]
+
+        self._sync_sdk_tool_call_result(result, body, approval)
+        self._text_tool_results.append(
+            {
+                "action": action,
+                "ok": ok,
+                "summary": body.get("summary", ""),
+                "approval": approval,
+            }
+        )
+        events = [started, result]
+        approval_event = self._approval_requested_event(result)
+        if approval_event:
+            events.append(approval_event)
+        return events
+
+    @staticmethod
+    def _parse_longcat_tool_calls(text: str, *, project_id: str) -> list[dict[str, Any]]:
+        calls = []
+        for match in LONGCAT_TOOL_CALL_RE.finditer(text or ""):
+            body = match.group("body")
+            first_arg = body.find("<longcat_arg_key>")
+            tool_name = body[:first_arg].strip() if first_arg >= 0 else body.strip()
+            if tool_name not in {SDK_TOOL_NAME, SDK_ALLOWED_TOOL}:
+                continue
+
+            args: dict[str, str] = {}
+            for arg_match in LONGCAT_ARG_RE.finditer(body):
+                key = arg_match.group("key").strip()
+                value = arg_match.group("value").strip()
+                if key:
+                    args[key] = value
+
+            action = args.get("action", "").strip()
+            if not action:
+                continue
+            payload_text = args.get("payload", "{}").strip() or "{}"
+            try:
+                payload = json.loads(payload_text)
+            except json.JSONDecodeError:
+                payload = {"raw": payload_text}
+            if not isinstance(payload, dict):
+                payload = {"value": payload}
+
+            calls.append(
+                {
+                    "project_id": project_id or args.get("project_id", "").strip(),
+                    "action": action,
+                    "payload": payload,
+                    "reason": args.get("reason", "").strip(),
+                }
+            )
+        return calls
+
+    @staticmethod
+    def _strip_longcat_tool_markup(text: str) -> str:
+        return LONGCAT_TOOL_CALL_RE.sub("", text or "")
+
+    @staticmethod
+    def _text_tool_signature(call: dict[str, Any]) -> str:
+        return json.dumps(
+            {
+                "project_id": call.get("project_id", ""),
+                "action": call.get("action", ""),
+                "payload": call.get("payload") or {},
+                "reason": call.get("reason", ""),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
+    def _text_tool_compat_final_answer(self) -> str:
+        lines = ["我已将 LongCat 文本工具调用桥接到 business_analysis，并完成以下执行："]
+        for item in self._text_tool_results:
+            status = "成功" if item.get("ok") else "失败"
+            suffix = ""
+            approval = item.get("approval")
+            if approval:
+                suffix = f"（等待审批：{approval.get('id')}）"
+            summary = item.get("summary") or "无摘要"
+            lines.append(f"- {item.get('action')}: {status}{suffix}。{summary}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _is_text_tool_max_turn_error(error_message: str) -> bool:
+        normalized = (error_message or "").lower()
+        return "maximum number of turns" in normalized or "max turns" in normalized
 
     @staticmethod
     def _result_usage_event(message: Any) -> dict[str, Any]:

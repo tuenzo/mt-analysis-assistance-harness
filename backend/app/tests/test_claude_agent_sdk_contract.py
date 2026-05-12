@@ -688,6 +688,82 @@ def test_business_analysis_tool_call_invokes_gateway_exactly_once(monkeypatch):
     assert calls[0]["reason"] == "need state"
 
 
+def test_longcat_text_tool_call_executes_gateway_once_and_strips_markup(isolated_db):
+    import app.agent.claude_agent_sdk_adapter as sdk_adapter
+
+    calls = []
+
+    class FakeGateway:
+        def execute(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(
+                ok=True,
+                action=kwargs["action_str"],
+                summary="Project state loaded",
+                artifacts=[],
+                state_patch={},
+                assistant_hint="",
+                error=None,
+            )
+
+    adapter = sdk_adapter.ClaudeAgentSDKAdapter(
+        {"provider": "claude_agent_sdk", "workspace_root": "./workspaces"}
+    )
+    adapter._gateway = FakeGateway()
+    text = (
+        "我先读取状态。"
+        "<longcat_tool_call>business_analysis\n"
+        "<longcat_arg_key>project_id</longcat_arg_key>\n"
+        "<longcat_arg_value>wrong-project</longcat_arg_value>\n"
+        "<longcat_arg_key>action</longcat_arg_key>\n"
+        "<longcat_arg_value>project.get_state</longcat_arg_value>\n"
+        "<longcat_arg_key>payload</longcat_arg_key>\n"
+        "<longcat_arg_value>{}</longcat_arg_value>\n"
+        "<longcat_arg_key>reason</longcat_arg_key>\n"
+        "<longcat_arg_value>need state</longcat_arg_value>\n"
+        "</longcat_tool_call>"
+    )
+
+    events = adapter._map_text_delta(
+        text,
+        project_id="proj_runtime",
+        runtime_session_id="",
+        runtime_turn_id="",
+    )
+    duplicate_events = adapter._map_text_delta(
+        text,
+        project_id="proj_runtime",
+        runtime_session_id="",
+        runtime_turn_id="",
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["project_id"] == "proj_runtime"
+    assert calls[0]["action_str"] == "project.get_state"
+    assert [event["type"] for event in events[:2]] == ["tool_call_started", "tool_call_finished"]
+    assert events[0]["text_tool_compat"] is True
+    assert events[-1] == {"type": "assistant_message_delta", "delta": "我先读取状态。"}
+    assert all("<longcat_tool_call>" not in str(event) for event in events + duplicate_events)
+
+
+def test_longcat_text_tool_max_turn_error_becomes_final_answer():
+    import app.agent.claude_agent_sdk_adapter as sdk_adapter
+
+    adapter = sdk_adapter.ClaudeAgentSDKAdapter({"provider": "claude_agent_sdk"})
+    adapter._text_tool_results = [
+        {
+            "action": "project.get_state",
+            "ok": True,
+            "summary": "Project state loaded",
+            "approval": None,
+        }
+    ]
+
+    assert adapter._is_text_tool_max_turn_error("Reached maximum number of turns (8)")
+    assert "project.get_state" in adapter._text_tool_compat_final_answer()
+    assert "Project state loaded" in adapter._text_tool_compat_final_answer()
+
+
 def test_tool_handler_returns_is_error_true_instead_of_raising_on_failure():
     import app.agent.claude_agent_sdk_adapter as sdk_adapter
 

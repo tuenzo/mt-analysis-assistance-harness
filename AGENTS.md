@@ -2,6 +2,46 @@
 
 > 商业分析伴随式工作区。当前处于 **MVP 0：骨架验证阶段**。
 
+## Current Dev Environment Record (2026-05-12)
+
+This section is the current source of truth for local development environment
+usage confirmed in the active agent-flow validation conversation.
+
+- Setup scripts are not validated yet. Do not use `setup.ps1`, `setup.sh`, or
+  `scripts/local_setup.py` as the acceptance path for the current agent-flow
+  stage until they have their own verification pass.
+- Before starting a new validation run, scan and stop stale backend/frontend
+  processes from this repository. Old runs have used ports including `8000`,
+  `8010`, `8017`, `8025`, `18080`, `18081`, `18191`-`18194`, `3010`, `3025`,
+  and `4180`.
+- Current manual backend command:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 18081
+```
+
+- Current manual frontend command:
+
+```powershell
+cd frontend
+$env:NEXT_PUBLIC_API_BASE_URL='http://127.0.0.1:18081'
+npm run dev -- -H 127.0.0.1 -p 3010
+```
+
+- Current validation URLs:
+  - Backend: `http://127.0.0.1:18081`
+  - Frontend: `http://127.0.0.1:3010`
+  - Agent runtime metadata: `GET http://127.0.0.1:18081/api/agent/runtime`
+- Agent-flow validation project name: `Keemart 促销增长全流程项目`. All current
+  end-to-end tests should be run under that project unless the user changes the
+  validation target.
+- Documentation maintenance rule: whenever the dev environment, service ports,
+  startup procedure, validation project, or setup-script status changes and that
+  change is persisted to disk, the agent must check and update this section and
+  `README.md` in the same work session. If setup-script status changes, also
+  check `SETUP.md`.
+
 ---
 
 ## 1. 系统定位（一句话）
