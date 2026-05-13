@@ -11,7 +11,7 @@ import pytest
 from app.agent.claude_adapter import MockClaudeRuntimeAdapter
 from app.agent.session_store import SessionStore
 from app.core.database import get_session, init_db, reset_engine
-from app.projects.models import AnalysisSession
+from app.projects.models import AgentTurn, AnalysisSession
 
 
 def collect_runtime_events(runtime, session_id, turn_id, predicate, timeout=3.0):
@@ -949,6 +949,120 @@ def test_message_runtime_does_not_start_concurrent_turn_in_same_session(
     assert "上一轮 Agent 任务仍在运行" in final["message"]
     assert adapter.send_count == 1
     assert runtime.wait_for_turn(first["turn_id"])
+
+
+def test_message_runtime_closes_no_tool_clarification_turn(monkeypatch, isolated_db):
+    import app.agent.message_runtime as message_runtime
+
+    class ClarifyingAdapter:
+        def create_session(self, project_id):
+            return f"sdk_external_{project_id}"
+
+        def resume_session(self, session_id, project_id):
+            return None
+
+        def send_message(self, session_id, message, context):
+            yield {
+                "type": "assistant_thought_delta",
+                "delta": "Checking whether the request has enough detail.",
+                "phase": "provider_thinking",
+            }
+            yield {
+                "type": "assistant_message_delta",
+                "delta": "我还需要你补充目标品类和活动周期，然后才能继续分析。",
+            }
+
+        def interrupt(self, session_id):
+            return None
+
+    monkeypatch.setattr(
+        message_runtime,
+        "get_agent_runtime_config",
+        lambda: {"provider": "claude_agent_sdk"},
+    )
+    monkeypatch.setattr(
+        message_runtime,
+        "get_claude_adapter",
+        lambda config: ClarifyingAdapter(),
+    )
+
+    runtime = message_runtime.MessageRuntime()
+    response = runtime.handle_message("proj_clarify", None, "帮我分析下一轮活动", {})
+
+    events = collect_runtime_events(
+        runtime,
+        response["session_id"],
+        response["turn_id"],
+        lambda collected: any(event.get("type") == "final_answer" for event in collected),
+        timeout=2.0,
+    )
+
+    final = next(event for event in events if event["type"] == "final_answer")
+    assert final["synthetic_terminal"] is True
+    assert final["finish_reason"] == "assistant_delta_completed_without_terminal"
+    assert "补充目标品类" in final["message"]
+    assert any(event.get("phase") == "clarification_needed" for event in events)
+    assert runtime.wait_for_turn(response["turn_id"])
+
+    db = get_session()
+    try:
+        turn = db.query(AgentTurn).filter(AgentTurn.id == response["turn_id"]).one()
+        assert turn.status == "completed"
+        assert "补充目标品类" in turn.assistant_message
+    finally:
+        db.close()
+
+
+def test_message_runtime_uses_streamed_text_when_final_answer_is_empty(monkeypatch, isolated_db):
+    import app.agent.message_runtime as message_runtime
+
+    class EmptyFinalAdapter:
+        def create_session(self, project_id):
+            return f"sdk_external_{project_id}"
+
+        def resume_session(self, session_id, project_id):
+            return None
+
+        def send_message(self, session_id, message, context):
+            yield {
+                "type": "assistant_message_delta",
+                "delta": "请先上传",
+            }
+            yield {
+                "type": "assistant_message_delta",
+                "delta": "请先上传 order_info、exposure_info 和 activity_timeline 三张表。",
+            }
+            yield {"type": "final_answer", "message": ""}
+
+        def interrupt(self, session_id):
+            return None
+
+    monkeypatch.setattr(
+        message_runtime,
+        "get_agent_runtime_config",
+        lambda: {"provider": "claude_agent_sdk"},
+    )
+    monkeypatch.setattr(
+        message_runtime,
+        "get_claude_adapter",
+        lambda config: EmptyFinalAdapter(),
+    )
+
+    runtime = message_runtime.MessageRuntime()
+    response = runtime.handle_message("proj_empty_final", None, "开始分析", {})
+
+    events = collect_runtime_events(
+        runtime,
+        response["session_id"],
+        response["turn_id"],
+        lambda collected: any(event.get("type") == "final_answer" for event in collected),
+        timeout=2.0,
+    )
+
+    final = next(event for event in events if event["type"] == "final_answer")
+    assert "请先上传" in final["message"]
+    assert final["message"].count("请先上传") == 1
+    assert runtime.wait_for_turn(response["turn_id"])
 
 
 def test_session_store_persists_runtime_provider_and_external_session_id(isolated_db):

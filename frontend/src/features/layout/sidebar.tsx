@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Bot,
   Brain,
@@ -18,6 +18,8 @@ import {
   Settings,
 } from 'lucide-react'
 import { useApiBaseHref } from '@/lib/use-api-base-href'
+import { api } from '@/lib/api-client'
+import type { DemoStatus, Project } from '@/lib/api-types'
 import { useProjectStore } from '@/store/project-store'
 import { KEEMART_PROJECT_ID, KEEMART_PROJECT_NAME } from '@/features/demo/keemart-demo-data'
 
@@ -31,11 +33,7 @@ const navItems = [
   { key: 'memory', label: '记忆', route: (projectId: string) => `/projects/${projectId}/memory`, icon: Brain },
 ]
 
-const fallbackRecentProjects = [
-  { id: KEEMART_PROJECT_ID, name: KEEMART_PROJECT_NAME },
-  { id: 'promo-growth-project', name: 'Keemart 促销增长全流程项目' },
-  { id: 'monthly-review-project', name: '月末促销复盘项目' },
-]
+type RecentProject = Pick<Project, 'id' | 'name'>
 
 function displayProjectName(name: string) {
   return name
@@ -54,20 +52,38 @@ export function Sidebar() {
   const pathname = usePathname()
   const hrefFor = useApiBaseHref()
   const { projects, loadProjects } = useProjectStore()
+  const [demoStatus, setDemoStatus] = useState<DemoStatus | null>(null)
   const [collapsed, setCollapsed] = useState(() =>
     typeof window !== 'undefined' && window.localStorage.getItem('baa.sidebarCollapsed') === 'true',
   )
-  const projectId = getProjectIdFromPathname(pathname) || projects[0]?.id || ''
-  const recentProjects =
-    projects.length > 0
-      ? [
-          { id: KEEMART_PROJECT_ID, name: KEEMART_PROJECT_NAME },
-          ...projects.filter((project) => project.id !== KEEMART_PROJECT_ID),
-        ].slice(0, 4)
-      : fallbackRecentProjects
+  const routeProjectId = getProjectIdFromPathname(pathname)
+  const recentProjects = useMemo(() => {
+    const nextProjects: RecentProject[] = []
+    const seen = new Set<string>()
+    const addProject = (project: RecentProject) => {
+      if (!project.id || seen.has(project.id)) return
+      seen.add(project.id)
+      nextProjects.push(project)
+    }
+
+    addProject({ id: KEEMART_PROJECT_ID, name: KEEMART_PROJECT_NAME })
+
+    if (demoStatus?.enabled && demoStatus.project_id) {
+      addProject({ id: demoStatus.project_id, name: demoStatus.project_name })
+    }
+
+    projects.forEach((project) => addProject(project))
+    return nextProjects.slice(0, 4)
+  }, [demoStatus, projects])
+  const projectId = routeProjectId || recentProjects[0]?.id || ''
 
   useEffect(() => {
     loadProjects()
+    api.getDemoStatus().then((response) => {
+      if (response.ok && response.data) {
+        setDemoStatus(response.data)
+      }
+    })
   }, [loadProjects])
 
   function toggleCollapsed() {
@@ -136,25 +152,25 @@ export function Sidebar() {
           <div className="mt-6">
             <div className="px-3 text-xs font-bold text-muted-foreground">最近项目</div>
             <div className="mt-2 space-y-1">
-          {recentProjects.map((project) => {
-            const active = pathname.startsWith(`/projects/${project.id}`)
-            const projectName = displayProjectName(project.name)
-            return (
-              <Link
-                key={project.id}
-                href={hrefFor(`/projects/${project.id}/agent`)}
+              {recentProjects.map((project) => {
+                const active = pathname.startsWith(`/projects/${project.id}`)
+                const projectName = displayProjectName(project.name)
+                return (
+                  <Link
+                    key={project.id}
+                    href={hrefFor(`/projects/${project.id}/agent`)}
                     className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition ${
                       active
                         ? 'border border-[#f2cf4a] bg-secondary text-secondary-foreground'
                         : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                     }`}
-                title={projectName}
-              >
-                <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate">{projectName}</span>
-              </Link>
-            )
-          })}
+                    title={projectName}
+                  >
+                    <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{projectName}</span>
+                  </Link>
+                )
+              })}
             </div>
           </div>
         )}

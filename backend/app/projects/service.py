@@ -149,10 +149,14 @@ class ProjectService:
 
             workspace_path = self._project_workspace_path(project)
             workspace_deleted = False
+            workspace_delete_error = None
             if delete_workspace and workspace_path.exists():
                 self._assert_deletable_workspace_path(workspace_path)
-                shutil.rmtree(workspace_path)
-                workspace_deleted = True
+                try:
+                    shutil.rmtree(workspace_path)
+                    workspace_deleted = True
+                except OSError as exc:
+                    workspace_delete_error = str(exc)
 
             self._delete_project_records(db, project_id)
             db.delete(project)
@@ -161,6 +165,7 @@ class ProjectService:
                 "id": project_id,
                 "workspace_path": str(workspace_path),
                 "workspace_deleted": workspace_deleted,
+                "workspace_delete_error": workspace_delete_error,
             }
         finally:
             db.close()

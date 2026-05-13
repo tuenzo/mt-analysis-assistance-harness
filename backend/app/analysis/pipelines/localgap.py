@@ -38,8 +38,9 @@ def run_localgap(project_id: str, workspace_path: str) -> ToolResult:
         )
 
     panel = _prepare_panel(panel)
+    panel_summary = _read_panel_summary(workspace)
     enriched = compute_localgap_enriched_panel(panel)
-    result = summarize_localgap(enriched)
+    result = summarize_localgap(enriched, panel_summary=panel_summary)
 
     output_dir = workspace / ".analysis"
     processed_dir = workspace / "data" / "processed"
@@ -142,11 +143,13 @@ def compute_localgap_enriched_panel(panel: pd.DataFrame) -> pd.DataFrame:
     return _add_reference_terms(enriched)
 
 
-def summarize_localgap(enriched: pd.DataFrame) -> dict[str, Any]:
+def summarize_localgap(enriched: pd.DataFrame, panel_summary: dict[str, Any] | None = None) -> dict[str, Any]:
     activity = enriched[enriched["is_activity"]].copy()
     estimable = activity[activity["local_baseline"].notna()].copy()
-    warnings = _localgap_warnings(enriched, activity, estimable)
     model = _fit_decomposition_model(estimable)
+    base_warnings = _localgap_warnings(enriched, activity, estimable)
+    quality_gate = _localgap_quality_gate(enriched, activity, estimable, model, panel_summary)
+    warnings = _dedupe([*base_warnings, *quality_gate["reasons"]])
 
     categories = _category_decomposition(estimable, model)
     monthly = _monthly_decomposition(estimable)
@@ -155,11 +158,13 @@ def summarize_localgap(enriched: pd.DataFrame) -> dict[str, Any]:
     total_baseline = float(estimable["local_baseline"].sum()) if not estimable.empty else 0.0
     total_gap = float(estimable["local_gap"].sum()) if not estimable.empty else 0.0
     coverage_rate = float(len(estimable) / max(len(activity), 1))
-    method_status = "implemented" if coverage_rate >= 0.5 and not _severe_warnings(warnings) else "limited"
+    method_status = "implemented" if quality_gate["status"] == "ready" else "limited"
 
     return {
         "method": "localgap",
         "method_status": method_status,
+        "quality_gate": quality_gate,
+        "measure_units": (panel_summary or {}).get("measure_units", {}),
         "baseline_method": {
             "match": "historical_non_activity_same_weekday_then_fallback",
             "recent_window_days": DEFAULT_RECENT_WINDOW_DAYS,
@@ -202,6 +207,17 @@ def summarize_localgap(enriched: pd.DataFrame) -> dict[str, Any]:
 def _load_panel(panel_path: Path) -> pd.DataFrame:
     data = json.loads(panel_path.read_text(encoding="utf-8"))
     return pd.DataFrame(data if isinstance(data, list) else [])
+
+
+def _read_panel_summary(workspace: Path) -> dict[str, Any]:
+    path = workspace / ".analysis" / "panel_summary.json"
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _prepare_panel(panel: pd.DataFrame) -> pd.DataFrame:
@@ -505,9 +521,73 @@ def _localgap_warnings(enriched: pd.DataFrame, activity: pd.DataFrame, estimable
     return warnings
 
 
-def _severe_warnings(warnings: list[str]) -> bool:
-    severe_markers = ["No activity rows", "Less than half"]
-    return any(any(marker in warning for marker in severe_markers) for warning in warnings)
+def _localgap_quality_gate(
+    enriched: pd.DataFrame,
+    activity: pd.DataFrame,
+    estimable: pd.DataFrame,
+    model: dict[str, Any],
+    panel_summary: dict[str, Any] | None,
+) -> dict[str, Any]:
+    panel_summary = panel_summary or {}
+    reasons: list[str] = []
+    reason_codes: list[str] = []
+    date_count = int(enriched["date"].nunique()) if "date" in enriched.columns else 0
+    category_count = int(enriched["category_key"].nunique()) if "category_key" in enriched.columns else 0
+    activity_rows = int(len(activity))
+    estimable_rows = int(len(estimable))
+    coverage_rate = round(float(estimable_rows / max(activity_rows, 1)), 4)
+    weak_share = 0.0
+    if activity_rows and "baseline_quality" in activity.columns:
+        weak_share = round(float((activity["baseline_quality"] == "weak").mean()), 4)
+
+    readiness = panel_summary.get("analysis_readiness")
+    if isinstance(readiness, dict) and readiness.get("status") == "limited":
+        for reason in readiness.get("reasons") or []:
+            reason_text = str(reason)
+            if reason_text:
+                reasons.append(reason_text)
+        for code in readiness.get("reason_codes") or []:
+            code_text = str(code)
+            if code_text:
+                reason_codes.append(code_text)
+    if date_count < 14:
+        reason_codes.append("short_date_coverage")
+        reasons.append(f"LocalGap panel covers {date_count} day(s), below the 14-day minimum for stable local baselines.")
+    if activity_rows < max(6, category_count * 2):
+        reason_codes.append("sparse_activity_rows")
+        reasons.append(f"LocalGap has {activity_rows} activity row(s), too few for stable category-level action ranking.")
+    if coverage_rate < 0.5:
+        reason_codes.append("low_baseline_coverage")
+        reasons.append("Less than half of activity rows have enough historical non-activity baseline support.")
+    if weak_share > 0.5:
+        reason_codes.append("weak_baseline_support")
+        reasons.append("Most estimable activity rows have weak LocalBaseline support.")
+    if not model.get("terms"):
+        reason_codes.append("no_channel_attribution_terms")
+        reasons.append("No channel attribution model terms were estimable; exposure, discount, and payday components should not be interpreted as drivers.")
+
+    reason_codes = list(dict.fromkeys(reason_codes))
+    reasons = _dedupe(reasons)
+    status = "limited" if reasons else "ready"
+    return {
+        "status": status,
+        "reason_codes": reason_codes,
+        "reasons": reasons,
+        "metrics": {
+            "date_count": date_count,
+            "category_count": category_count,
+            "activity_rows": activity_rows,
+            "estimable_rows": estimable_rows,
+            "coverage_rate": coverage_rate,
+            "weak_baseline_share": weak_share,
+            "model_term_count": len(model.get("terms") or []),
+        },
+        "recommended_interpretation": "smoke_test_only" if status == "limited" else "directional_increment_accounting",
+    }
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    return [value for value in dict.fromkeys(values) if value]
 
 
 def _safe_lstsq(X: np.ndarray, y: np.ndarray) -> np.ndarray:

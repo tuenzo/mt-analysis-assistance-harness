@@ -126,6 +126,8 @@ class MessageRuntime:
         db = get_session()
         final_answer = ""
         failed_error = ""
+        assistant_answer_text = ""
+        emitted_terminal_event = False
         try:
             self._append_event(
                 db,
@@ -154,11 +156,12 @@ class MessageRuntime:
                     continue
 
                 event["turn_id"] = turn_id
-                if event.get("type") == "assistant_thought_delta":
+                event_type = event.get("type")
+                if event_type == "assistant_thought_delta":
                     event.setdefault("phase", "thinking")
                     event.setdefault("visibility", "public")
                     event.setdefault("source", self.runtime_provider)
-                elif event.get("type") == "tool_call_started":
+                elif event_type == "tool_call_started":
                     self._append_event(
                         db,
                         session_id,
@@ -171,18 +174,26 @@ class MessageRuntime:
                         ),
                     )
 
-                if event.get("type") == "final_answer":
+                if event_type == "assistant_message_delta":
+                    delta = event.get("delta", "")
+                    if delta:
+                        assistant_answer_text = self._merge_assistant_answer_delta(assistant_answer_text, delta)
+                if event_type == "final_answer":
+                    if not event.get("message") and assistant_answer_text:
+                        event["message"] = assistant_answer_text.strip()
                     final_answer = event.get("message", "")
-                if event.get("type") in ("error", "runtime_error"):
+                    emitted_terminal_event = True
+                if event_type in ("error", "runtime_error"):
                     failed_error = event.get("error", "Agent runtime failed.")
+                    emitted_terminal_event = True
 
                 self._append_event(db, session_id, turn_id, project_id, event)
                 db.commit()
 
-                if event["type"] == "tool_call_started" and not event.get("sdk_executed"):
+                if event_type == "tool_call_started" and not event.get("sdk_executed"):
                     self._execute_mock_tool_event(db, session_id, turn_id, project_id, event)
 
-                if event.get("type") in ("tool_call_finished", "tool_call_failed"):
+                if event_type in ("tool_call_finished", "tool_call_failed"):
                     self._append_event(
                         db,
                         session_id,
@@ -193,6 +204,50 @@ class MessageRuntime:
                             phase="tool_result",
                             source=self.runtime_provider,
                         ),
+                    )
+                    db.commit()
+
+            if not emitted_terminal_event:
+                final_answer = final_answer or assistant_answer_text.strip()
+                if final_answer:
+                    self._append_event(
+                        db,
+                        session_id,
+                        turn_id,
+                        project_id,
+                        self._thought_event(
+                            "Agent returned a clarification without tool execution; closing the current thinking turn.",
+                            phase="clarification_needed",
+                            source=self.runtime_provider,
+                        ),
+                    )
+                    self._append_event(
+                        db,
+                        session_id,
+                        turn_id,
+                        project_id,
+                        {
+                            "type": "final_answer",
+                            "turn_id": turn_id,
+                            "message": final_answer,
+                            "synthetic_terminal": True,
+                            "finish_reason": "assistant_delta_completed_without_terminal",
+                        },
+                    )
+                    db.commit()
+                else:
+                    failed_error = "Agent runtime ended without a final answer."
+                    self._append_event(
+                        db,
+                        session_id,
+                        turn_id,
+                        project_id,
+                        {
+                            "type": "runtime_error",
+                            "turn_id": turn_id,
+                            "error": failed_error,
+                            "finish_reason": "missing_terminal_event",
+                        },
                     )
                     db.commit()
 
@@ -243,6 +298,23 @@ class MessageRuntime:
             "visibility": "public",
             "source": source,
         }
+
+    @staticmethod
+    def _merge_assistant_answer_delta(current: str, delta: str) -> str:
+        if not delta:
+            return current
+        if not current:
+            return delta
+
+        current_text = current.strip()
+        delta_text = delta.strip()
+        if not delta_text:
+            return f"{current}{delta}"
+        if delta_text == current_text or delta_text.startswith(current_text):
+            return delta
+        if current_text.endswith(delta_text):
+            return current
+        return f"{current}{delta}"
 
     def _active_running_turn(self, db, session_id: str) -> AgentTurn | None:
         turn = (

@@ -18,13 +18,13 @@ export function Header() {
   const projectName =
     isKeemartProject
       ? KEEMART_PROJECT_NAME
-      : currentProject?.name ?? (isProjectRoute ? 'Keemart 促销增长全流程项目' : '商业分析伴随式工作区')
+      : currentProject?.name ?? (isProjectRoute ? '正在加载项目' : '商业分析伴随式工作区')
   const projectStatus = isKeemartProject
     ? 'report_ready · analysis_ready'
     : currentProject
       ? [currentProject.status, currentProject.current_stage].filter(Boolean).join(' · ')
       : isProjectRoute
-        ? 'report_ready · report_ready'
+        ? '加载中'
         : '工作区'
 
   return (

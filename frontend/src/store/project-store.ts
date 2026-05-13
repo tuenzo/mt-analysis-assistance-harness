@@ -5,6 +5,7 @@ import { api } from '@/lib/api-client'
 interface ProjectStore {
   projects: Project[]
   currentProject: Project | null
+  activeProjectId: string | null
   projectState: ProjectState | null
   files: ProjectFile[]
   loading: boolean
@@ -22,6 +23,7 @@ interface ProjectStore {
 export const useProjectStore = create<ProjectStore>((set, get) => ({
   projects: [],
   currentProject: null,
+  activeProjectId: null,
   projectState: null,
   files: [],
   loading: false,
@@ -42,26 +44,48 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   selectProject: async (projectId: string) => {
-    set({ loading: true, error: null })
+    set({
+      activeProjectId: projectId,
+      currentProject: null,
+      projectState: null,
+      files: [],
+      loading: true,
+      error: null,
+    })
     try {
       const response = await api.getProject(projectId)
+      if (get().activeProjectId !== projectId) return
+
       if (response.ok && response.data) {
         set({ currentProject: response.data, loading: false })
         // Also load project state and files
         get().loadProjectState(projectId)
         get().loadFiles(projectId)
       } else {
-        set({ error: response.error || 'Failed to load project', loading: false })
+        set({
+          currentProject: null,
+          projectState: null,
+          files: [],
+          error: response.error || 'Failed to load project',
+          loading: false,
+        })
       }
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : 'Unknown error', loading: false })
+      if (get().activeProjectId !== projectId) return
+      set({
+        currentProject: null,
+        projectState: null,
+        files: [],
+        error: e instanceof Error ? e.message : 'Unknown error',
+        loading: false,
+      })
     }
   },
 
   loadProjectState: async (projectId: string) => {
     try {
       const response = await api.getProjectState(projectId)
-      if (response.ok && response.data) {
+      if (response.ok && response.data && get().activeProjectId === projectId) {
         set({ projectState: response.data })
       }
     } catch (e) {
@@ -72,7 +96,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   loadFiles: async (projectId: string) => {
     try {
       const response = await api.listFiles(projectId)
-      if (response.ok && response.data) {
+      if (response.ok && response.data && get().activeProjectId === projectId) {
         set({ files: response.data })
       }
     } catch (e) {
@@ -107,6 +131,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       if (response.ok) {
         set((state) => ({
           projects: state.projects.filter((project) => project.id !== projectId),
+          activeProjectId: state.activeProjectId === projectId ? null : state.activeProjectId,
           currentProject: state.currentProject?.id === projectId ? null : state.currentProject,
           projectState: state.currentProject?.id === projectId ? null : state.projectState,
           files: state.currentProject?.id === projectId ? [] : state.files,

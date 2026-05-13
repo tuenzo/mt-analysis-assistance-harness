@@ -269,13 +269,13 @@ def _executive_snapshot_section(context: ReportContext) -> ReportSection:
     estimates = psm_did.get("estimates", {})
 
     findings = [
-        f"诊断口径覆盖 {_fmt_int(summary.get('total_days'))} 天、{_fmt_int(summary.get('total_categories'))} 个品类；总 GMV: {_fmt_money(summary.get('total_gmv'))}。",
+        f"诊断口径覆盖 {_fmt_int(summary.get('total_days'))} 天、{_fmt_int(summary.get('total_categories'))} 个品类；总 GMV: {_fmt_money_unit(context, summary.get('total_gmv'))}。",
         f"活动期平均 GMV 相对非活动样本的观察性提升为 {_fmt_percent(lift.get('lift'))}。",
-        f"LocalGap 基于局部基线估算的总增量: {_fmt_money(localgap.get('total_local_gap'))}。",
+        f"LocalGap 基于局部基线估算的总增量: {_fmt_money_unit(context, localgap.get('total_local_gap'))}。",
     ]
     if estimates:
         findings.append(
-            f"PSM-DID 方向性估计为 {_fmt_signed_money(estimates.get('did_estimate'))}；这只能作为方向性证据，不等同于生产级因果结论。"
+            f"PSM-DID 方向性估计为 {_fmt_money_unit(context, estimates.get('did_estimate'), signed=True)}；这只能作为方向性证据，不等同于生产级因果结论。"
         )
     else:
         findings.append("当前没有 PSM-DID 估计，因此本报告不做因果 lift 结论。")
@@ -290,7 +290,7 @@ def _executive_snapshot_section(context: ReportContext) -> ReportSection:
             _tool_call("artifact.read", "当指标被追问时，读取对应 report metadata 或 result JSON。"),
         ],
         _artifact_paths(context, ["diagnostics", "localgap", "psm_did", "gmv_trend", "localgap_chart"]),
-        ["所有金额指标沿用输入 GMV 字段的单位。"],
+        [_unit_assumption(context)],
         _limitations_for(context, ["diagnostics", "localgap", "psm_did"]),
         _recommended_next_actions(context)[:3],
         findings=findings,
@@ -315,6 +315,8 @@ def _evidence_coverage_section(context: ReportContext) -> ReportSection:
         f"Panel 行数：{_fmt_int(panel.get('row_count'))}",
         f"Panel 品类数：{_fmt_int(panel.get('category_count'))}",
         f"Panel 日期范围：{_date_range_label(panel.get('date_range'))}",
+        f"金额单位：{_unit_assumption(context)}",
+        f"分析就绪状态：{_analysis_readiness_label(panel.get('analysis_readiness'))}",
         f"可用证据文件：{coverage['available_artifact_count']} / {coverage['expected_artifact_count']}",
     ]
 
@@ -347,22 +349,22 @@ def _observed_performance_section(context: ReportContext) -> ReportSection:
         last = trend[-1]
         delta = _as_float(last.get("gmv")) - _as_float(first.get("gmv"))
         trend_line = (
-            f"GMV 从 {first.get('date')} 的 {_fmt_money(first.get('gmv'))} "
-            f"变化到 {last.get('date')} 的 {_fmt_money(last.get('gmv'))}，变动 {_fmt_signed_money(delta)}。"
+            f"GMV 从 {first.get('date')} 的 {_fmt_money_unit(context, first.get('gmv'))} "
+            f"变化到 {last.get('date')} 的 {_fmt_money_unit(context, last.get('gmv'))}，变动 {_fmt_money_unit(context, delta, signed=True)}。"
         )
     elif len(trend) == 1:
-        trend_line = f"GMV 趋势只有一个观测日：{trend[0].get('date')}，GMV {_fmt_money(trend[0].get('gmv'))}。"
+        trend_line = f"GMV 趋势只有一个观测日：{trend[0].get('date')}，GMV {_fmt_money_unit(context, trend[0].get('gmv'))}。"
 
     rows = [
-        ["活动期平均 GMV", _fmt_money(activity.get("activity_avg_gmv"))],
-        ["非活动期平均 GMV", _fmt_money(activity.get("non_activity_avg_gmv"))],
+        ["活动期平均 GMV", _fmt_money_unit(context, activity.get("activity_avg_gmv"))],
+        ["非活动期平均 GMV", _fmt_money_unit(context, activity.get("non_activity_avg_gmv"))],
         ["活动期观察性提升", _fmt_percent(activity.get("lift"))],
-        ["发薪日平均 GMV", _fmt_money(payday.get("payday_avg_gmv"))],
-        ["非发薪日平均 GMV", _fmt_money(payday.get("non_payday_avg_gmv"))],
+        ["发薪日平均 GMV", _fmt_money_unit(context, payday.get("payday_avg_gmv"))],
+        ["非发薪日平均 GMV", _fmt_money_unit(context, payday.get("non_payday_avg_gmv"))],
         ["发薪日观察性提升", _fmt_percent(payday.get("lift"))],
     ]
     concentration_rows = [
-        [item.get("category", ""), _fmt_money(item.get("gmv")), _fmt_percent(item.get("share"))]
+        [item.get("category", ""), _fmt_money_unit(context, item.get("gmv")), _fmt_percent(item.get("share"))]
         for item in concentration[:8]
     ]
 
@@ -402,21 +404,21 @@ def _increment_causal_section(context: ReportContext) -> ReportSection:
     category_rows = [
         [
             item.get("category", ""),
-            _fmt_money(item.get("baseline_gmv")),
-            _fmt_money(item.get("actual_gmv")),
-            _fmt_signed_money(item.get("local_gap")),
-            _fmt_signed_money(item.get("exposure_gap")),
-            _fmt_signed_money(item.get("discount_gap")),
-            _fmt_signed_money(item.get("payday_gap")),
+            _fmt_money_unit(context, item.get("baseline_gmv")),
+            _fmt_money_unit(context, item.get("actual_gmv")),
+            _fmt_money_unit(context, item.get("local_gap"), signed=True),
+            _fmt_money_unit(context, item.get("exposure_gap"), signed=True),
+            _fmt_money_unit(context, item.get("discount_gap"), signed=True),
+            _fmt_money_unit(context, item.get("payday_gap"), signed=True),
         ]
         for item in localgap.get("categories", [])[:10]
     ]
     did_rows = [
-        ["DID 估计值", _fmt_signed_money(estimates.get("did_estimate"))],
-        ["处理组活动前均值", _fmt_money(estimates.get("treated_pre_avg"))],
-        ["处理组活动后均值", _fmt_money(estimates.get("treated_post_avg"))],
-        ["对照组活动前均值", _fmt_money(estimates.get("control_pre_avg"))],
-        ["对照组活动后均值", _fmt_money(estimates.get("control_post_avg"))],
+        ["DID 估计值", _fmt_money_unit(context, estimates.get("did_estimate"), signed=True)],
+        ["处理组活动前均值", _fmt_money_unit(context, estimates.get("treated_pre_avg"))],
+        ["处理组活动后均值", _fmt_money_unit(context, estimates.get("treated_post_avg"))],
+        ["对照组活动前均值", _fmt_money_unit(context, estimates.get("control_pre_avg"))],
+        ["对照组活动后均值", _fmt_money_unit(context, estimates.get("control_post_avg"))],
         ["增量 lift", _fmt_percent(lift.get("incremental_lift_pct"))],
     ]
 
@@ -435,9 +437,9 @@ def _increment_causal_section(context: ReportContext) -> ReportSection:
         _limitations_for(context, ["localgap", "psm_did"]),
         ["在基于因果 lift 分配预算前，应补充 holdout 或更强匹配控制。"],
         findings=[
-            f"估算 LocalGap 为 {_fmt_signed_money(localgap.get('total_local_gap'))}。",
+            f"估算 LocalGap 为 {_fmt_money_unit(context, localgap.get('total_local_gap'), signed=True)}。",
             (
-                f"DID 方向性估计为 {_fmt_signed_money(estimates.get('did_estimate'))}。"
+                f"DID 方向性估计为 {_fmt_money_unit(context, estimates.get('did_estimate'), signed=True)}。"
                 if estimates
                 else "DID 证据缺失，因此不做因果归因结论。"
             ),
@@ -447,9 +449,9 @@ def _increment_causal_section(context: ReportContext) -> ReportSection:
         [
             _bullets(
                 [
-                    f"活动期实际 GMV 合计为 {_fmt_money(localgap.get('total_actual_gmv'))}。",
-                    f"局部基线 GMV 合计为 {_fmt_money(localgap.get('total_baseline_gmv'))}。",
-                    f"估算 LocalGap 为 {_fmt_signed_money(localgap.get('total_local_gap'))}。",
+                    f"活动期实际 GMV 合计为 {_fmt_money_unit(context, localgap.get('total_actual_gmv'))}。",
+                    f"局部基线 GMV 合计为 {_fmt_money_unit(context, localgap.get('total_baseline_gmv'))}。",
+                    f"估算 LocalGap 为 {_fmt_money_unit(context, localgap.get('total_local_gap'), signed=True)}。",
                 ]
             ),
             "\n**分品类 LocalGap**\n",
@@ -772,6 +774,8 @@ def _build_evidence_index(
             "date_range": panel_summary.get("date_range"),
             "row_count": panel_summary.get("row_count"),
             "category_count": panel_summary.get("category_count"),
+            "measure_units": panel_summary.get("measure_units"),
+            "analysis_readiness": panel_summary.get("analysis_readiness"),
         },
         "manifest": {
             "path": ".analysis/project_manifest.json",
@@ -928,6 +932,11 @@ def _global_limitations(context: ReportContext) -> list[str]:
 
     if "localgap" in context.results:
         limitations.append("LocalGap 是相对局部基线的观察性增量分解，尚未完全控制季节性、库存和竞品冲击。")
+        gate = context.results["localgap"].get("quality_gate")
+        if isinstance(gate, dict) and gate.get("status") == "limited":
+            reasons = [str(reason) for reason in gate.get("reasons") or [] if str(reason)]
+            if reasons:
+                limitations.append(f"LocalGap 证据状态为 limited：{'; '.join(reasons[:3])}。")
     else:
         limitations.append("LocalGap 证据缺失，因此当前无法审计增量分解。")
 
@@ -947,6 +956,15 @@ def _global_limitations(context: ReportContext) -> list[str]:
 
     if not context.panel_summary:
         limitations.append("Panel summary 缺失，因此行数和日期覆盖可能不完整。")
+    else:
+        unit_info = _amount_unit_info(context)
+        if not unit_info.get("declared"):
+            limitations.append(_unit_assumption(context))
+        readiness = context.panel_summary.get("analysis_readiness")
+        if isinstance(readiness, dict) and readiness.get("status") == "limited":
+            reasons = [str(reason) for reason in readiness.get("reasons") or [] if str(reason)]
+            if reasons:
+                limitations.append(f"Panel 分析就绪状态为 limited：{'; '.join(reasons[:3])}。")
 
     if context.evidence_index["missing_evidence"]:
         limitations.append("部分预期证据文件缺失；请查看“证据覆盖”章节。")
@@ -977,8 +995,23 @@ def _report_confidence(context: ReportContext) -> dict[str, Any]:
         score += 0.05
     if context.charts:
         score += min(0.05, len(context.charts) * 0.02)
+    limited_results = [
+        name
+        for name, payload in context.results.items()
+        if payload.get("method_status") == "limited"
+        or (isinstance(payload.get("quality_gate"), dict) and payload["quality_gate"].get("status") == "limited")
+    ]
+    if limited_results:
+        score -= min(0.2, len(limited_results) * 0.07)
+        if context.results.get("localgap", {}).get("quality_gate", {}).get("status") == "limited":
+            score = min(score, 0.55)
+        if len(limited_results) >= 3:
+            score = min(score, 0.5)
+    readiness = context.panel_summary.get("analysis_readiness") if context.panel_summary else None
+    if isinstance(readiness, dict) and readiness.get("status") == "limited":
+        score -= 0.08
 
-    score = min(round(score, 2), 0.95)
+    score = max(0.1, min(round(score, 2), 0.95))
     if score >= 0.75 and "psm_did" in evidence_names:
         label = "medium-high"
     elif score >= 0.55:
@@ -992,6 +1025,7 @@ def _report_confidence(context: ReportContext) -> dict[str, Any]:
         "basis": [
             f"results={sorted(evidence_names)}",
             f"charts={sorted(context.charts.keys())}",
+            f"limited_results={limited_results}",
             "缺少 holdout、event-study 和稳健性证据时，因果表述保持方向性。",
         ],
     }
@@ -1163,6 +1197,16 @@ def _date_range_label(value: Any) -> str:
     return "-"
 
 
+def _analysis_readiness_label(value: Any) -> str:
+    if not isinstance(value, dict):
+        return "未记录"
+    status = value.get("status") or "unknown"
+    reasons = [str(reason) for reason in value.get("reasons") or [] if str(reason)]
+    if not reasons:
+        return str(status)
+    return f"{status}；{'; '.join(reasons[:3])}"
+
+
 def _fmt_int(value: Any) -> str:
     number = _as_float_or_none(value)
     if number is None:
@@ -1182,6 +1226,35 @@ def _fmt_signed_money(value: Any) -> str:
     if number is None:
         return "N/A"
     return f"{number:+,.2f}"
+
+
+def _amount_unit_info(context: ReportContext) -> dict[str, Any]:
+    measure_units = context.panel_summary.get("measure_units", {})
+    if isinstance(measure_units, dict):
+        gmv_unit = measure_units.get("gmv")
+        if isinstance(gmv_unit, dict):
+            return gmv_unit
+    return {"unit_label": "GMV原始单位", "declared": False, "source_column": None}
+
+
+def _amount_unit_label(context: ReportContext) -> str:
+    unit = _amount_unit_info(context).get("unit_label") or _amount_unit_info(context).get("unit")
+    return str(unit or "GMV原始单位")
+
+
+def _unit_assumption(context: ReportContext) -> str:
+    info = _amount_unit_info(context)
+    source_column = info.get("source_column") or "GMV源字段"
+    if info.get("declared"):
+        return f"金额指标沿用 `{source_column}` 字段声明的单位：{_amount_unit_label(context)}。"
+    return f"`{source_column}` 未声明货币单位；金额指标沿用原始表数值单位：{_amount_unit_label(context)}。"
+
+
+def _fmt_money_unit(context: ReportContext, value: Any, signed: bool = False) -> str:
+    formatted = _fmt_signed_money(value) if signed else _fmt_money(value)
+    if formatted == "N/A":
+        return formatted
+    return f"{formatted} {_amount_unit_label(context)}"
 
 
 def _fmt_percent(value: Any) -> str:

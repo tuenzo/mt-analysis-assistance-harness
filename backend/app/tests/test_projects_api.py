@@ -124,6 +124,27 @@ def test_delete_project_removes_record_and_workspace(client):
     assert client.get(f"/api/projects/{proj_id}").status_code == 404
 
 
+def test_delete_project_removes_record_when_workspace_delete_is_blocked(client, monkeypatch):
+    r = client.post("/api/projects", json={"name": "Delete With Locked Workspace"})
+    proj_id = r.json()["id"]
+    workspace_path = Path(r.json()["workspace_path"])
+
+    def fail_rmtree(path):
+        raise OSError(f"locked: {path}")
+
+    monkeypatch.setattr("app.projects.service.shutil.rmtree", fail_rmtree)
+
+    delete_response = client.delete(f"/api/projects/{proj_id}")
+
+    assert delete_response.status_code == 200
+    payload = delete_response.json()["data"]
+    assert payload["id"] == proj_id
+    assert payload["workspace_deleted"] is False
+    assert "locked:" in payload["workspace_delete_error"]
+    assert client.get(f"/api/projects/{proj_id}").status_code == 404
+    assert workspace_path.exists()
+
+
 def test_delete_project_removes_related_records(client):
     r = client.post("/api/projects", json={"name": "Delete With History"})
     proj_id = r.json()["id"]

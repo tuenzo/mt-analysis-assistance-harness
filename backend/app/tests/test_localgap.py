@@ -86,6 +86,8 @@ def test_localgap_produces_decomposition(project_with_panel):
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["method_status"] in {"implemented", "limited"}
     assert "baseline_method" in payload
+    assert "quality_gate" in payload
+    assert "measure_units" in payload
     assert "coverage_rate" in payload["diagnostics"]
     assert "baseline_quality" in payload["diagnostics"]
 

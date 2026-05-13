@@ -185,6 +185,7 @@ def _build_result_index(latest_data: dict[str, Any], available_results: list[str
         "evidence_artifacts": evidence_artifacts,
         "confidence": _result_confidence(latest_data, available_results),
         "findings": _result_findings(latest_data),
+        "quality_gates": _result_quality_gates(latest_data),
         "results": [
             {
                 "name": name,
@@ -326,6 +327,21 @@ def _result_confidence(latest_data: dict[str, Any], available_results: list[str]
         score += 0.02
     if latest_data.get("uplift", {}).get("method_status") == "stub":
         score -= 0.05
+    limited_results = [
+        name
+        for name, payload in latest_data.items()
+        if isinstance(payload, dict)
+        and (
+            payload.get("method_status") == "limited"
+            or (isinstance(payload.get("quality_gate"), dict) and payload["quality_gate"].get("status") == "limited")
+        )
+    ]
+    if limited_results:
+        score -= min(0.2, len(limited_results) * 0.07)
+        if latest_data.get("localgap", {}).get("quality_gate", {}).get("status") == "limited":
+            score = min(score, 0.55)
+        if len(limited_results) >= 3:
+            score = min(score, 0.45)
     score = max(0.1, min(round(score, 2), 0.9))
     label = "medium-high" if score >= 0.75 else "medium" if score >= 0.5 else "low"
     return {
@@ -333,6 +349,7 @@ def _result_confidence(latest_data: dict[str, Any], available_results: list[str]
         "score": score,
         "basis": [
             f"available_results={available_results}",
+            f"limited_results={limited_results}",
             "Causal confidence requires DID/event-study/robustness evidence beyond result aggregation.",
         ],
     }
@@ -356,7 +373,26 @@ def _result_limitations(latest_data: dict[str, Any], missing_results: list[str])
         limitations.append("GPS-Uplift is a stub; segment strategy remains illustrative.")
     if "localgap" in latest_data:
         limitations.append("LocalGap is increment accounting, not causal proof.")
+        gate = latest_data["localgap"].get("quality_gate")
+        if isinstance(gate, dict) and gate.get("status") == "limited":
+            reasons = [str(reason) for reason in gate.get("reasons") or [] if str(reason)]
+            if reasons:
+                limitations.append(f"LocalGap evidence is limited: {'; '.join(reasons[:3])}.")
+    for name, payload in latest_data.items():
+        if not isinstance(payload, dict) or payload.get("method_status") != "limited" or name == "localgap":
+            continue
+        warnings = [str(warning) for warning in payload.get("warnings") or [] if str(warning)]
+        if warnings:
+            limitations.append(f"{name} is limited: {'; '.join(warnings[:2])}.")
     return limitations or ["No material result limitations detected from available metadata."]
+
+
+def _result_quality_gates(latest_data: dict[str, Any]) -> dict[str, Any]:
+    gates: dict[str, Any] = {}
+    for name, payload in latest_data.items():
+        if isinstance(payload, dict) and isinstance(payload.get("quality_gate"), dict):
+            gates[name] = payload["quality_gate"]
+    return gates
 
 
 def _result_follow_up(missing_results: list[str], latest_data: dict[str, Any]) -> list[str]:

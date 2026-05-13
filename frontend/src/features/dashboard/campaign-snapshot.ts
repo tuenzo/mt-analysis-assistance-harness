@@ -103,7 +103,7 @@ const MVP_CAMPAIGN_SNAPSHOT: CampaignDashboardSnapshot = {
   title: '活动效果决策看板',
   decisionLabel: '扩大定向补贴，收缩泛化折扣',
   statusLabel: 'MVP 分析快照',
-  sourceLabel: '前端兜底快照',
+  sourceLabel: '尚未发现真实报告或产物',
   stageLabel: '等待 pipeline 状态',
   updatedAtLabel: '暂无记录',
   periods: [
@@ -278,26 +278,35 @@ export function buildCampaignDashboardSnapshot({
 
   return {
     ...MVP_CAMPAIGN_SNAPSHOT,
+    decisionLabel: report ? '复核最新报告结论' : '等待真实分析结果',
     statusLabel: buildStatusLabel(state, report),
     sourceLabel: buildSourceLabel(artifacts, report),
     stageLabel: humanizeStage(state?.current_stage),
     updatedAtLabel: formatDateTime(state?.last_activity),
+    periods: [],
+    trend: {
+      metricLabel: '真实分析趋势',
+      points: [],
+    },
     did: {
       ...MVP_CAMPAIGN_SNAPSHOT.did,
       verdict: didVerdict,
       tone: didTone,
-      confidence: didNumericValue !== null && didNumericValue < 0 ? '需重点复核' : MVP_CAMPAIGN_SNAPSHOT.did.confidence,
-      effect: didEstimate ? formatMetricValue(didEstimate, true) : MVP_CAMPAIGN_SNAPSHOT.did.effect,
+      confidence: didNumericValue !== null ? (didNumericValue < 0 ? '需重点复核' : '来自报告解析') : '待分析',
+      effect: didEstimate ? formatMetricValue(didEstimate, true) : '待分析',
       incrementalValue: incrementalValue
         ? `${formatMetricValue(incrementalValue)} 增量价值`
-        : MVP_CAMPAIGN_SNAPSHOT.did.incrementalValue,
+        : '待分析',
+      baselineComparison: report ? '请以报告正文和产物索引为准' : '等待真实报告',
+      significance: report ? '报告中未解析到显著性字段时需人工复核' : '待分析',
       interpretation: didInterpretation,
       methodNote: report
         ? '已发现最新报告证据。用于最终决策前，请继续复核报告正文和图表产物。'
-        : MVP_CAMPAIGN_SNAPSHOT.did.methodNote,
+        : '尚未加载真实报告或分析产物，不能展示前端快照结论。',
     },
-    recommendations: recommendationItems.length >= 2 ? recommendationItems : MVP_CAMPAIGN_SNAPSHOT.recommendations,
-    conclusions: conclusionItems.length >= 2 ? conclusionItems : MVP_CAMPAIGN_SNAPSHOT.conclusions,
+    quadrants: [],
+    recommendations: recommendationItems.length >= 2 ? recommendationItems : [],
+    conclusions: conclusionItems.length >= 2 ? conclusionItems : report ? ['报告已加载，但未解析出明确结论；请查看报告正文。'] : [],
     caveats: caveatItems.length > 0 ? caveatItems : buildFallbackCaveats(state, artifacts, report),
     artifactSummary: summarizeArtifacts(artifacts),
   }
@@ -312,21 +321,21 @@ function buildStatusLabel(state: ProjectState | null, report: LatestReport | nul
 
 function buildSourceLabel(artifacts: Artifact[], report: LatestReport | null) {
   if (report && artifacts.length > 0) return '报告 + 已注册产物'
-  if (report) return '最新报告 + MVP 快照'
-  if (artifacts.length > 0) return '已注册产物 + MVP 快照'
-  return MVP_CAMPAIGN_SNAPSHOT.sourceLabel
+  if (report) return '最新报告'
+  if (artifacts.length > 0) return '已注册产物'
+  return '尚未发现真实报告或产物'
 }
 
 function buildFallbackCaveats(state: ProjectState | null, artifacts: Artifact[], report: LatestReport | null) {
-  const caveats = [...MVP_CAMPAIGN_SNAPSHOT.caveats]
+  const caveats = ['毛利、库存和履约能力尚未完整纳入前端复核。']
   if ((state?.files_count ?? 0) < 3) {
     caveats.unshift('订单、曝光和活动时间线文件可能尚未全部注册。')
   }
   if (!hasArtifact(artifacts, ['did', 'psm', 'causal'])) {
-    caveats.unshift('尚未注册因果产物，DID 数值仍是 MVP 快照提示。')
+    caveats.unshift('尚未注册因果产物，不能展示 DID 快照数值。')
   }
   if (!report) {
-    caveats.unshift('暂无最新报告，建议来自前端 MVP 快照。')
+    caveats.unshift('暂无最新报告，建议暂不展示业务结论。')
   }
   return caveats.slice(0, 5)
 }
@@ -455,28 +464,28 @@ function parseMetricNumber(value: string) {
 }
 
 function resolveDidTone(value: number | null): MetricTone {
-  if (value === null) return MVP_CAMPAIGN_SNAPSHOT.did.tone
+  if (value === null) return 'neutral'
   if (value < 0) return 'risk'
   if (value < 2) return 'watch'
   return 'good'
 }
 
 function resolveDidVerdict(value: number | null) {
-  if (value === null) return MVP_CAMPAIGN_SNAPSHOT.did.verdict
+  if (value === null) return '等待真实因果 / 增量指标'
   if (value < 0) return 'DID 显示负向，需要复核'
   if (value < 2) return 'DID 增量信号较弱'
   return '存在正向增量信号'
 }
 
 function resolveDidInterpretation(value: number | null) {
-  if (value === null) return MVP_CAMPAIGN_SNAPSHOT.did.interpretation
+  if (value === null) return '尚未从报告中解析到 DID 或增量指标；请先运行分析 pipeline 或查看报告正文。'
   if (value < 0) {
     return '当前解析到的 DID 效应为负，说明活动组相对匹配对照并未跑赢基线，需要优先检查活动窗口、匹配质量和异常品类。'
   }
   if (value < 2) {
     return '当前解析到的 DID 效应偏弱，活动可能有经营抬升，但净增量还不足以支撑扩大泛化补贴。'
   }
-  return MVP_CAMPAIGN_SNAPSHOT.did.interpretation
+  return '当前解析到正向增量信号，仍需结合报告中的样本、匹配质量和限制说明复核。'
 }
 
 function formatNumber(value: number) {

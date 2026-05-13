@@ -109,6 +109,8 @@ def validate_files(workspace_path: Path) -> ValidationResult:
             "columns": frame.columns.tolist(),
             "recommended_mappings": mappings,
         }
+        if role == "order_info":
+            file_info[role]["measure_units"] = infer_measure_units_from_mappings(mappings)
 
     return ValidationResult(ok=not issues, issues=issues, warnings=warnings, file_info=file_info)
 
@@ -131,6 +133,13 @@ def infer_schema_from_columns(columns: list[str], role: str) -> dict[str, str]:
                 break
 
     return mappings
+
+
+def infer_measure_units_from_mappings(order_mappings: dict[str, str]) -> dict[str, dict[str, Any]]:
+    return {
+        "gmv": _infer_amount_unit("gmv", order_mappings.get("gmv")),
+        "discount_amount": _infer_amount_unit("discount_amount", order_mappings.get("discount_amount")),
+    }
 
 
 def build_category_day_panel(
@@ -160,10 +169,20 @@ def build_category_day_panel(
         activity_raw = _read_csv(files["activity_timeline"])
 
         mappings = schema_mappings or {}
-        orders = standardize_orders(orders_raw, mappings.get("order_info") or infer_schema_from_columns(orders_raw.columns.tolist(), "order_info"))
-        exposure = standardize_exposure(exposure_raw, mappings.get("exposure_info") or infer_schema_from_columns(exposure_raw.columns.tolist(), "exposure_info"))
-        activity = standardize_activity(activity_raw, mappings.get("activity_timeline") or infer_schema_from_columns(activity_raw.columns.tolist(), "activity_timeline"))
-        result = build_panel_from_frames(orders, exposure, activity, PanelConfig(project_id=project_id))
+        order_mappings = mappings.get("order_info") or infer_schema_from_columns(orders_raw.columns.tolist(), "order_info")
+        exposure_mappings = mappings.get("exposure_info") or infer_schema_from_columns(exposure_raw.columns.tolist(), "exposure_info")
+        activity_mappings = mappings.get("activity_timeline") or infer_schema_from_columns(activity_raw.columns.tolist(), "activity_timeline")
+        measure_units = infer_measure_units_from_mappings(order_mappings)
+        orders = standardize_orders(orders_raw, order_mappings)
+        exposure = standardize_exposure(exposure_raw, exposure_mappings)
+        activity = standardize_activity(activity_raw, activity_mappings)
+        result = build_panel_from_frames(
+            orders,
+            exposure,
+            activity,
+            PanelConfig(project_id=project_id),
+            measure_units=measure_units,
+        )
     except Exception as exc:
         return ToolResult(
             ok=False,
@@ -204,6 +223,7 @@ def build_panel_from_frames(
     exposure_df: pd.DataFrame,
     activity_df: pd.DataFrame,
     config: PanelConfig,
+    measure_units: dict[str, Any] | None = None,
 ) -> PanelBuildResult:
     clean_orders = _prepare_orders(orders_df)
     clean_exposure = _prepare_exposure(exposure_df, clean_orders)
@@ -285,6 +305,7 @@ def build_panel_from_frames(
         ]
     ].sort_values(["category_key", "date"]).reset_index(drop=True)
 
+    readiness = _build_analysis_readiness(output)
     summary = {
         "date_range": {"start": str(output["date"].min().date()), "end": str(output["date"].max().date())},
         "category_count": int(output["category_key"].nunique()),
@@ -293,6 +314,8 @@ def build_panel_from_frames(
         "total_discount": float(output["discount_amount"].sum()),
         "total_view_uv": float(output["view_uv"].sum()),
         "activity_day_count": int(output.loc[output["is_activity"], "date"].nunique()),
+        "measure_units": measure_units or _default_measure_units(),
+        "analysis_readiness": readiness,
         "missing_summary": {
             "zero_gmv_rows": int((output["gmv"] == 0).sum()),
             "zero_view_uv_rows": int((output["view_uv"] == 0).sum()),
@@ -361,6 +384,106 @@ def parse_date_series(values: Any) -> pd.Series:
         parsed.loc[remaining_mask] = pd.to_datetime(text.loc[remaining_mask], errors="coerce")
 
     return parsed.dt.normalize()
+
+
+def _default_measure_units() -> dict[str, dict[str, Any]]:
+    return infer_measure_units_from_mappings({})
+
+
+def _infer_amount_unit(measure: str, source_column: str | None) -> dict[str, Any]:
+    display_name = "GMV" if measure == "gmv" else "折扣"
+    source = str(source_column or "").strip()
+    normalized = source.lower().replace("-", "_").replace(" ", "_")
+    explicit_unit = _explicit_unit_from_column(normalized, source)
+    declared = explicit_unit is not None
+    unit_label = explicit_unit or f"{display_name}原始单位"
+    if source:
+        provenance = (
+            f"order_info.{source} includes an explicit unit marker."
+            if declared
+            else f"order_info.{source} has no explicit unit marker; values are kept in raw source units."
+        )
+    else:
+        provenance = f"No mapped {display_name} source column was available; values are kept in raw source units."
+    return {
+        "measure": measure,
+        "source_role": "order_info",
+        "source_column": source or None,
+        "unit": unit_label,
+        "unit_label": unit_label,
+        "declared": declared,
+        "scale": 1.0,
+        "provenance": provenance,
+    }
+
+
+def _explicit_unit_from_column(normalized: str, original: str) -> str | None:
+    original_text = original.strip()
+    markers = [
+        ("万元", "万元"),
+        ("万", "万元"),
+        ("wan_yuan", "万元"),
+        ("wanyuan", "万元"),
+        ("ten_thousand_yuan", "万元"),
+        ("yuan", "元"),
+        ("rmb", "元"),
+        ("cny", "元"),
+        ("元", "元"),
+        ("fen", "分"),
+        ("cent", "分"),
+        ("分", "分"),
+        ("usd", "USD"),
+        ("dollar", "USD"),
+        ("sar", "SAR"),
+        ("riyal", "SAR"),
+    ]
+    haystack = f"{normalized} {original_text}"
+    for marker, label in markers:
+        if marker in haystack:
+            return label
+    return None
+
+
+def _build_analysis_readiness(panel: pd.DataFrame) -> dict[str, Any]:
+    date_count = int(panel["date"].nunique())
+    category_count = int(panel["category_key"].nunique())
+    activity_rows = int(panel["is_activity"].sum())
+    non_activity_rows = int((~panel["is_activity"]).sum())
+    zero_gmv_share = round(float((panel["gmv"] <= 0).mean()), 4) if len(panel) else 0.0
+    zero_view_uv_share = round(float((panel["view_uv"] <= 0).mean()), 4) if len(panel) else 0.0
+    min_activity_rows = max(6, category_count * 2)
+    min_non_activity_rows = max(6, category_count * 2)
+    reasons: list[str] = []
+    reason_codes: list[str] = []
+
+    if date_count < 14:
+        reason_codes.append("short_date_coverage")
+        reasons.append(f"Panel covers {date_count} day(s), below the 14-day minimum for stable cyclical diagnostics.")
+    if activity_rows < min_activity_rows:
+        reason_codes.append("sparse_activity_rows")
+        reasons.append(f"Panel has {activity_rows} activity row(s), below the recommended {min_activity_rows}.")
+    if non_activity_rows < min_non_activity_rows:
+        reason_codes.append("sparse_baseline_rows")
+        reasons.append(f"Panel has {non_activity_rows} non-activity row(s), below the recommended {min_non_activity_rows}.")
+    if zero_gmv_share > 0.5:
+        reason_codes.append("high_zero_gmv_share")
+        reasons.append(f"{round(zero_gmv_share * 100, 1)}% of panel rows have zero or negative GMV.")
+
+    status = "limited" if reasons else "ready"
+    return {
+        "status": status,
+        "reason_codes": reason_codes,
+        "reasons": reasons,
+        "metrics": {
+            "date_count": date_count,
+            "category_count": category_count,
+            "activity_rows": activity_rows,
+            "non_activity_rows": non_activity_rows,
+            "zero_gmv_share": zero_gmv_share,
+            "zero_view_uv_share": zero_view_uv_share,
+        },
+        "recommended_interpretation": "smoke_test_only" if status == "limited" else "standard_analysis",
+    }
 
 
 def _find_role_files(data_dir: Path) -> dict[str, Path]:

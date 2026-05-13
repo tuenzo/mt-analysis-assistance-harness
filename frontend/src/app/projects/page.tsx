@@ -6,7 +6,7 @@ import { useProjectStore } from '@/store/project-store'
 import { api } from '@/lib/api-client'
 import type { DemoStatus, Project } from '@/lib/api-types'
 import { useApiBaseHref } from '@/lib/use-api-base-href'
-import { KEEMART_PROJECT_NAME } from '@/features/demo/keemart-demo-data'
+import { KEEMART_PROJECT_ID, KEEMART_PROJECT_NAME } from '@/features/demo/keemart-demo-data'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -32,6 +32,7 @@ export default function ProjectsPage() {
   const [deleting, setDeleting] = useState(false)
   const [demoStatus, setDemoStatus] = useState<DemoStatus | null>(null)
   const hrefFor = useApiBaseHref()
+  const openCreateDialog = () => setOpen(true)
 
   useEffect(() => {
     loadProjects()
@@ -144,21 +145,41 @@ export default function ProjectsPage() {
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <p className="font-medium">Keemart 业务复盘</p>
-                  <span className="rounded-md bg-primary px-2 py-0.5 text-xs text-primary-foreground">分析就绪</span>
+                  <p className="font-medium">真实 Agent 工作区</p>
+                  <span className="rounded-md bg-primary px-2 py-0.5 text-xs text-primary-foreground">LLM 驱动</span>
                 </div>
-                <p className="text-sm text-muted-foreground">{KEEMART_PROJECT_NAME}</p>
+                <p className="text-sm text-muted-foreground">{demoStatus.project_name}</p>
               </div>
             </div>
             <Link href={hrefFor(`/projects/${demoStatus.project_id}/agent`)}>
               <Button>
                 <Sparkles className="mr-2 h-4 w-4" />
-                进入分析工作区
+                进入真实分析
               </Button>
             </Link>
           </CardContent>
         </Card>
       )}
+
+      <Card className="mb-6 border-border bg-card">
+        <CardContent className="flex flex-col gap-4 py-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="rounded-md bg-secondary p-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <p className="font-medium">独立报告演示</p>
+              <p className="text-sm text-muted-foreground">{KEEMART_PROJECT_NAME}</p>
+            </div>
+          </div>
+          <Link href={hrefFor(`/projects/${KEEMART_PROJECT_ID}/dashboard`)}>
+            <Button variant="outline">
+              <Sparkles className="mr-2 h-4 w-4" />
+              打开演示看板
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
 
       {loading && projects.length === 0 ? (
         <div className="flex items-center justify-center py-12">
@@ -173,39 +194,10 @@ export default function ProjectsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Modal open={open} onOpenChange={setOpen}>
-              <ModalTrigger asChild>
-                <Button className="w-full">
-                  <Plus className="h-4 w-4 mr-2" />
-                  创建项目
-                </Button>
-              </ModalTrigger>
-              <ModalContent>
-                <ModalHeader>
-                  <ModalTitle>新建项目</ModalTitle>
-                  <ModalDescription>
-                    为新的商业分析项目输入名称。
-                  </ModalDescription>
-                </ModalHeader>
-                <div className="py-4">
-                  <Input
-                    placeholder="项目名称"
-                    value={newProjectName}
-                    onChange={(e) => setNewProjectName(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleCreateProject()}
-                    autoFocus
-                  />
-                </div>
-                <ModalFooter>
-                  <ModalClose asChild>
-                    <Button variant="outline">取消</Button>
-                  </ModalClose>
-                  <Button onClick={handleCreateProject} disabled={!newProjectName.trim() || creating}>
-                    {creating ? '创建中...' : '创建项目'}
-                  </Button>
-                </ModalFooter>
-              </ModalContent>
-            </Modal>
+            <Button className="w-full" onClick={openCreateDialog}>
+              <Plus className="h-4 w-4 mr-2" />
+              创建项目
+            </Button>
           </CardContent>
         </Card>
       ) : (

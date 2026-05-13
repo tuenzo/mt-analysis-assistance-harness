@@ -41,5 +41,6 @@ $FrontendCommand = "`$env:NEXT_PUBLIC_API_BASE_URL='http://127.0.0.1:$BackendPor
 Start-Process powershell -WindowStyle Hidden -ArgumentList "-NoExit", "-Command", $BackendCommand
 Start-Process powershell -WindowStyle Hidden -ArgumentList "-NoExit", "-Command", $FrontendCommand
 
-Write-Host "Demo backend:  http://127.0.0.1:$BackendPort"
-Write-Host "Demo frontend: http://127.0.0.1:$FrontendPort/projects/proj_demo_review/dashboard"
+Write-Host "Demo backend:             http://127.0.0.1:$BackendPort"
+Write-Host "Real Agent workspace:     http://127.0.0.1:$FrontendPort/projects/proj_demo_review/agent"
+Write-Host "Report showcase frontend: http://127.0.0.1:$FrontendPort/projects/keemart-saudi-promo-review/dashboard"

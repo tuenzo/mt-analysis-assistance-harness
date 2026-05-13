@@ -5,3 +5,4 @@
 - [x] Add frontend API/store delete action.
 - [x] Add project-list delete button with confirmation modal.
 - [x] Run backend pytest and frontend build.
+- [x] Keep project records deletable when Windows temporarily locks the workspace directory.

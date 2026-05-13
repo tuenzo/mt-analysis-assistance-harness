@@ -1,5 +1,5 @@
 import { ResultDashboardPage } from './result-dashboard-page'
-import { buildDashboardSummary } from './dashboard-data'
+import { buildDashboardInitialFilters, buildDashboardSummary, buildDashboardTimeRangeLabel } from './dashboard-data'
 import type { Artifact, LatestReport, ProjectState } from '@/lib/api-types'
 
 type CampaignResultDashboardProps = {
@@ -13,9 +13,14 @@ export function CampaignResultDashboard({
   artifacts,
   latestReport,
 }: CampaignResultDashboardProps) {
+  const summary = buildDashboardSummary({ state, artifacts, report: latestReport })
   return (
     <ResultDashboardPage
-      summary={buildDashboardSummary({ state, artifacts, report: latestReport })}
+      key={buildDashboardTimeRangeLabel(summary)}
+      summary={summary}
+      initialFilters={buildDashboardInitialFilters(summary)}
+      timeRangeLabel={buildDashboardTimeRangeLabel(summary)}
+      preserveLocalGap
     />
   )
 }

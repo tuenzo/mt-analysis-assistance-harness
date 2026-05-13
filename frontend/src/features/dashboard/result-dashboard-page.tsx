@@ -33,7 +33,7 @@ import type {
 } from '@/types/dashboard'
 
 const defaultInitialFilters: DashboardFilters = {
-  timeRange: ['2025-05-06', '2025-06-04'],
+  timeRange: ['', ''],
   activityWindow: 'all',
   categoryLevel: 'all',
   calendarType: 'all',
@@ -77,19 +77,31 @@ function formatCurrencyNumber(value: number, scale: number, signed = false) {
   const displayValue = value / scale
   const prefix = signed && value > 0 ? '+' : ''
   return `${prefix}${displayValue.toLocaleString('en-US', {
-    maximumFractionDigits: scale === WAN_UNIT_SCALE ? 2 : 0,
+    maximumFractionDigits: 2,
   })}`
 }
 
 function formatScaledCurrencyNumber(value: number, scale: number, signed = false) {
   const prefix = signed && value > 0 ? '+' : ''
   return `${prefix}${value.toLocaleString('en-US', {
-    maximumFractionDigits: scale === WAN_UNIT_SCALE ? 2 : 0,
+    maximumFractionDigits: 2,
   })}`
 }
 
-function formatCurrencyWithUnit(value: number, scale: number, signed = false) {
-  return `${formatCurrencyNumber(value, scale, signed)} 万元`
+function currencyUnitForScale(scale: number, unitLabel?: string) {
+  return unitLabel || (scale === WAN_UNIT_SCALE ? '万元' : '元')
+}
+
+function formatCurrencyWithUnit(value: number, scale: number, signed = false, unitLabel?: string) {
+  return `${formatCurrencyNumber(value, scale, signed)} ${currencyUnitForScale(scale, unitLabel)}`
+}
+
+function summaryCurrencyScale(summary: DashboardSummary, values: number[]) {
+  return summary.valueScale && summary.valueScale > 0 ? summary.valueScale : inferCurrencyScale(values)
+}
+
+function summaryCurrencyUnit(summary: DashboardSummary, scale: number) {
+  return currencyUnitForScale(scale, summary.valueUnit)
 }
 
 function getNiceAxisMax(maxValue: number) {
@@ -150,7 +162,7 @@ function applyDashboardFilters(
 
   return {
     ...summary,
-    kpis: buildFilteredKpis(summary.kpis, trend, recommendations),
+    kpis: buildFilteredKpis(summary, trend, recommendations),
     pareto,
     localGap: options.preserveLocalGap ? summary.localGap : buildFilteredLocalGap(trend),
     trend,
@@ -170,7 +182,9 @@ function matchesCalendarType(item: TrendDatum, calendarType: DashboardFilters['c
 }
 
 function matchesCategoryLevel(category: string, categoryLevel: DashboardFilters['categoryLevel']) {
-  return categoryLevel === 'all' || categoryLevelByName[category] === categoryLevel
+  if (categoryLevel === 'all') return true
+  const mappedLevel = categoryLevelByName[category]
+  return mappedLevel ? mappedLevel === categoryLevel : true
 }
 
 function recalculatePareto(data: ParetoDatum[]): ParetoDatum[] {
@@ -199,7 +213,7 @@ function recalculatePareto(data: ParetoDatum[]): ParetoDatum[] {
 }
 
 function buildFilteredKpis(
-  kpis: KpiCardData[],
+  summary: DashboardSummary,
   trend: TrendDatum[],
   recommendations: RecommendationGroup[],
 ): KpiCardData[] {
@@ -210,17 +224,19 @@ function buildFilteredKpis(
   const netTotal = sumSparklineValues(netSeries)
   const exposureTotal = sumSparklineValues(exposureSeries)
   const discountTotal = sumSparklineValues(discountSeries)
-  const currencyScale = inferCurrencyScale(
+  const currencyScale = summaryCurrencyScale(
+    summary,
     trend.flatMap((item) => [item.gmv, item.baselineGmv, item.exposure ?? 0, item.discount ?? 0]),
   )
+  const currencyUnit = summaryCurrencyUnit(summary, currencyScale)
   const boostCount = recommendations.find((group) => group.key === 'boost')?.categories.length ?? 0
 
-  return kpis.map((kpi) => {
+  return summary.kpis.map((kpi) => {
     if (kpi.key === 'gmv_increment') {
       return {
         ...kpi,
         value: formatCurrencyNumber(netTotal, currencyScale),
-        unit: '万元',
+        unit: currencyUnit,
         subText: `较基线 ${formatSignedPercent(netTotal, baselineTotal)}`,
         trendDirection: toTrendDirection(netTotal),
         series: netSeries,
@@ -231,7 +247,7 @@ function buildFilteredKpis(
       return {
         ...kpi,
         value: formatCurrencyNumber(exposureTotal, currencyScale, true),
-        unit: '万元',
+        unit: currencyUnit,
         subText: `占净增量 ${formatSharePercent(exposureTotal, netTotal)}`,
         trendDirection: toTrendDirection(exposureTotal),
         series: exposureSeries,
@@ -242,7 +258,7 @@ function buildFilteredKpis(
       return {
         ...kpi,
         value: formatCurrencyNumber(discountTotal, currencyScale, true),
-        unit: '万元',
+        unit: currencyUnit,
         subText: `占净增量 ${formatSharePercent(discountTotal, netTotal)}`,
         trendDirection: toTrendDirection(discountTotal),
         series: discountSeries,
@@ -322,7 +338,7 @@ function toTrendDirection(value: number): KpiCardData['trendDirection'] {
 export function ResultDashboardPage({
   summary,
   initialFilters = defaultInitialFilters,
-  timeRangeLabel = '最近 30 天（05.06~06.04）',
+  timeRangeLabel,
   preserveLocalGap = false,
   showcaseLayout = false,
 }: {
@@ -335,6 +351,8 @@ export function ResultDashboardPage({
   const [filters, setFilters] = useState<DashboardFilters>(initialFilters)
   const [drilldown, setDrilldown] = useState<string | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
+  const resolvedTimeRangeLabel = timeRangeLabel ?? summarizeTrendRange(summary.trend)
+
   const filteredSummary = useMemo(
     () => applyDashboardFilters(summary, filters, { preserveLocalGap }),
     [summary, filters, preserveLocalGap],
@@ -354,7 +372,7 @@ export function ResultDashboardPage({
             onChange={setFilters}
             onReset={() => setFilters(initialFilters)}
             onExport={() => setExportOpen(true)}
-            timeRangeLabel={timeRangeLabel}
+            timeRangeLabel={resolvedTimeRangeLabel}
           />
           <CoreConclusionBanner conclusion={filteredSummary.conclusion} onExplain={() => setDrilldown('核心结论')} />
           <KpiSummaryStrip kpis={filteredSummary.kpis} onOpen={setDrilldown} />
@@ -371,6 +389,14 @@ export function ResultDashboardPage({
       <DashboardExportModal open={exportOpen} onClose={() => setExportOpen(false)} />
     </div>
   )
+}
+
+function summarizeTrendRange(trend: TrendDatum[]) {
+  if (trend.length === 0) return '暂无真实分析时间范围'
+  const first = trend[0]?.date
+  const last = trend.at(-1)?.date
+  if (!first || !last) return '暂无真实分析时间范围'
+  return first === last ? first : `${first}~${last}`
 }
 
 function DashboardFilterBar({
@@ -593,14 +619,14 @@ function DashboardMainGrid({
         data-dashboard-left-column
         className={showcaseLayout ? 'grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4' : 'grid content-start gap-4'}
       >
-        <ParetoChartCard data={summary.pareto} onOpen={onOpen} />
-        <GmvTrendComparisonCard data={summary.trend} onOpen={onOpen} stretchToFill={showcaseLayout} />
+        <ParetoChartCard data={summary.pareto} onOpen={onOpen} unitLabel={summary.valueUnit} unitScale={summary.valueScale} />
+        <GmvTrendComparisonCard data={summary.trend} onOpen={onOpen} stretchToFill={showcaseLayout} unitLabel={summary.valueUnit} unitScale={summary.valueScale} />
       </div>
       <div
         data-dashboard-middle-column
         className={showcaseLayout ? 'grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-4' : 'grid content-start gap-4'}
       >
-        <LocalGapWaterfallCard data={summary.localGap} onOpen={onOpen} />
+        <LocalGapWaterfallCard data={summary.localGap} onOpen={onOpen} unitLabel={summary.valueUnit} unitScale={summary.valueScale} />
         <StrategyQuadrantCard data={summary.quadrants} onOpen={onOpen} stretchToFill={showcaseLayout} />
       </div>
       <RecommendationPanel groups={summary.recommendations} onOpen={onOpen} className="h-full min-h-0" />
@@ -647,14 +673,24 @@ function ChartCardHeader({ title, onOpen }: { title: string; onOpen?: () => void
   )
 }
 
-function ParetoChartCard({ data, onOpen }: { data: ParetoDatum[]; onOpen: (title: string) => void }) {
+function ParetoChartCard({
+  data,
+  onOpen,
+  unitLabel,
+  unitScale,
+}: {
+  data: ParetoDatum[]
+  onOpen: (title: string) => void
+  unitLabel?: string
+  unitScale?: number
+}) {
   const chartTop = 16
   const chartBottom = 154
   const chartHeight = chartBottom - chartTop
   const plotLeft = 35
   const plotRight = 590
   const rightAxisX = 598
-  const currencyScale = inferCurrencyScale(data.map((item) => item.gmv))
+  const currencyScale = unitScale && unitScale > 0 ? unitScale : inferCurrencyScale(data.map((item) => item.gmv))
   const displayData = data.map((item) => ({ ...item, displayGmv: item.gmv / currencyScale }))
   const gmvAxisMax = getNiceAxisMax(Math.max(...displayData.map((item) => item.displayGmv), 1))
   const gmvTicks = Array.from({ length: 5 }, (_, index) => Math.round((gmvAxisMax / 4) * index))
@@ -666,10 +702,15 @@ function ParetoChartCard({ data, onOpen }: { data: ParetoDatum[]; onOpen: (title
   const points = data
     .map((item, index) => `${xForIndex(index)},${chartBottom - (item.cumulativeRatio / 100) * chartHeight}`)
     .join(' ')
+  const topCategories = data.slice(0, 2).map((item) => item.category)
+  const topShare = data[Math.min(1, data.length - 1)]?.cumulativeRatio ?? 0
+  const footerText = data.length > 0
+    ? `${topCategories.join('、')}累计贡献约 ${topShare.toFixed(1)}% GMV，是当前真实数据中的优先复核对象。`
+    : '暂无品类 GMV 产物；运行 diagnostics 后会展示真实 Pareto。'
   return (
-    <ChartCard title="品类 GMV Pareto" onOpen={() => onOpen('品类 GMV Pareto')} footer={<InsightMiniPanel text="饮料和零食贡献接近 60% GMV，是活动资源优先验证对象。" />}>
+    <ChartCard title="品类 GMV Pareto" onOpen={() => onOpen('品类 GMV Pareto')} footer={<InsightMiniPanel text={footerText} />}>
       <svg viewBox="0 0 650 188" className="h-48 w-full" role="img" aria-label="品类 GMV Pareto">
-        <text x="5" y="8" fontSize="11" fill="#374151">GMV（万元）</text>
+        <text x="5" y="8" fontSize="11" fill="#374151">GMV（{currencyUnitForScale(currencyScale, unitLabel)}）</text>
         <text x="586" y="8" fontSize="11" fill="#374151">累计占比（%）</text>
         <line x1={plotLeft} y1={chartBottom} x2={plotRight} y2={chartBottom} stroke="#d9e1ec" />
         <line x1={rightAxisX} y1={chartTop} x2={rightAxisX} y2={chartBottom} stroke="#d9e1ec" />
@@ -707,7 +748,7 @@ function ParetoChartCard({ data, onOpen }: { data: ParetoDatum[]; onOpen: (title
                 height={height}
                 rx="4"
                 fill="#60a5fa"
-                aria-label={`${item.category}: ${formatCurrencyWithUnit(item.gmv, currencyScale)}`}
+                aria-label={`${item.category}: ${formatCurrencyWithUnit(item.gmv, currencyScale, false, unitLabel)}`}
               />
               <text x={xForIndex(index)} y="180" textAnchor="middle" fontSize="11" fill="#374151">{item.category}</text>
             </g>
@@ -729,14 +770,24 @@ function ParetoChartCard({ data, onOpen }: { data: ParetoDatum[]; onOpen: (title
   )
 }
 
-function LocalGapWaterfallCard({ data, onOpen }: { data: WaterfallDatum[]; onOpen: (title: string) => void }) {
+function LocalGapWaterfallCard({
+  data,
+  onOpen,
+  unitLabel,
+  unitScale,
+}: {
+  data: WaterfallDatum[]
+  onOpen: (title: string) => void
+  unitLabel?: string
+  unitScale?: number
+}) {
   const chartTop = 14
   const chartBottom = 150
   const chartHeight = chartBottom - chartTop
   const barWidth = 70
   const step = 94
   const startX = 42
-  const currencyScale = inferCurrencyScale(data.map((item) => item.value))
+  const currencyScale = unitScale && unitScale > 0 ? unitScale : inferCurrencyScale(data.map((item) => item.value))
   const displayData = data.map((item) => ({
     ...item,
     rawValue: item.value,
@@ -767,16 +818,24 @@ function LocalGapWaterfallCard({ data, onOpen }: { data: WaterfallDatum[]; onOpe
   const chartMax = getNiceAxisMax(maxValue)
   const ticks = Array.from({ length: 5 }, (_, index) => Math.round((chartMax / 4) * index))
   const scaleY = (value: number) => chartBottom - (value / chartMax) * chartHeight
+  const contributionRows = data.filter((item) => item.type === 'positive' || item.type === 'negative')
+  const largestContribution = contributionRows.reduce<WaterfallDatum | null>(
+    (largest, item) => (!largest || Math.abs(item.value) > Math.abs(largest.value) ? item : largest),
+    null,
+  )
+  const footerText = largestContribution && Math.abs(largestContribution.value) > 0
+    ? `${largestContribution.name}是当前最大拆解项，贡献 ${formatCurrencyWithUnit(largestContribution.value, currencyScale, true, unitLabel)}。`
+    : '当前 LocalGap 产物未提供可拆分资源贡献，净增量主要留在残差/未拆分项。'
 
   return (
-    <ChartCard title="LocalGap 增量分解瀑布图" onOpen={() => onOpen('LocalGap 增量分解瀑布图')} footer={<InsightMiniPanel text="曝光贡献是主要增量来源，交互/渠道项提示需要复盘触达质量。" />}>
+    <ChartCard title="LocalGap 增量分解瀑布图" onOpen={() => onOpen('LocalGap 增量分解瀑布图')} footer={<InsightMiniPanel text={footerText} />}>
       <div className="mb-2 flex justify-end gap-3 text-xs text-muted-foreground">
         <Legend color="#22c55e" label="正向贡献" />
         <Legend color="#ef4444" label="负向贡献" />
         <Legend color="#9ca3af" label="基线/合计" />
       </div>
       <svg viewBox="0 0 635 188" className="h-48 w-full" role="img" aria-label="LocalGap 增量分解瀑布图">
-        <text x="5" y="8" fontSize="11" fill="#374151">GMV（万元）</text>
+        <text x="5" y="8" fontSize="11" fill="#374151">GMV（{currencyUnitForScale(currencyScale, unitLabel)}）</text>
         <line x1="34" y1={chartBottom} x2="610" y2={chartBottom} stroke="#d9e1ec" />
         {ticks.map((tick) => {
           const y = scaleY(tick)
@@ -826,7 +885,7 @@ function LocalGapWaterfallCard({ data, onOpen }: { data: WaterfallDatum[]; onOpe
                 rx="6"
                 fill={color}
                 className="transition hover:opacity-80"
-                aria-label={`${item.name}: ${formatCurrencyWithUnit(item.rawValue, currencyScale)}`}
+                aria-label={`${item.name}: ${formatCurrencyWithUnit(item.rawValue, currencyScale, false, unitLabel)}`}
               />
               <text x={x + barWidth / 2} y={top - 7} textAnchor="middle" fontSize="12" fontWeight="700" fill="#111827">
                 {label}
@@ -846,19 +905,23 @@ function GmvTrendComparisonCard({
   data,
   onOpen,
   stretchToFill = false,
+  unitLabel,
+  unitScale,
 }: {
   data: TrendDatum[]
   onOpen: (title: string) => void
   stretchToFill?: boolean
+  unitLabel?: string
+  unitScale?: number
 }) {
   const chartRef = useRef<HTMLDivElement>(null)
-  const periodSummaries = buildPeriodSummaries(data)
+  const periodSummaries = buildPeriodSummaries(data, unitScale, unitLabel)
 
   useEffect(() => {
     if (!chartRef.current) return
 
     const chart = echarts.init(chartRef.current, undefined, { renderer: 'svg' })
-    chart.setOption(buildGmvTrendOption(data))
+    chart.setOption(buildGmvTrendOption(data, unitScale, unitLabel))
     const frame = window.requestAnimationFrame(() => chart.resize())
     const resizeObserver = new ResizeObserver(() => chart.resize())
     resizeObserver.observe(chartRef.current)
@@ -868,7 +931,7 @@ function GmvTrendComparisonCard({
       resizeObserver.disconnect()
       chart.dispose()
     }
-  }, [data])
+  }, [data, unitLabel, unitScale])
 
   return (
     <ChartCard
@@ -911,9 +974,9 @@ function GmvTrendComparisonCard({
   )
 }
 
-function buildGmvTrendOption(data: TrendDatum[]): echarts.EChartsOption {
+function buildGmvTrendOption(data: TrendDatum[], unitScale?: number, unitLabel?: string): echarts.EChartsOption {
   const dates = data.map((item) => item.date)
-  const currencyScale = inferCurrencyScale(data.flatMap((item) => [item.gmv, item.baselineGmv]))
+  const currencyScale = unitScale && unitScale > 0 ? unitScale : inferCurrencyScale(data.flatMap((item) => [item.gmv, item.baselineGmv]))
   const paydayPoints = data
     .filter((item) => item.isPayday)
     .map((item) => ({
@@ -946,7 +1009,7 @@ function buildGmvTrendOption(data: TrendDatum[]): echarts.EChartsOption {
                 ? formatScaledCurrencyNumber(point.value, currencyScale)
                 : point.value
 
-            return `${point.marker ?? ''}${point.seriesName ?? ''}: ${value} 万元`
+            return `${point.marker ?? ''}${point.seriesName ?? ''}: ${value} ${currencyUnitForScale(currencyScale, unitLabel)}`
           })
           .join('<br/>')
       },
@@ -970,7 +1033,7 @@ function buildGmvTrendOption(data: TrendDatum[]): echarts.EChartsOption {
     },
     yAxis: {
       type: 'value',
-      name: 'GMV（万元）',
+      name: `GMV（${currencyUnitForScale(currencyScale, unitLabel)}）`,
       nameTextStyle: {
         color: '#6b7280',
         fontSize: 11,
@@ -1068,8 +1131,8 @@ function buildActivityMarkAreas(data: TrendDatum[]) {
   return ranges
 }
 
-function buildPeriodSummaries(data: TrendDatum[]) {
-  const currencyScale = inferCurrencyScale(data.flatMap((item) => [item.gmv, item.baselineGmv]))
+function buildPeriodSummaries(data: TrendDatum[], unitScale?: number, unitLabel?: string) {
+  const currencyScale = unitScale && unitScale > 0 ? unitScale : inferCurrencyScale(data.flatMap((item) => [item.gmv, item.baselineGmv]))
   const preGmv = sumGmvByPeriod(data, 'pre')
   const duringGmv = sumGmvByPeriod(data, 'during')
   const postGmv = sumGmvByPeriod(data, 'post')
@@ -1077,19 +1140,19 @@ function buildPeriodSummaries(data: TrendDatum[]) {
   return [
     {
       label: '活动前',
-      value: `GMV ${formatCurrencyWithUnit(preGmv, currencyScale)}`,
+      value: `GMV ${formatCurrencyWithUnit(preGmv, currencyScale, false, unitLabel)}`,
       delta: '基准阶段',
       tone: 'text-muted-foreground',
     },
     {
       label: '活动中',
-      value: `GMV ${formatCurrencyWithUnit(duringGmv, currencyScale)}`,
+      value: `GMV ${formatCurrencyWithUnit(duringGmv, currencyScale, false, unitLabel)}`,
       delta: formatLift(duringGmv, preGmv),
       tone: 'text-blue-600',
     },
     {
       label: '活动后',
-      value: `GMV ${formatCurrencyWithUnit(postGmv, currencyScale)}`,
+      value: `GMV ${formatCurrencyWithUnit(postGmv, currencyScale, false, unitLabel)}`,
       delta: formatLift(postGmv, preGmv),
       tone: 'text-blue-600',
     },
@@ -1208,7 +1271,7 @@ function StrategyQuadrantCard({
               backgroundColor: item.visual.color,
               color: item.visual.textColor ?? '#111827',
               boxShadow:
-                item.category === '饮料'
+                item.group === 'boost'
                   ? '0 12px 24px rgba(37, 99, 235, 0.28)'
                   : '0 8px 18px rgba(15, 23, 42, 0.16)',
             }}
@@ -1336,7 +1399,7 @@ function DashboardDrilldownDrawer({
         {kpi ? (
           <KpiDrilldownContent kpi={kpi} summary={summary} />
         ) : (
-          <GenericDrilldownContent title={title} />
+          <GenericDrilldownContent title={title} summary={summary} />
         )}
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="outline">导出明细</Button>
@@ -1347,7 +1410,20 @@ function DashboardDrilldownDrawer({
   )
 }
 
-function GenericDrilldownContent({ title }: { title: string }) {
+function GenericDrilldownContent({ title, summary }: { title: string; summary: DashboardSummary }) {
+  const currencyScale = summaryCurrencyScale(summary, [
+    ...summary.pareto.map((item) => item.gmv),
+    ...summary.trend.flatMap((item) => [item.gmv, item.baselineGmv, item.exposure ?? 0, item.discount ?? 0]),
+  ])
+  const currencyUnit = summaryCurrencyUnit(summary, currencyScale)
+  const paretoItem = summary.pareto.find((item) => item.category === title)
+  const totalGmv = paretoItem?.gmv ?? sumTrendValue(summary.trend, (item) => item.gmv)
+  const baselineTotal = sumTrendValue(summary.trend, (item) => item.baselineGmv)
+  const netTotal = sumTrendValue(summary.trend, (item) => item.gmv - item.baselineGmv)
+  const exposureTotal = sumTrendValue(summary.trend, (item) => item.exposure ?? 0)
+  const discountTotal = sumTrendValue(summary.trend, (item) => item.discount ?? 0)
+  const localGapRows = summary.localGap.filter((item) => item.type !== 'total' && item.type !== 'baseline')
+
   return (
     <>
         <div className="mt-5 grid grid-cols-3 gap-2">
@@ -1356,22 +1432,20 @@ function GenericDrilldownContent({ title }: { title: string }) {
           <FilterButton icon={<CalendarDays className="h-4 w-4" />} label="周期" value="活动期" />
         </div>
         <div className="mt-5 grid grid-cols-3 gap-3">
-          <MiniDetail label="GMV" value="1,290 万" />
-          <MiniDetail label="订单" value="42,180" />
-          <MiniDetail label="转化" value="+8.4%" />
+          <MiniDetail label="GMV" value={formatCurrencyWithUnit(totalGmv, currencyScale, false, currencyUnit)} />
+          <MiniDetail label="自然基线" value={formatCurrencyWithUnit(baselineTotal, currencyScale, false, currencyUnit)} />
+          <MiniDetail label="净增量" value={formatCurrencyWithUnit(netTotal, currencyScale, true, currencyUnit)} />
         </div>
         <div className="mt-5 rounded-2xl border border-border bg-[#fbfcfe] p-4">
           <h3 className="font-bold">贡献拆解</h3>
-          {[
-            ['曝光贡献', '+980 万', '75.9%'],
-            ['折扣贡献', '+180 万', '14.0%'],
-            ['发薪日贡献', '+120 万', '9.3%'],
-            ['交互/残差', '-110 万', '-8.5%'],
-          ].map(([name, value, ratio]) => (
-            <div key={name} className="mt-3 grid grid-cols-3 rounded-lg bg-white px-3 py-2 text-sm">
-              <span>{name}</span>
-              <span className="font-bold">{value}</span>
-              <span className="text-right text-muted-foreground">{ratio}</span>
+          {(localGapRows.length > 0 ? localGapRows : [
+            { name: '曝光贡献', value: exposureTotal, type: 'positive' as const },
+            { name: '折扣贡献', value: discountTotal, type: discountTotal >= 0 ? 'positive' as const : 'negative' as const },
+          ]).map((item) => (
+            <div key={item.name} className="mt-3 grid grid-cols-3 rounded-lg bg-white px-3 py-2 text-sm">
+              <span>{item.name}</span>
+              <span className="font-bold">{formatCurrencyWithUnit(item.value, currencyScale, true, currencyUnit)}</span>
+              <span className="text-right text-muted-foreground">{formatSharePercent(item.value, netTotal)}</span>
             </div>
           ))}
         </div>
@@ -1416,6 +1490,8 @@ function KpiDrilldownContent({ kpi, summary }: { kpi: KpiCardData; summary: Dash
           color={kpi.color}
           type={kpi.chartType}
           signed={kpi.signed}
+          unitLabel={kpi.unit}
+          unitScale={summary.valueScale}
         />
       </section>
 
@@ -1457,15 +1533,19 @@ function buildKpiDetail(kpi: KpiCardData, summary: DashboardSummary) {
   const min = getMinPoint(kpi.series)
   const negativeCount = kpi.series.filter((item) => item.value < 0).length
   const boostCategories = summary.recommendations.find((item) => item.key === 'boost')?.categories ?? []
-  const currencyScale = inferCurrencyScale([
+  const currencyScale = summaryCurrencyScale(summary, [
     ...summary.trend.flatMap((item) => [item.gmv, item.baselineGmv, item.exposure ?? 0, item.discount ?? 0]),
     ...kpi.series.map((item) => item.value),
   ])
+  const currencyUnit = summaryCurrencyUnit(summary, currencyScale)
+  const netTotal = sumTrendValue(summary.trend, (item) => item.gmv - item.baselineGmv)
+  const exposureTotal = sumTrendValue(summary.trend, (item) => item.exposure ?? 0)
+  const discountTotal = sumTrendValue(summary.trend, (item) => item.discount ?? 0)
   const baseMetricCards = [
     { label: '当前值', value: `${kpi.value}${kpi.unit ? ` ${kpi.unit}` : ''}` },
-    { label: '最近点', value: latest ? formatDetailPoint(latest, kpi.unit) : '-' },
-    { label: '峰值点', value: peak ? formatDetailPoint(peak, kpi.unit) : '-' },
-    { label: '低点', value: min ? formatDetailPoint(min, kpi.unit) : '-' },
+    { label: '最近点', value: latest ? formatDetailPoint(latest, kpi.unit, currencyScale) : '-' },
+    { label: '峰值点', value: peak ? formatDetailPoint(peak, kpi.unit, currencyScale) : '-' },
+    { label: '低点', value: min ? formatDetailPoint(min, kpi.unit, currencyScale) : '-' },
   ]
   const kpiDisplayValue = `${kpi.value}${kpi.unit ? ` ${kpi.unit}` : ''}`
 
@@ -1477,18 +1557,18 @@ function buildKpiDetail(kpi: KpiCardData, summary: DashboardSummary) {
       chartTitle: '每日 GMV 净增量走势',
       chartHint: '小图口径与卡片主值一致，展示 daily_actual_gmv - daily_baseline_gmv。',
       metricCards: [
-        { label: '累计净增量', value: `${kpi.value} ${kpi.unit}` },
-        { label: '最近日净增', value: latest ? formatCurrencyWithUnit(latest.value, currencyScale, true) : '-' },
-        { label: '峰值日期', value: peak ? `${peak.label} ${formatCurrencyWithUnit(peak.value, currencyScale, true)}` : '-' },
+        { label: '累计净增量', value: kpiDisplayValue },
+        { label: '最近日净增', value: latest ? formatCurrencyWithUnit(latest.value, currencyScale, true, currencyUnit) : '-' },
+        { label: '峰值日期', value: peak ? `${peak.label} ${formatCurrencyWithUnit(peak.value, currencyScale, true, currencyUnit)}` : '-' },
         { label: '负向天数', value: `${negativeCount} 天` },
       ],
       tableTitle: '日度净增量明细',
       columns: ['日期', '实际 GMV', '自然基线', '净增量'],
       rows: summary.trend.map((item) => [
         item.date,
-        formatCurrencyWithUnit(item.gmv, currencyScale),
-        formatCurrencyWithUnit(item.baselineGmv, currencyScale),
-        formatCurrencyWithUnit(item.gmv - item.baselineGmv, currencyScale, true),
+        formatCurrencyWithUnit(item.gmv, currencyScale, false, currencyUnit),
+        formatCurrencyWithUnit(item.baselineGmv, currencyScale, false, currencyUnit),
+        formatCurrencyWithUnit(item.gmv - item.baselineGmv, currencyScale, true, currencyUnit),
       ]),
       tags: [],
       methodTitle: '口径说明',
@@ -1504,10 +1584,10 @@ function buildKpiDetail(kpi: KpiCardData, summary: DashboardSummary) {
       chartTitle: '每日曝光贡献走势',
       chartHint: '曝光贡献是增量分解项，因此使用小柱表达每日贡献量。',
       metricCards: [
-        { label: '累计曝光贡献', value: `${kpi.value} ${kpi.unit}` },
-        { label: '最近日贡献', value: latest ? formatCurrencyWithUnit(latest.value, currencyScale, true) : '-' },
-        { label: '峰值贡献', value: peak ? `${peak.label} ${formatCurrencyWithUnit(peak.value, currencyScale, true)}` : '-' },
-        { label: '净增量占比', value: '75.9%' },
+        { label: '累计曝光贡献', value: kpiDisplayValue },
+        { label: '最近日贡献', value: latest ? formatCurrencyWithUnit(latest.value, currencyScale, true, currencyUnit) : '-' },
+        { label: '峰值贡献', value: peak ? `${peak.label} ${formatCurrencyWithUnit(peak.value, currencyScale, true, currencyUnit)}` : '-' },
+        { label: '净增量占比', value: formatSharePercent(exposureTotal, netTotal) },
       ],
       tableTitle: '日度曝光贡献明细',
       columns: ['日期', '曝光贡献', '当日净增占比', '日历标记'],
@@ -1517,7 +1597,7 @@ function buildKpiDetail(kpi: KpiCardData, summary: DashboardSummary) {
 
         return [
           item.date,
-          formatCurrencyWithUnit(exposure, currencyScale, true),
+          formatCurrencyWithUnit(exposure, currencyScale, true, currencyUnit),
           formatPercent(exposure, net),
           getCalendarLabel(item),
         ]
@@ -1536,10 +1616,10 @@ function buildKpiDetail(kpi: KpiCardData, summary: DashboardSummary) {
       chartTitle: '每日折扣贡献走势',
       chartHint: '折扣贡献允许为负，因此趋势图保留 0 轴，区分拉动与拖累。',
       metricCards: [
-        { label: '累计折扣贡献', value: `${kpi.value} ${kpi.unit}` },
-        { label: '最近日贡献', value: latest ? formatCurrencyWithUnit(latest.value, currencyScale, true) : '-' },
+        { label: '累计折扣贡献', value: kpiDisplayValue },
+        { label: '最近日贡献', value: latest ? formatCurrencyWithUnit(latest.value, currencyScale, true, currencyUnit) : '-' },
         { label: '负贡献天数', value: `${negativeCount} 天` },
-        { label: '净增量占比', value: '14.0%' },
+        { label: '净增量占比', value: formatSharePercent(discountTotal, netTotal) },
       ],
       tableTitle: '日度折扣贡献明细',
       columns: ['日期', '折扣贡献', '影响方向', '日历标记'],
@@ -1548,7 +1628,7 @@ function buildKpiDetail(kpi: KpiCardData, summary: DashboardSummary) {
 
         return [
           item.date,
-          formatCurrencyWithUnit(discount, currencyScale, true),
+          formatCurrencyWithUnit(discount, currencyScale, true, currencyUnit),
           discount >= 0 ? '拉动净增量' : '压低净增量',
           getCalendarLabel(item),
         ]
@@ -1567,7 +1647,7 @@ function buildKpiDetail(kpi: KpiCardData, summary: DashboardSummary) {
       chartTitle: '优先加码品类数快照趋势',
       chartHint: '该指标不是天然日度指标，展示多轮分析快照中被判定为优先加码的品类数。',
       metricCards: [
-        { label: '当前加码品类', value: `${kpi.value} ${kpi.unit}` },
+        { label: '当前加码品类', value: kpiDisplayValue },
         { label: '最近快照', value: latest?.label ?? '-' },
         { label: '最高快照', value: peak ? `${peak.value} 个` : '-' },
         { label: '当前品类数', value: `${boostCategories.length} 个` },
@@ -1612,11 +1692,15 @@ function DetailSeriesChart({
   color,
   type,
   signed = false,
+  unitLabel,
+  unitScale,
 }: {
   series: SparklinePoint[]
   color: KpiCardData['color']
   type: KpiCardData['chartType']
   signed?: boolean
+  unitLabel?: string
+  unitScale?: number
 }) {
   const width = 620
   const height = 168
@@ -1624,7 +1708,7 @@ function DetailSeriesChart({
   const right = 14
   const top = 18
   const bottom = 136
-  const currencyScale = inferCurrencyScale(series.map((item) => item.value))
+  const currencyScale = unitScale && unitScale > 0 ? unitScale : inferCurrencyScale(series.map((item) => item.value))
   const displaySeries = series.map((item) => ({ ...item, value: item.value / currencyScale }))
   const values = displaySeries.map((item) => item.value).filter(Number.isFinite)
 
@@ -1662,7 +1746,7 @@ function DetailSeriesChart({
   const gridTicks = [min, (min + max) / 2, max]
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="mt-4 h-44 w-full" role="img" aria-label="指标明细趋势">
+    <svg viewBox={`0 0 ${width} ${height}`} className="mt-4 h-44 w-full" role="img" aria-label={`指标明细趋势（${currencyUnitForScale(currencyScale, unitLabel)}）`}>
       {gridTicks.map((tick) => {
         const y = yForValue(tick)
 
@@ -1754,13 +1838,9 @@ function getMinPoint(series: SparklinePoint[]) {
   return series.reduce<SparklinePoint | null>((min, item) => (!min || item.value < min.value ? item : min), null)
 }
 
-function formatDetailPoint(point: SparklinePoint, unit?: string) {
-  if (unit === '万元') {
-    const scale = inferCurrencyScale([point.value])
-    return `${point.label} ${formatCurrencyWithUnit(point.value, scale)}`
-  }
-
-  return `${point.label} ${point.value.toLocaleString('en-US')}${unit ? ` ${unit}` : ''}`
+function formatDetailPoint(point: SparklinePoint, unit?: string, scale?: number) {
+  const currencyScale = scale && scale > 0 ? scale : inferCurrencyScale([point.value])
+  return `${point.label} ${formatCurrencyWithUnit(point.value, currencyScale, false, unit)}`
 }
 
 function formatPercent(value: number, base: number) {

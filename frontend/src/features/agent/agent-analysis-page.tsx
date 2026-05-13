@@ -38,6 +38,12 @@ import { useAgentRuntimeMetadata } from '@/lib/use-agent-runtime-metadata'
 import { api } from '@/lib/api-client'
 import { useAgentEvents } from '@/lib/sse-hooks'
 import type { AgentMessage, AgentSession, SSEEvent } from '@/lib/api-types'
+import {
+  buildDashboardSummary,
+  buildDashboardTimeRangeLabel,
+  hasRealDashboardSummary,
+} from '@/features/dashboard/dashboard-data'
+import type { DashboardSummary } from '@/types/dashboard'
 import { useAgentStore, type ApprovalRequest, type JobStatus, type ThoughtEntry, type ToolCall } from '@/store/agent-store'
 import { useProjectStore } from '@/store/project-store'
 import type { AgentRunStatus, ArtifactPreview, PlanStep, PlanStepStatus } from '@/types/agent'
@@ -296,17 +302,29 @@ function defaultContextRows({
   projectStatus,
   projectStage,
   fileCount,
+  analysisSummary,
 }: {
   projectName: string
   projectStatus: string
   projectStage: string
   fileCount: number
+  analysisSummary?: DashboardSummary
 }): InspectorRow[] {
+  const hasRealSummary = analysisSummary ? hasRealDashboardSummary(analysisSummary) : false
+  const activityDays = analysisSummary
+    ? new Set(analysisSummary.trend.filter((item) => item.isActivityDay).map((item) => item.date)).size
+    : 0
+  const categoryCount = analysisSummary?.pareto.length ?? 0
   return [
     { label: '项目名称', value: projectName },
-    { label: '数据周期', value: '2025-09-01 ~ 2025-11-30', optional: true },
-    { label: '活动窗口', value: '4 个（33 天）', optional: true },
-    { label: '品类数量', value: '366', optional: true },
+    { label: '数据周期', value: hasRealSummary && analysisSummary ? buildDashboardTimeRangeLabel(analysisSummary) : '等待真实分析产物', optional: !hasRealSummary },
+    {
+      label: '证据状态',
+      value: analysisSummary?.qualityStatus === 'limited' ? 'limited · 小规模验证' : analysisSummary?.qualityStatus || '待分析',
+      optional: !hasRealSummary,
+    },
+    { label: '活动窗口', value: activityDays > 0 ? `${activityDays} 天` : '待识别', optional: true },
+    { label: '品类数量', value: categoryCount > 0 ? `${categoryCount}` : '待识别', optional: true },
     { label: '当前状态', value: `${projectStatus} · ${projectStage}` },
     { label: '接入文件', value: `${fileCount} 个` },
   ]
@@ -323,11 +341,20 @@ function keemartSnapshotItems(): SnapshotItem[] {
 
 function defaultSnapshotItems(): SnapshotItem[] {
   return [
-    { label: 'GMV 净增量', value: '+1,290 万', tone: 'green' },
-    { label: '曝光贡献', value: '+980 万', tone: 'blue' },
-    { label: '折扣贡献', value: '+180 万', tone: 'orange' },
-    { label: '建议加码', value: '4 个品类', tone: 'purple' },
+    { label: 'GMV 净增量', value: '待分析', tone: 'green' },
+    { label: '曝光贡献', value: '待分析', tone: 'blue' },
+    { label: '折扣贡献', value: '待分析', tone: 'orange' },
+    { label: '建议加码', value: '0 个品类', tone: 'purple' },
   ]
+}
+
+function dashboardSnapshotItems(summary: DashboardSummary): SnapshotItem[] {
+  if (!hasRealDashboardSummary(summary)) return defaultSnapshotItems()
+  return summary.kpis.slice(0, 4).map((kpi) => ({
+    label: kpi.key === 'boost_categories' ? '建议加码' : kpi.label,
+    value: `${kpi.value}${kpi.unit ? ` ${kpi.unit}` : ''}`,
+    tone: kpi.color,
+  }))
 }
 
 export function AgentAnalysisPage() {
@@ -377,6 +404,8 @@ export function AgentAnalysisPage() {
   const [keemartJobs, setKeemartJobs] = useState<JobStatus[]>([])
   const [keemartRunning, setKeemartRunning] = useState(false)
   const [keemartCompletedAt, setKeemartCompletedAt] = useState<string | null>(null)
+  const [latestResult, setLatestResult] = useState<unknown>(null)
+  const [panelSummary, setPanelSummary] = useState<unknown>(null)
 
   const rememberSessionId = useCallback(
     (nextSessionId: string) => {
@@ -501,6 +530,38 @@ export function AgentAnalysisPage() {
       void loadPendingApprovals(projectId, sessionId)
     }
   }, [isReportBackedProject, projectId, sessionId, loadPendingApprovals])
+
+  useEffect(() => {
+    let cancelled = false
+
+    if (isReportBackedProject) {
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const loadAnalysisArtifacts = async () => {
+      const [latestResultResponse, panelSummaryResponse] = await Promise.all([
+        api.getArtifactContentByPath(projectId, '.analysis/latest_result.json'),
+        api.getArtifactContentByPath(projectId, '.analysis/panel_summary.json'),
+      ])
+      if (cancelled) return
+
+      setLatestResult(latestResultResponse.ok && latestResultResponse.data?.encoding === 'json' ? latestResultResponse.data.data : null)
+      setPanelSummary(panelSummaryResponse.ok && panelSummaryResponse.data?.encoding === 'json' ? panelSummaryResponse.data.data : null)
+    }
+
+    void loadAnalysisArtifacts()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    isReportBackedProject,
+    lastCompletedAt,
+    projectId,
+    projectState?.artifacts_count,
+    projectState?.current_stage,
+  ])
 
   const applyRuntimeSideEffects = useCallback(
     (event: SSEEvent) => {
@@ -889,14 +950,18 @@ export function AgentAnalysisPage() {
         isRunning: displayIsRunning,
       })
     : planSteps
+  const dashboardSummary = useMemo(
+    () => buildDashboardSummary({ state: projectState ?? null, artifacts: [], report: null, latestResult, panelSummary }),
+    [latestResult, panelSummary, projectState],
+  )
   const displayActiveJob = displayJobs.find((job) => job.status === 'running') || displayJobs[0] || null
-  const displayProjectName = isReportBackedProject ? KEEMART_PROJECT_NAME : currentProject?.name || 'Keemart 促销增长全流程'
-  const displayProjectStatus = isReportBackedProject ? 'report_ready' : currentProject?.status || 'report_ready'
-  const displayProjectStage = isReportBackedProject ? 'analysis_ready' : currentProject?.current_stage || 'report_ready'
-  const displayFileCount = isReportBackedProject ? 3 : files.length || projectState?.files_count || 3
+  const displayProjectName = isReportBackedProject ? KEEMART_PROJECT_NAME : currentProject?.name || '未加载项目'
+  const displayProjectStatus = isReportBackedProject ? 'report_ready' : currentProject?.status || 'unknown'
+  const displayProjectStage = isReportBackedProject ? 'analysis_ready' : currentProject?.current_stage || 'unknown'
+  const displayFileCount = isReportBackedProject ? 3 : files.length || projectState?.files_count || 0
   const displayArtifactCount = isReportBackedProject
     ? Math.max(8, displayArtifacts.length)
-    : projectState?.artifacts_count || displayArtifacts.length || 8
+    : projectState?.artifacts_count || displayArtifacts.length || 0
   const displaySessions = isReportBackedProject ? [keemartSession] : projectSessions
   const displayCurrentSessionId = isReportBackedProject ? KEEMART_THREAD_ID : sessionId
   const displayLastCompletedAt = isReportBackedProject ? keemartCompletedAt : lastCompletedAt
@@ -909,8 +974,9 @@ export function AgentAnalysisPage() {
         projectStatus: displayProjectStatus,
         projectStage: displayProjectStage,
         fileCount: displayFileCount,
+        analysisSummary: dashboardSummary,
       })
-  const displaySnapshotItems = isReportBackedProject ? keemartSnapshotItems() : defaultSnapshotItems()
+  const displaySnapshotItems = isReportBackedProject ? keemartSnapshotItems() : dashboardSnapshotItems(dashboardSummary)
   const displaySessionProvider = isReportBackedProject
     ? 'claude_agent_sdk'
     : currentSession?.runtime_provider || runtimeMetadata?.runtime_provider || 'claude_agent_sdk'
@@ -1179,6 +1245,7 @@ function ConversationStream({
 
 function ThoughtProgressCard({ thoughts, isRunning }: { thoughts: ThoughtEntry[]; isRunning: boolean }) {
   const latestThoughts = thoughts.slice(-6)
+  const title = isRunning ? 'Agent thinking' : '思考记录'
   return (
     <div className="ml-8 rounded-2xl border border-blue-100 bg-blue-50/60 p-4 text-sm text-blue-950">
       <div className="flex items-center justify-between gap-3">
@@ -1188,10 +1255,10 @@ function ThoughtProgressCard({ thoughts, isRunning }: { thoughts: ThoughtEntry[]
           ) : (
             <Sparkles className="h-4 w-4 text-blue-600" />
           )}
-          <span>Agent thinking</span>
+          <span>{title}</span>
         </div>
         <Badge variant="outline" className="border-blue-200 bg-white/70 text-blue-700">
-          {latestThoughts.length || 1} updates
+          {isRunning ? `${latestThoughts.length || 1} updates` : '已结束'}
         </Badge>
       </div>
       <div className="mt-3 max-h-44 space-y-2 overflow-y-auto">
@@ -1354,7 +1421,7 @@ function ApprovalRequestCard({
 }
 
 function ArtifactPreviewCard({ artifact }: { artifact: ArtifactPreview }) {
-  const metrics = artifact.metrics || ['GMV +61.2%', '曝光 75.9%', '加码 4 类']
+  const metrics = artifact.metrics ?? []
   return (
     <div className="rounded-2xl border border-border bg-white p-4">
       <div className="flex items-start justify-between gap-3">
@@ -1369,11 +1436,17 @@ function ArtifactPreviewCard({ artifact }: { artifact: ArtifactPreview }) {
         </div>
         <Badge variant="outline">{artifact.type}</Badge>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-        {metrics.map((metric) => (
-          <div key={metric} className="rounded-lg bg-[#f7f8fa] px-2 py-2 font-semibold">{metric}</div>
-        ))}
-      </div>
+      {metrics.length > 0 ? (
+        <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+          {metrics.map((metric) => (
+            <div key={metric} className="rounded-lg bg-[#f7f8fa] px-2 py-2 font-semibold">{metric}</div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 rounded-lg bg-[#f7f8fa] px-2 py-2 text-xs font-semibold text-muted-foreground">
+          打开结果看板或产物文件查看真实指标。
+        </p>
+      )}
     </div>
   )
 }

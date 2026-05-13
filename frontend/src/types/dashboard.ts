@@ -73,6 +73,11 @@ export type RecommendationGroup = {
 }
 
 export type DashboardSummary = {
+  valueUnit?: string
+  valueScale?: number
+  valueUnitSource?: string
+  qualityStatus?: 'ready' | 'limited' | 'unknown'
+  qualityReasons?: string[]
   conclusion: string
   kpis: KpiCardData[]
   pareto: ParetoDatum[]

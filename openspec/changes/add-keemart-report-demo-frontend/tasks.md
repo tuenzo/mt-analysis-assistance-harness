@@ -8,3 +8,5 @@
 - [x] Run frontend build verification.
 - [x] Replace static Agent replay with clickable suggested prompts and report-backed local event replies.
 - [x] Move presenter script and click instructions into standalone documentation outside the demo UI.
+- [x] Keep report-showcase routes separate from the backend real Agent workspace project.
+- [x] Remove invalid hard-coded recent-project links from the sidebar.

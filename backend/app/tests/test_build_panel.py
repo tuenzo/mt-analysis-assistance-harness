@@ -84,11 +84,17 @@ def test_build_panel_generates_json(project_with_all_data):
     assert (workspace_path / "data" / "processed" / "category_day_panel.csv").exists()
     assert (workspace_path / ".analysis" / "panel_summary.json").exists()
 
+    summary = json.loads((workspace_path / ".analysis" / "panel_summary.json").read_text(encoding="utf-8"))
+    assert summary["measure_units"]["gmv"]["unit_label"] == "GMV原始单位"
+    assert summary["measure_units"]["gmv"]["declared"] is False
+    assert summary["analysis_readiness"]["status"] == "limited"
+
 
 def test_build_panel_validates_data_first(project_with_all_data):
     workspace_path = Path(f"./workspaces/{project_with_all_data['id']}")
     val_result = validate_files(workspace_path)
     assert val_result.ok is True
+    assert val_result.file_info["order_info"]["measure_units"]["gmv"]["unit_label"] == "GMV原始单位"
 
 
 def test_build_panel_without_data(project_with_all_data):
