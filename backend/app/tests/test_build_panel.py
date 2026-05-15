@@ -85,7 +85,7 @@ def test_build_panel_generates_json(project_with_all_data):
     assert (workspace_path / ".analysis" / "panel_summary.json").exists()
 
     summary = json.loads((workspace_path / ".analysis" / "panel_summary.json").read_text(encoding="utf-8"))
-    assert summary["measure_units"]["gmv"]["unit_label"] == "GMV原始单位"
+    assert summary["measure_units"]["gmv"]["unit_label"] == "元"
     assert summary["measure_units"]["gmv"]["declared"] is False
     assert summary["analysis_readiness"]["status"] == "limited"
 
@@ -94,7 +94,7 @@ def test_build_panel_validates_data_first(project_with_all_data):
     workspace_path = Path(f"./workspaces/{project_with_all_data['id']}")
     val_result = validate_files(workspace_path)
     assert val_result.ok is True
-    assert val_result.file_info["order_info"]["measure_units"]["gmv"]["unit_label"] == "GMV原始单位"
+    assert val_result.file_info["order_info"]["measure_units"]["gmv"]["unit_label"] == "元"
 
 
 def test_build_panel_without_data(project_with_all_data):
@@ -155,3 +155,37 @@ def test_build_panel_supports_aliases_and_balanced_rows(client):
     filled_row = next(row for row in panel_data if row["category"] == "Beverage" and row["date"] == "2025-09-26")
     assert filled_row["gmv"] == 0
     assert filled_row["pre_activity_window"] == 1
+
+
+def test_build_panel_clips_activity_only_dates_to_primary_data_range(client):
+    r = client.post("/api/projects", json={"name": "ActivityClipPanelTest"})
+    project = r.json()
+
+    workspace_path = Path(f"./workspaces/{project['id']}")
+    data_dir = workspace_path / "data" / "raw"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    with open(data_dir / "order_info.csv", "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["date", "category", "gmv"])
+        writer.writeheader()
+        writer.writerow({"date": "2025-09-01", "category": "Drinks", "gmv": "100"})
+        writer.writerow({"date": "2025-09-02", "category": "Drinks", "gmv": "120"})
+
+    with open(data_dir / "exposure_info.csv", "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["date", "category", "view_uv"])
+        writer.writeheader()
+        writer.writerow({"date": "2025-09-01", "category": "Drinks", "view_uv": "1000"})
+        writer.writerow({"date": "2025-09-02", "category": "Drinks", "view_uv": "1100"})
+
+    with open(data_dir / "activity_timeline.csv", "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["date", "activity_id"])
+        writer.writeheader()
+        writer.writerow({"date": "2025-08-25", "activity_id": "warmup_outside_source_range"})
+        writer.writerow({"date": "2025-09-01", "activity_id": "in_range_activity"})
+
+    result = build_category_day_panel(project["id"], str(workspace_path))
+
+    assert result.ok is True
+    summary = json.loads((workspace_path / ".analysis" / "panel_summary.json").read_text(encoding="utf-8"))
+    assert summary["date_range"] == {"start": "2025-09-01", "end": "2025-09-02"}
+    assert summary["activity_day_count"] == 1

@@ -1234,12 +1234,12 @@ def _amount_unit_info(context: ReportContext) -> dict[str, Any]:
         gmv_unit = measure_units.get("gmv")
         if isinstance(gmv_unit, dict):
             return gmv_unit
-    return {"unit_label": "GMV原始单位", "declared": False, "source_column": None}
+    return {"unit_label": "元", "declared": False, "source_column": None}
 
 
 def _amount_unit_label(context: ReportContext) -> str:
     unit = _amount_unit_info(context).get("unit_label") or _amount_unit_info(context).get("unit")
-    return str(unit or "GMV原始单位")
+    return str(unit or "元")
 
 
 def _unit_assumption(context: ReportContext) -> str:

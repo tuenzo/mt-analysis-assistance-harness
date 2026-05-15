@@ -19,6 +19,9 @@ from app.projects.models import (
 )
 
 
+_REAL_RMTREE = shutil.rmtree
+
+
 @pytest.fixture
 def test_db():
     tmp = tempfile.mkdtemp()
@@ -26,7 +29,7 @@ def test_db():
     init_db()
     yield
     os.chdir("..")
-    shutil.rmtree(tmp)
+    _REAL_RMTREE(tmp)
 
 
 @pytest.fixture

@@ -21,7 +21,7 @@ ROLE_ALIASES: dict[str, dict[str, list[str]]] = {
         "date": ["date", "dt", "pay_date", "pay_time", "order_date"],
         "gmv": ["gmv", "sale_amount", "sku_sale_amt", "pay_amount"],
         "discount_amount": ["discount_amount", "discount", "coupon_amount", "biz_total_discount_amt"],
-        "quantity": ["quantity", "qty"],
+        "quantity": ["quantity", "qty", "sku_sale_num"],
         "order_count": ["order_count"],
     },
     "exposure_info": {
@@ -36,11 +36,11 @@ ROLE_ALIASES: dict[str, dict[str, list[str]]] = {
     "activity_timeline": {
         "category_id": ["category_id", "cate_id"],
         "category_name": ["category_name", "category_name_cn", "category", "cat_name"],
-        "date": ["date", "dt", "activity_date"],
-        "start_date": ["start_date"],
-        "end_date": ["end_date"],
-        "activity_name": ["activity_name", "activity_id", "activity"],
-        "payday": ["payday", "is_payday"],
+        "date": ["date", "dt", "activity_date", "日期"],
+        "start_date": ["start_date", "开始日期", "开始时间"],
+        "end_date": ["end_date", "结束日期", "结束时间"],
+        "activity_name": ["activity_name", "activity_id", "activity", "营销活动", "活动名称"],
+        "payday": ["payday", "is_payday", "发薪日"],
     },
 }
 
@@ -240,7 +240,7 @@ def build_panel_from_frames(
     if categories.empty:
         raise ValueError("No categories could be inferred from order or exposure data.")
 
-    min_date, max_date = _date_bounds(clean_orders, clean_exposure, clean_activity)
+    min_date, max_date = _primary_date_bounds(clean_orders, clean_exposure)
     all_dates = pd.date_range(min_date, max_date, freq="D")
     full_index = pd.MultiIndex.from_product([categories["category_key"], all_dates], names=["category_key", "date"])
     panel = full_index.to_frame(index=False).merge(categories, on="category_key", how="left")
@@ -396,15 +396,15 @@ def _infer_amount_unit(measure: str, source_column: str | None) -> dict[str, Any
     normalized = source.lower().replace("-", "_").replace(" ", "_")
     explicit_unit = _explicit_unit_from_column(normalized, source)
     declared = explicit_unit is not None
-    unit_label = explicit_unit or f"{display_name}原始单位"
+    unit_label = explicit_unit or "元"
     if source:
         provenance = (
             f"order_info.{source} includes an explicit unit marker."
             if declared
-            else f"order_info.{source} has no explicit unit marker; values are kept in raw source units."
+            else f"order_info.{source} has no explicit unit marker; values are treated as yuan by the Keemart source-data contract."
         )
     else:
-        provenance = f"No mapped {display_name} source column was available; values are kept in raw source units."
+        provenance = f"No mapped {display_name} source column was available; values default to yuan by the Keemart source-data contract."
     return {
         "measure": measure,
         "source_role": "order_info",
@@ -491,13 +491,54 @@ def _find_role_files(data_dir: Path) -> dict[str, Path]:
     if not data_dir.exists():
         return files
     candidates = sorted(data_dir.glob("*.csv"), key=lambda path: path.name.lower())
-    for role, patterns in ROLE_PATTERNS.items():
-        for candidate in candidates:
-            lower = candidate.name.lower()
-            if any(pattern in lower for pattern in patterns):
-                files[role] = candidate
-                break
+    for role in ROLE_PATTERNS:
+        ranked = [
+            (_role_file_score(candidate, role), candidate)
+            for candidate in candidates
+        ]
+        ranked = [(score, candidate) for score, candidate in ranked if score > 0]
+        if ranked:
+            files[role] = sorted(ranked, key=lambda item: (-item[0], item[1].name.lower()))[0][1]
     return files
+
+
+def _role_file_score(candidate: Path, role: str) -> int:
+    lower = candidate.name.lower()
+    if _looks_like_processed_panel_file(candidate):
+        return 0
+    exact_markers = {
+        "order_info": ["order_info"],
+        "exposure_info": ["exposure_info"],
+        "activity_timeline": ["activity_timeline"],
+    }
+    for marker in exact_markers.get(role, []):
+        if marker in lower:
+            return 100
+    header_mappings = infer_csv_schema(candidate, role)
+    required_hits = sum(1 for field in REQUIRED_FIELDS[role] if field in header_mappings)
+    if role == "activity_timeline" and ("date" in header_mappings or ("start_date" in header_mappings and "end_date" in header_mappings)):
+        required_hits += 1
+    if required_hits:
+        return 50 + required_hits
+    for marker in ROLE_PATTERNS.get(role, []):
+        if marker in lower:
+            return 10
+    return 0
+
+
+def _looks_like_processed_panel_file(candidate: Path) -> bool:
+    lower = candidate.name.lower()
+    if "category_date_panel" in lower or "category_day_panel" in lower or "category_daily_panel" in lower:
+        return True
+    try:
+        lowered = {header.strip().lower() for header in _read_headers(candidate)}
+    except Exception:
+        return False
+    has_category_date = "date" in lowered or "dt" in lowered
+    has_category = bool({"category", "category_name", "category_name_cn", "category_key"} & lowered)
+    has_panel_metrics = bool({"gmv", "sku_sale_amt"} & lowered) and bool({"is_activity", "is_activity_day", "activity_name"} & lowered)
+    has_exposure_metrics = bool({"view_uv", "exposure", "exposure_view_uv", "buy_uv", "exposure_buy_uv"} & lowered)
+    return has_category_date and has_category and has_panel_metrics and has_exposure_metrics
 
 
 def _read_csv(path: Path) -> pd.DataFrame:
@@ -699,10 +740,10 @@ def _merge_activity(panel: pd.DataFrame, activity: pd.DataFrame) -> pd.DataFrame
     return panel
 
 
-def _date_bounds(*frames: pd.DataFrame) -> tuple[pd.Timestamp, pd.Timestamp]:
+def _primary_date_bounds(*frames: pd.DataFrame) -> tuple[pd.Timestamp, pd.Timestamp]:
     dates = [frame["date"].dropna() for frame in frames if "date" in frame.columns and not frame["date"].dropna().empty]
     if not dates:
-        raise ValueError("No valid dates found in source data.")
+        raise ValueError("No valid dates found in order or exposure source data.")
     combined = pd.concat(dates)
     return combined.min(), combined.max()
 

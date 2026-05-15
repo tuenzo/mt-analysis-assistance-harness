@@ -38,7 +38,8 @@ def data_discover_source_files(project_id: str, payload: dict) -> ToolResult:
     else:
         assistant_hint = (
             "Inspect headers and previews, then call data.ingest with selected_files: "
-            "[{source_path, role, reason}]. Do not ingest files you cannot classify."
+            "[{source_path, role, reason}]. Use role_guess as a hint, but do not ingest "
+            "category_day_panel or processed-panel candidates as raw order/exposure/activity files."
         )
     return ToolResult(
         ok=True,

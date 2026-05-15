@@ -20,6 +20,8 @@ class BusinessAnalysisAction(str, Enum):
     ANALYSIS_RUN_GPS_UPLIFT = "analysis.run_gps_uplift"
     ANALYSIS_RUN_HMM_STATE_PATH = "analysis.run_hmm_state_path"
     ANALYSIS_RUN_FULL_PIPELINE = "analysis.run_full_pipeline"
+    QUALITY_AUDIT_LINEAGE = "quality.audit_lineage"
+    QUALITY_SCORE_REFERENCE_ALIGNMENT = "quality.score_reference_alignment"
     RESULT_GET_LATEST = "result.get_latest"
     ARTIFACT_READ = "artifact.read"
     CHART_RENDER = "chart.render"

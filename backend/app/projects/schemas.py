@@ -92,6 +92,10 @@ class SourceFileCandidate(BaseModel):
     headers: list[str] = []
     preview: str = ""
     preview_truncated: bool = False
+    role_guess: str = "unknown"
+    role_confidence: float = 0.0
+    role_reason: str = "not_classified"
+    looks_processed_panel: bool = False
 
 
 class DataDiscoverResponse(BaseModel):

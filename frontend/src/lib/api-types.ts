@@ -85,6 +85,10 @@ export interface SourceFileCandidate {
   headers: string[]
   preview: string
   preview_truncated: boolean
+  role_guess?: string
+  role_confidence?: number
+  role_reason?: string
+  looks_processed_panel?: boolean
 }
 
 export interface DataDiscoverResult {

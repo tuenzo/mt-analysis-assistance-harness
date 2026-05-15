@@ -6,7 +6,7 @@ SQLite project state, workspace-backed artifacts, and a single
 
 ## Current Development Environment
 
-Confirmed on 2026-05-12 for the current agent-flow validation stage:
+Confirmed on 2026-05-13 for the current agent-flow validation stage:
 
 - `setup.ps1`, `setup.sh`, and `scripts/local_setup.py` are not verified yet.
   Do not use them as the acceptance path until they receive a separate
@@ -18,11 +18,16 @@ Confirmed on 2026-05-12 for the current agent-flow validation stage:
 - Frontend URL: `http://127.0.0.1:3010`
 - Runtime check: `GET http://127.0.0.1:18081/api/agent/runtime`
 - Current validation project: `Keemart 促销增长全流程项目`
+- Default SQLite path: repository-root `business_analysis.db` unless
+  `APP_DATABASE_URL` is explicitly set. Current validation runs explicitly use
+  `backend/business_analysis.db` because it contains the active real-data
+  projects.
 
 Backend:
 
 ```powershell
 cd backend
+$env:APP_DATABASE_URL='sqlite:///E:/CodingProject/meituancomp-analysis-assistance-harness/backend/business_analysis.db'
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 18081
 ```
 

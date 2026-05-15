@@ -24,9 +24,12 @@ AVAILABLE_ACTIONS = [
     "analysis.run_gps_uplift",
     "analysis.run_hmm_state_path",
     "analysis.run_full_pipeline",
+    "quality.audit_lineage",
+    "quality.score_reference_alignment",
     "result.get_latest",
     "artifact.read",
     "chart.render",
+    "chart.render_dashboard",
     "report.generate",
     "memory.propose_update",
 ]

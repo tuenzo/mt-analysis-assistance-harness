@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Toaster, toast } from 'sonner'
 import {
   AlertTriangle,
@@ -32,6 +32,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { MarkdownView } from '@/components/markdown-view'
+import { buildAgentHandoffMessage, readAgentHandoff, removeAgentHandoff } from '@/lib/agent-handoff'
 import { useApiBaseHref } from '@/lib/use-api-base-href'
 import { KEEMART_SHOWCASE_MODEL_NAME, MODEL_LOADING_LABEL } from '@/lib/model-display'
 import { useAgentRuntimeMetadata } from '@/lib/use-agent-runtime-metadata'
@@ -359,7 +360,10 @@ function dashboardSnapshotItems(summary: DashboardSummary): SnapshotItem[] {
 
 export function AgentAnalysisPage() {
   const params = useParams<{ project_id: string }>()
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const projectId = params.project_id
+  const handoffId = searchParams.get('agent_handoff')
   const isReportBackedProject = isKeemartPromoProject(projectId)
   const { metadata: runtimeMetadata } = useAgentRuntimeMetadata(!isReportBackedProject)
   const hrefFor = useApiBaseHref()
@@ -396,6 +400,7 @@ export function AgentAnalysisPage() {
   const [loadingSessions, setLoadingSessions] = useState(false)
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
   const artifactEventIdsRef = useRef(new Set<string>())
+  const handoffConsumedRef = useRef(new Set<string>())
   const keemartTimersRef = useRef<number[]>([])
   const [keemartMessages, setKeemartMessages] = useState<AgentMessage[]>([])
   const [keemartToolCalls, setKeemartToolCalls] = useState<ToolCall[]>([])
@@ -474,6 +479,13 @@ export function AgentAnalysisPage() {
       }
     }
 
+    if (handoffId) {
+      resetConversationState()
+      return () => {
+        cancelled = true
+      }
+    }
+
     const readStoredSessionId = () => {
       if (typeof window === 'undefined') return null
       try {
@@ -523,7 +535,67 @@ export function AgentAnalysisPage() {
     return () => {
       cancelled = true
     }
-  }, [forgetSessionId, isReportBackedProject, loadSessionMessages, projectId, refreshProjectSessions, rememberSessionId, resetConversationState])
+  }, [forgetSessionId, handoffId, isReportBackedProject, loadSessionMessages, projectId, refreshProjectSessions, rememberSessionId, resetConversationState])
+
+  useEffect(() => {
+    if (!handoffId || isReportBackedProject) return
+    if (handoffConsumedRef.current.has(handoffId)) return
+
+    const payload = readAgentHandoff(handoffId)
+    handoffConsumedRef.current.add(handoffId)
+    if (!payload || payload.projectId !== projectId) {
+      removeAgentHandoff(handoffId)
+      toast.error('看板上下文已过期，请回到看板重新发起。')
+      router.replace(hrefFor(`/projects/${projectId}/agent`))
+      return
+    }
+
+    if (isRunning) {
+      toast.error('当前线程还在运行，完成后再从看板发起新问题。')
+      return
+    }
+
+    window.history.replaceState(null, '', hrefFor(`/projects/${projectId}/agent`))
+
+    let cancelled = false
+    const startHandoffThread = async () => {
+      resetConversationState()
+      forgetSessionId()
+      setInput(payload.suggestedQuestion)
+
+      const response = await sendMessage(projectId, buildAgentHandoffMessage(payload))
+      removeAgentHandoff(handoffId)
+      if (cancelled) return
+
+      if (response) {
+        setSessionId(response.session_id)
+        setTurnId(response.turn_id)
+        rememberSessionId(response.session_id)
+        void refreshProjectSessions()
+        toast.success('已创建看板上下文线程，可以继续追问。')
+      } else {
+        toast.error('创建看板上下文线程失败。')
+      }
+    }
+
+    void startHandoffThread()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    forgetSessionId,
+    handoffId,
+    hrefFor,
+    isReportBackedProject,
+    isRunning,
+    projectId,
+    refreshProjectSessions,
+    rememberSessionId,
+    resetConversationState,
+    router,
+    sendMessage,
+  ])
 
   useEffect(() => {
     if (sessionId && !isReportBackedProject) {

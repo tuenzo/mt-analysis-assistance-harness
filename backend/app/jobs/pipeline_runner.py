@@ -19,6 +19,7 @@ from app.tools.analysis_tools import (
 from app.tools.chart_tools import chart_render, chart_render_dashboard
 from app.tools.data_tools import data_validate
 from app.tools.panel_tools import panel_build_category_day, panel_build_user_week
+from app.tools.quality_tools import quality_audit_lineage, quality_score_reference_alignment
 from app.tools.report_tools import report_generate
 from app.tools.result_tools import result_get_latest
 from app.tools.schemas import ToolResult
@@ -26,8 +27,36 @@ from app.tools.schemas import ToolResult
 
 StepFunc = Callable[[str, dict], ToolResult]
 
+BLOCKING_PIPELINE_ACTIONS = {"quality.audit_lineage", "data.validate", "panel.build_category_day"}
+
+
+def _pipeline_lineage_gate(project_id: str, payload: dict) -> ToolResult:
+    result = quality_audit_lineage(project_id, payload)
+    audit = {}
+    for artifact in result.artifacts or []:
+        if artifact.get("type") == "lineage_audit" and isinstance(artifact.get("data"), dict):
+            audit = artifact["data"]
+            break
+    if audit.get("overall_status") == "pass":
+        return result
+
+    issues = audit.get("issues", [])
+    return ToolResult(
+        ok=False,
+        action="quality.audit_lineage",
+        summary=f"Lineage gate failed: {len(issues)} blocking issue(s).",
+        artifacts=result.artifacts,
+        error={
+            "code": "LINEAGE_GATE_FAILED",
+            "message": "Project lineage, source roles, or anti-demo gates failed before full pipeline execution.",
+            "details": {"issues": issues, "cap_reasons": audit.get("cap_reasons", [])},
+        },
+        assistant_hint="Explain the failed lineage gate and ask for corrected real source files before continuing.",
+    )
+
 
 PIPELINE_STEPS: list[tuple[str, str, StepFunc, dict]] = [
+    ("Lineage audit", "quality.audit_lineage", _pipeline_lineage_gate, {}),
     ("Data validation", "data.validate", data_validate, {}),
     ("Panel build", "panel.build_category_day", panel_build_category_day, {}),
     ("User-week panel", "panel.build_user_week", panel_build_user_week, {}),
@@ -42,6 +71,7 @@ PIPELINE_STEPS: list[tuple[str, str, StepFunc, dict]] = [
     ("LocalGap chart", "chart.render", chart_render, {"type": "localgap"}),
     ("Dashboard PNG charts", "chart.render_dashboard", chart_render_dashboard, {"charts": "all"}),
     ("Latest result", "result.get_latest", result_get_latest, {}),
+    ("Reference alignment score", "quality.score_reference_alignment", quality_score_reference_alignment, {}),
     ("Report generation", "report.generate", report_generate, {"format": "md"}),
 ]
 
@@ -165,6 +195,18 @@ def run_approved_full_pipeline(
                 "message": f"Finished {label}",
             }
         )
+
+        if not result.ok and action in BLOCKING_PIPELINE_ACTIONS:
+            events.append(
+                {
+                    "type": "job_progress",
+                    "turn_id": turn_id,
+                    "job_id": job.id,
+                    "progress": job.progress,
+                    "message": f"Stopping pipeline after blocking failure in {label}.",
+                }
+            )
+            break
 
     finished_at = datetime.now().isoformat()
     job.status = "succeeded" if all_ok else "failed"

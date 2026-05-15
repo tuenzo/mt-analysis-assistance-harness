@@ -27,9 +27,19 @@ def isolated_backend(tmp_path, monkeypatch):
     reset_engine()
 
 
+def _write_dashboard_evidence(project):
+    analysis_dir = Path(project.workspace_path) / ".analysis"
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+    (analysis_dir / "diagnostics_result.json").write_text(
+        '{"method_status":"implemented","summary":{"activity_lift_pct":12.5}}',
+        encoding="utf-8",
+    )
+
+
 def test_dashboard_chart_endpoint_renders_png(isolated_backend):
     client = TestClient(app)
     project = ProjectService().create_project("Dashboard Chart Test", is_test=True)
+    _write_dashboard_evidence(project)
     chart_render_dashboard(project.id, {"chart_ids": ["pareto"]})
 
     response = client.get(f"/api/projects/{project.id}/dashboard-charts/pareto.png")
@@ -43,6 +53,7 @@ def test_dashboard_chart_endpoint_renders_png(isolated_backend):
 def test_dashboard_period_overview_chart_endpoint_renders_png(isolated_backend):
     client = TestClient(app)
     project = ProjectService().create_project("Dashboard Chart Test", is_test=True)
+    _write_dashboard_evidence(project)
     chart_render_dashboard(project.id, {"chart_ids": ["period_overview"]})
 
     response = client.get(f"/api/projects/{project.id}/dashboard-charts/period_overview.png")
@@ -74,6 +85,7 @@ def test_dashboard_chart_endpoint_requires_pre_generated_png(isolated_backend):
 
 def test_dashboard_chart_tool_renders_all_png_artifacts(isolated_backend):
     project = ProjectService().create_project("Dashboard Chart Tool Test", is_test=True)
+    _write_dashboard_evidence(project)
 
     result = chart_render_dashboard(project.id, {"charts": "all"})
 
@@ -88,8 +100,19 @@ def test_dashboard_chart_tool_renders_all_png_artifacts(isolated_backend):
         assert chart_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
 
 
+def test_dashboard_chart_tool_requires_analysis_evidence(isolated_backend):
+    project = ProjectService().create_project("Dashboard Chart Evidence Gate Test", is_test=True)
+
+    result = chart_render_dashboard(project.id, {"chart_ids": ["pareto"]})
+
+    assert result.ok is False
+    assert result.error["code"] == "ANALYSIS_EVIDENCE_REQUIRED"
+    assert not (Path(project.workspace_path) / "artifacts" / "charts" / "dashboard" / "pareto.png").exists()
+
+
 def test_dashboard_chart_tool_is_exposed_through_gateway_and_persists_artifact(isolated_backend):
     project = ProjectService().create_project("Dashboard Chart Gateway Test", is_test=True)
+    _write_dashboard_evidence(project)
 
     result = AnalysisToolGateway().execute(
         tool_call_id="tc_dashboard_chart_test",
@@ -117,6 +140,7 @@ def test_dashboard_chart_tool_is_exposed_through_gateway_and_persists_artifact(i
 
 def test_dashboard_chart_gateway_upserts_deterministic_artifact_path(isolated_backend):
     project = ProjectService().create_project("Dashboard Chart Upsert Test", is_test=True)
+    _write_dashboard_evidence(project)
     gateway = AnalysisToolGateway()
 
     for _ in range(2):

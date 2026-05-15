@@ -10,9 +10,17 @@ _engine = None
 _SessionLocal = None
 _engine_url = None
 
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = BACKEND_ROOT.parent
+
 
 def _resolve_database_url() -> str:
-    url = os.getenv("APP_DATABASE_URL", "sqlite:///./business_analysis.db")
+    configured_url = os.getenv("APP_DATABASE_URL")
+    if not configured_url:
+        default_path = (PROJECT_ROOT / "business_analysis.db").resolve()
+        return f"sqlite:///{default_path.as_posix()}"
+
+    url = configured_url
     if not url.startswith("sqlite:///") or url == "sqlite:///:memory:":
         return url
 

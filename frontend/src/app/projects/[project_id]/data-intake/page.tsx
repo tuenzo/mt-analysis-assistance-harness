@@ -12,11 +12,24 @@ import { Input } from '@/components/ui/input'
 const roleOptions: SelectedSourceFile['role'][] = ['order_info', 'exposure_info', 'activity_timeline', 'unknown']
 
 function guessRole(candidate: SourceFileCandidate): SelectedSourceFile['role'] {
+  if (candidate.looks_processed_panel || candidate.role_guess === 'category_day_panel') return 'unknown'
+  if (candidate.role_guess === 'order_info' || candidate.role_guess === 'exposure_info' || candidate.role_guess === 'activity_timeline') {
+    return candidate.role_guess
+  }
   const text = `${candidate.name} ${candidate.headers.join(' ')}`.toLowerCase()
-  if (text.includes('order_id') || text.includes('gmv') || text.includes('order')) return 'order_info'
-  if (text.includes('exposure') || text.includes('曝光')) return 'exposure_info'
-  if (text.includes('activity') || text.includes('timeline') || text.includes('payday') || text.includes('活动')) return 'activity_timeline'
+  if (text.includes('exposure_info') || text.includes('view_uv') || text.includes('buy_uv') || text.includes('exposure') || text.includes('曝光')) return 'exposure_info'
+  if (text.includes('activity_timeline') || text.includes('activity_name') || text.includes('activity_id') || text.includes('timeline') || text.includes('payday') || text.includes('营销活动') || text.includes('活动')) return 'activity_timeline'
+  if (text.includes('order_info') || text.includes('stat_pay_main_order_id') || text.includes('order_id') || text.includes('sku_sale_amt')) return 'order_info'
   return 'unknown'
+}
+
+function selectionReason(candidate: SourceFileCandidate, role: SelectedSourceFile['role'], manual = false) {
+  if (candidate.looks_processed_panel || candidate.role_guess === 'category_day_panel') {
+    return '检测为已加工 category-day panel，不作为原始 order/exposure/activity 表导入。'
+  }
+  if (role === 'unknown') return manual ? '手动选择，仍需确认角色。' : '导入前需要人工确认角色。'
+  const basis = candidate.role_reason ? `后端识别：${candidate.role_reason}` : `字段：${candidate.headers.join(', ')}`
+  return `${manual ? '手动选择；' : ''}${basis}`
 }
 
 export default function DataIntakePage() {
@@ -85,17 +98,18 @@ export default function DataIntakePage() {
     }
     setDiscovery(response.data)
     const selections = response.data.candidates
-      .filter((candidate) => !candidate.skipped && candidate.extension === '.csv')
+      .filter((candidate) => !candidate.skipped && candidate.extension === '.csv' && !candidate.looks_processed_panel && candidate.role_guess !== 'category_day_panel')
       .map((candidate) => {
         const role = guessRole(candidate)
         return {
           source_path: candidate.source_path,
           role,
-          reason: role === 'unknown' ? '导入前需要人工确认角色。' : `根据文件名和字段推荐：${candidate.headers.join(', ')}`,
+          reason: selectionReason(candidate, role),
         }
       })
     setSelectedFiles(selections)
-    setStatus(`已发现 ${response.data.candidate_count} 个候选项，请在导入前确认角色。`)
+    const panelCount = response.data.candidates.filter((candidate) => candidate.looks_processed_panel || candidate.role_guess === 'category_day_panel').length
+    setStatus(`已发现 ${response.data.candidate_count} 个候选项，请在导入前确认角色。${panelCount ? `已排除 ${panelCount} 个已加工 panel。` : ''}`)
   }
 
   async function importData() {
@@ -125,6 +139,7 @@ export default function DataIntakePage() {
   }
 
   function toggleSelection(candidate: SourceFileCandidate) {
+    if (candidate.looks_processed_panel || candidate.role_guess === 'category_day_panel') return
     setSelectedFiles((current) => {
       if (current.some((file) => file.source_path === candidate.source_path)) {
         return current.filter((file) => file.source_path !== candidate.source_path)
@@ -135,7 +150,7 @@ export default function DataIntakePage() {
         {
           source_path: candidate.source_path,
           role,
-          reason: role === 'unknown' ? '手动选择，仍需确认角色。' : `根据字段选择：${candidate.headers.join(', ')}`,
+          reason: selectionReason(candidate, role, true),
         },
       ]
     })
@@ -197,10 +212,16 @@ export default function DataIntakePage() {
                         <FileSpreadsheet className="h-4 w-4 text-primary" />
                         <span className="truncate text-sm font-medium">{candidate.name}</span>
                         {candidate.skipped && <span className="rounded-md bg-secondary px-2 py-1 text-xs">{candidate.skip_reason}</span>}
+                        {(candidate.looks_processed_panel || candidate.role_guess === 'category_day_panel') && <span className="rounded-md bg-orange-100 px-2 py-1 text-xs text-orange-700">已加工 panel</span>}
                       </div>
                       <div className="mt-1 text-xs text-muted-foreground">
                         {candidate.size_bytes ?? 0} bytes · {candidate.headers.join(', ') || '无表头'}
                       </div>
+                      {candidate.role_guess && (
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          推荐角色：{candidate.role_guess} · 置信度：{Math.round((candidate.role_confidence ?? 0) * 100)}%
+                        </div>
+                      )}
                       {candidate.preview && (
                         <pre className="mt-2 max-h-32 overflow-auto rounded-md bg-secondary p-2 text-xs whitespace-pre-wrap">{candidate.preview}</pre>
                       )}
@@ -208,8 +229,8 @@ export default function DataIntakePage() {
                     {!candidate.skipped && candidate.extension === '.csv' && (
                       <div className="flex min-w-64 flex-col gap-2">
                         <label className="flex items-center gap-2 text-sm">
-                          <input type="checkbox" checked={isSelected(candidate.source_path)} onChange={() => toggleSelection(candidate)} />
-                          导入此文件
+                          <input type="checkbox" checked={isSelected(candidate.source_path)} disabled={candidate.looks_processed_panel || candidate.role_guess === 'category_day_panel'} onChange={() => toggleSelection(candidate)} />
+                          {candidate.looks_processed_panel || candidate.role_guess === 'category_day_panel' ? '不作为原始表导入' : '导入此文件'}
                         </label>
                         {selected && (
                           <>

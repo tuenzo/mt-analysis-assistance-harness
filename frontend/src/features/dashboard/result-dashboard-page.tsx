@@ -1,6 +1,7 @@
-'use client'
+﻿'use client'
 
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import * as echarts from 'echarts'
 import {
   ArrowUpRight,
@@ -11,6 +12,7 @@ import {
   Eye,
   Info,
   Layers,
+  MessageSquarePlus,
   RotateCcw,
   Tag,
   Target,
@@ -20,6 +22,8 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ScaledPageFrame } from '@/components/ui/scaled-page-frame'
+import { createAgentHandoff } from '@/lib/agent-handoff'
+import { useApiBaseHref } from '@/lib/use-api-base-href'
 import type {
   DashboardFilters,
   DashboardSummary,
@@ -88,8 +92,16 @@ function formatScaledCurrencyNumber(value: number, scale: number, signed = false
   })}`
 }
 
+function normalizeCurrencyUnitLabel(unitLabel?: string) {
+  const normalized = String(unitLabel || '').trim()
+  if (!normalized || normalized.includes('原始单位')) return '元'
+  return normalized
+}
+
 function currencyUnitForScale(scale: number, unitLabel?: string) {
-  return unitLabel || (scale === WAN_UNIT_SCALE ? '万元' : '元')
+  const baseUnit = normalizeCurrencyUnitLabel(unitLabel)
+  if (scale === WAN_UNIT_SCALE && baseUnit === '元') return '万元'
+  return baseUnit || (scale === WAN_UNIT_SCALE ? '万元' : '元')
 }
 
 function formatCurrencyWithUnit(value: number, scale: number, signed = false, unitLabel?: string) {
@@ -97,7 +109,15 @@ function formatCurrencyWithUnit(value: number, scale: number, signed = false, un
 }
 
 function summaryCurrencyScale(summary: DashboardSummary, values: number[]) {
-  return summary.valueScale && summary.valueScale > 0 ? summary.valueScale : inferCurrencyScale(values)
+  const baseUnit = normalizeCurrencyUnitLabel(summary.valueUnit)
+  if (!summary.valueScale || summary.valueScale <= 1 || baseUnit === '元') return inferCurrencyScale(values)
+  return summary.valueScale
+}
+
+function resolveCurrencyScale(unitScale: number | undefined, unitLabel: string | undefined, values: number[]) {
+  const baseUnit = normalizeCurrencyUnitLabel(unitLabel)
+  if (!unitScale || unitScale <= 1 || baseUnit === '元') return inferCurrencyScale(values)
+  return unitScale
 }
 
 function summaryCurrencyUnit(summary: DashboardSummary, scale: number) {
@@ -348,6 +368,10 @@ export function ResultDashboardPage({
   preserveLocalGap?: boolean
   showcaseLayout?: boolean
 }) {
+  const params = useParams<{ project_id: string }>()
+  const router = useRouter()
+  const hrefFor = useApiBaseHref()
+  const projectId = params.project_id
   const [filters, setFilters] = useState<DashboardFilters>(initialFilters)
   const [drilldown, setDrilldown] = useState<string | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
@@ -356,6 +380,24 @@ export function ResultDashboardPage({
   const filteredSummary = useMemo(
     () => applyDashboardFilters(summary, filters, { preserveLocalGap }),
     [summary, filters, preserveLocalGap],
+  )
+
+  const handleAskAgent = useCallback(
+    (title: string) => {
+      const handoffId = createAgentHandoff({
+        projectId,
+        source: 'dashboard-drilldown',
+        title,
+        context: buildDashboardAgentHandoffContext(title, filteredSummary),
+        suggestedQuestion: `请解释「${title}」这张看板卡片，并告诉我下一步应该重点验证什么。`,
+      })
+      if (!handoffId) {
+        window.alert('无法创建看板上下文线程，请刷新后重试。')
+        return
+      }
+      router.push(hrefFor(`/projects/${projectId}/agent?agent_handoff=${encodeURIComponent(handoffId)}`))
+    },
+    [filteredSummary, hrefFor, projectId, router],
   )
 
   return (
@@ -385,6 +427,7 @@ export function ResultDashboardPage({
         title={drilldown || ''}
         summary={filteredSummary}
         onClose={() => setDrilldown(null)}
+        onAskAgent={handleAskAgent}
       />
       <DashboardExportModal open={exportOpen} onClose={() => setExportOpen(false)} />
     </div>
@@ -397,6 +440,43 @@ function summarizeTrendRange(trend: TrendDatum[]) {
   const last = trend.at(-1)?.date
   if (!first || !last) return '暂无真实分析时间范围'
   return first === last ? first : `${first}~${last}`
+}
+
+function buildDashboardAgentHandoffContext(title: string, summary: DashboardSummary) {
+  const currencyScale = summaryCurrencyScale(summary, [
+    ...summary.pareto.map((item) => item.gmv),
+    ...summary.trend.flatMap((item) => [item.gmv, item.baselineGmv, item.exposure ?? 0, item.discount ?? 0]),
+    ...summary.localGap.map((item) => item.value),
+  ])
+  const currencyUnit = summaryCurrencyUnit(summary, currencyScale)
+  const kpi = summary.kpis.find((item) => item.label === title)
+  const paretoItem = summary.pareto.find((item) => item.category === title)
+  const quadrantItem = summary.quadrants.find((item) => item.category === title)
+  const recommendationGroups = summary.recommendations
+    .filter((group) => group.title === title || group.categories.includes(title))
+    .map((group) => `${group.title}(${group.countLabel})`)
+  const localGapTotal = summary.localGap
+    .filter((item) => item.type !== 'baseline' && item.type !== 'total')
+    .reduce((sum, item) => sum + item.value, 0)
+  const topPareto = summary.pareto.slice(0, 5).map((item) => `${item.category} ${formatCurrencyWithUnit(item.gmv, currencyScale, false, currencyUnit)}`)
+  const lines = [
+    `看板卡片：${title}`,
+    `时间范围：${summarizeTrendRange(summary.trend)}`,
+    `核心结论：${summary.conclusion}`,
+    `质量状态：${summary.qualityStatus ?? 'unknown'}`,
+    summary.qualityReasons?.length ? `质量提示：${summary.qualityReasons.slice(0, 3).join('；')}` : '',
+    typeof localGapTotal === 'number' ? `LocalGap 总量：${formatCurrencyWithUnit(localGapTotal, currencyScale, true, currencyUnit)}` : '',
+    kpi ? `KPI：${kpi.label} = ${kpi.value}${kpi.unit ? ` ${kpi.unit}` : ''}，${kpi.subText}` : '',
+    paretoItem ? `品类 GMV：${paretoItem.category} = ${formatCurrencyWithUnit(paretoItem.gmv, currencyScale, false, currencyUnit)}，累计占比 ${paretoItem.cumulativeRatio}%` : '',
+    quadrantItem
+      ? `策略气泡：${quadrantItem.category}，动作：${quadrantItem.suggestedAction}，贡献：${formatCurrencyWithUnit(quadrantItem.contribution ?? 0, currencyScale, true, currencyUnit)}`
+      : '',
+    recommendationGroups.length ? `所属策略组：${recommendationGroups.join('；')}` : '',
+    topPareto.length ? `Top GMV 品类：${topPareto.join('；')}` : '',
+    `建议问题：解释这张卡片背后的证据、风险和下一步验证动作。`,
+  ]
+
+  return lines.filter(Boolean).join('\n')
 }
 
 function DashboardFilterBar({
@@ -690,7 +770,7 @@ function ParetoChartCard({
   const plotLeft = 35
   const plotRight = 590
   const rightAxisX = 598
-  const currencyScale = unitScale && unitScale > 0 ? unitScale : inferCurrencyScale(data.map((item) => item.gmv))
+  const currencyScale = resolveCurrencyScale(unitScale, unitLabel, data.map((item) => item.gmv))
   const displayData = data.map((item) => ({ ...item, displayGmv: item.gmv / currencyScale }))
   const gmvAxisMax = getNiceAxisMax(Math.max(...displayData.map((item) => item.displayGmv), 1))
   const gmvTicks = Array.from({ length: 5 }, (_, index) => Math.round((gmvAxisMax / 4) * index))
@@ -714,8 +794,8 @@ function ParetoChartCard({
         <text x="586" y="8" fontSize="11" fill="#374151">累计占比（%）</text>
         <line x1={plotLeft} y1={chartBottom} x2={plotRight} y2={chartBottom} stroke="#d9e1ec" />
         <line x1={rightAxisX} y1={chartTop} x2={rightAxisX} y2={chartBottom} stroke="#d9e1ec" />
-        {gmvTicks.map((tick) => (
-          <g key={tick}>
+        {gmvTicks.map((tick, index) => (
+          <g key={`gmv-tick-${tick}-${index}`}>
             <line x1={plotLeft} y1={chartBottom - (tick / gmvAxisMax) * chartHeight} x2={plotRight} y2={chartBottom - (tick / gmvAxisMax) * chartHeight} stroke="#eef2f7" />
             <text x="5" y={chartBottom + 4 - (tick / gmvAxisMax) * chartHeight} fontSize="10" fill="#6b7280">{tick}</text>
           </g>
@@ -734,7 +814,7 @@ function ParetoChartCard({
           const x = xForIndex(index) - barWidth / 2
           return (
             <g
-              key={item.category}
+              key={`${item.category}-${index}`}
               onClick={(event) => {
                 event.stopPropagation()
                 onOpen(item.category)
@@ -757,7 +837,7 @@ function ParetoChartCard({
         <polyline points={points} fill="none" stroke="#2563eb" strokeWidth="3" />
         {data.map((item, index) => (
           <circle
-            key={`${item.category}-line`}
+            key={`${item.category}-line-${index}`}
             cx={xForIndex(index)}
             cy={chartBottom - (item.cumulativeRatio / 100) * chartHeight}
             r="4"
@@ -787,7 +867,7 @@ function LocalGapWaterfallCard({
   const barWidth = 70
   const step = 94
   const startX = 42
-  const currencyScale = unitScale && unitScale > 0 ? unitScale : inferCurrencyScale(data.map((item) => item.value))
+  const currencyScale = resolveCurrencyScale(unitScale, unitLabel, data.map((item) => item.value))
   const displayData = data.map((item) => ({
     ...item,
     rawValue: item.value,
@@ -837,10 +917,10 @@ function LocalGapWaterfallCard({
       <svg viewBox="0 0 635 188" className="h-48 w-full" role="img" aria-label="LocalGap 增量分解瀑布图">
         <text x="5" y="8" fontSize="11" fill="#374151">GMV（{currencyUnitForScale(currencyScale, unitLabel)}）</text>
         <line x1="34" y1={chartBottom} x2="610" y2={chartBottom} stroke="#d9e1ec" />
-        {ticks.map((tick) => {
+        {ticks.map((tick, index) => {
           const y = scaleY(tick)
           return (
-            <g key={tick}>
+            <g key={`localgap-tick-${tick}-${index}`}>
               <line x1="34" y1={y} x2="610" y2={y} stroke="#eef2f7" />
               <text x="5" y={y + 4} fontSize="10" fill="#6b7280">
                 {formatScaledCurrencyNumber(tick, currencyScale)}
@@ -853,7 +933,7 @@ function LocalGapWaterfallCard({
           const y = scaleY(bar.end)
           return (
             <line
-              key={`${bar.item.name}-connector`}
+              key={`${bar.item.name}-connector-${index}`}
               x1={bar.x + barWidth}
               y1={y}
               x2={nextBar.x}
@@ -863,14 +943,14 @@ function LocalGapWaterfallCard({
             />
           )
         })}
-        {bars.map(({ item, x, start, end }) => {
+        {bars.map(({ item, x, start, end }, index) => {
           const top = Math.min(scaleY(start), scaleY(end))
           const height = Math.max(6, Math.abs(scaleY(start) - scaleY(end)))
           const color = item.type === 'positive' ? '#22c55e' : item.type === 'negative' ? '#ef4444' : '#9ca3af'
           const label = formatScaledCurrencyNumber(item.value, currencyScale, item.type === 'positive')
           return (
             <g
-              key={item.name}
+              key={`${item.name}-${index}`}
               onClick={(event) => {
                 event.stopPropagation()
                 onOpen(item.name)
@@ -976,7 +1056,7 @@ function GmvTrendComparisonCard({
 
 function buildGmvTrendOption(data: TrendDatum[], unitScale?: number, unitLabel?: string): echarts.EChartsOption {
   const dates = data.map((item) => item.date)
-  const currencyScale = unitScale && unitScale > 0 ? unitScale : inferCurrencyScale(data.flatMap((item) => [item.gmv, item.baselineGmv]))
+  const currencyScale = resolveCurrencyScale(unitScale, unitLabel, data.flatMap((item) => [item.gmv, item.baselineGmv]))
   const paydayPoints = data
     .filter((item) => item.isPayday)
     .map((item) => ({
@@ -1132,43 +1212,170 @@ function buildActivityMarkAreas(data: TrendDatum[]) {
 }
 
 function buildPeriodSummaries(data: TrendDatum[], unitScale?: number, unitLabel?: string) {
-  const currencyScale = unitScale && unitScale > 0 ? unitScale : inferCurrencyScale(data.flatMap((item) => [item.gmv, item.baselineGmv]))
-  const preGmv = sumGmvByPeriod(data, 'pre')
-  const duringGmv = sumGmvByPeriod(data, 'during')
-  const postGmv = sumGmvByPeriod(data, 'post')
+  const currencyScale = resolveCurrencyScale(unitScale, unitLabel, data.flatMap((item) => [item.gmv, item.baselineGmv]))
+  const pre = summarizePeriod(data, 'pre')
+  const during = summarizePeriod(data, 'during')
+  const post = summarizePeriod(data, 'post')
 
   return [
     {
       label: '活动前',
-      value: `GMV ${formatCurrencyWithUnit(preGmv, currencyScale, false, unitLabel)}`,
-      delta: '基准阶段',
+      value: `日均 ${formatCurrencyWithUnit(pre.dailyAvg, currencyScale, false, unitLabel)}`,
+      delta: pre.days > 0 ? `${pre.days} 天基准窗口` : '无基准窗口',
       tone: 'text-muted-foreground',
     },
     {
       label: '活动中',
-      value: `GMV ${formatCurrencyWithUnit(duringGmv, currencyScale, false, unitLabel)}`,
-      delta: formatLift(duringGmv, preGmv),
+      value: `日均 ${formatCurrencyWithUnit(during.dailyAvg, currencyScale, false, unitLabel)}`,
+      delta: formatLift(during.dailyAvg, pre.dailyAvg),
       tone: 'text-blue-600',
     },
     {
       label: '活动后',
-      value: `GMV ${formatCurrencyWithUnit(postGmv, currencyScale, false, unitLabel)}`,
-      delta: formatLift(postGmv, preGmv),
+      value: `日均 ${formatCurrencyWithUnit(post.dailyAvg, currencyScale, false, unitLabel)}`,
+      delta: formatLift(post.dailyAvg, pre.dailyAvg),
       tone: 'text-blue-600',
     },
   ]
 }
 
-function sumGmvByPeriod(data: TrendDatum[], period: TrendDatum['period']) {
-  return data
-    .filter((item) => item.period === period)
-    .reduce((sum, item) => sum + item.gmv, 0)
+function summarizePeriod(data: TrendDatum[], period: TrendDatum['period']) {
+  const rows = data.filter((item) => item.period === period)
+  const total = rows.reduce((sum, item) => sum + item.gmv, 0)
+  return {
+    total,
+    days: rows.length,
+    dailyAvg: rows.length > 0 ? total / rows.length : 0,
+  }
 }
 
 function formatLift(current: number, base: number) {
   if (base === 0) return '+0.0%'
   const lift = ((current - base) / base) * 100
   return `${lift >= 0 ? '+' : ''}${lift.toFixed(1)}%`
+}
+
+type RepresentativeQuadrantKey = RecommendationGroup['key']
+
+type RepresentativeQuadrantItem = QuadrantItem & {
+  representativeGroup: RepresentativeQuadrantKey
+  representativeIndex: number
+  representativeVisibleCount: number
+  representativeTotal: number
+  originalIndex: number
+}
+
+const representativeQuadrantOrder: RepresentativeQuadrantKey[] = ['boost', 'watch', 'control_discount', 'avoid']
+
+const representativeQuadrantLabels: Record<RepresentativeQuadrantKey, string> = {
+  boost: '优先加码',
+  watch: '小规模验证',
+  control_discount: '控制折扣',
+  avoid: '避免打扰',
+}
+
+const representativeQuadrantBounds: Record<
+  RepresentativeQuadrantKey,
+  { minX: number; maxX: number; minY: number; maxY: number }
+> = {
+  boost: { minX: 23, maxX: 46, minY: 58, maxY: 77 },
+  watch: { minX: 60, maxX: 86, minY: 58, maxY: 77 },
+  control_discount: { minX: 23, maxX: 46, minY: 27, maxY: 45 },
+  avoid: { minX: 60, maxX: 86, minY: 27, maxY: 45 },
+}
+
+const representativeScatterTemplate = [
+  { x: 0.24, y: 0.78 },
+  { x: 0.72, y: 0.64 },
+  { x: 0.40, y: 0.35 },
+  { x: 0.84, y: 0.28 },
+]
+
+function representativeGroupForItem(item: QuadrantItem): RepresentativeQuadrantKey {
+  if (item.group === 'boost') return 'boost'
+  if (item.group === 'avoid') return 'avoid'
+  if (item.group === 'control_discount' || item.group === 'reduce') return 'control_discount'
+  return 'watch'
+}
+
+function representativeScore(item: QuadrantItem) {
+  const contribution = Math.abs(item.contribution ?? 0)
+  const size = Math.abs(item.size ?? 0)
+  const count = Math.abs(item.count ?? 0)
+  return contribution * 10 + size + count
+}
+
+function selectRepresentativeQuadrantItems(data: QuadrantItem[], limitPerQuadrant: number) {
+  const grouped = representativeQuadrantOrder.reduce<Record<RepresentativeQuadrantKey, Array<{ item: QuadrantItem; index: number }>>>(
+    (acc, key) => {
+      acc[key] = []
+      return acc
+    },
+    {} as Record<RepresentativeQuadrantKey, Array<{ item: QuadrantItem; index: number }>>,
+  )
+
+  data.forEach((item, index) => {
+    grouped[representativeGroupForItem(item)].push({ item, index })
+  })
+
+  const visible = representativeQuadrantOrder.flatMap((group) => {
+    const selected = [...grouped[group]]
+      .sort((a, b) => {
+        const scoreDelta = representativeScore(b.item) - representativeScore(a.item)
+        if (scoreDelta !== 0) return scoreDelta
+        return a.item.category.localeCompare(b.item.category, 'zh-Hans-CN')
+      })
+      .slice(0, limitPerQuadrant)
+
+    return selected.map((entry, selectedIndex): RepresentativeQuadrantItem => ({
+      ...entry.item,
+      representativeGroup: group,
+      representativeIndex: selectedIndex,
+      representativeVisibleCount: selected.length,
+      representativeTotal: grouped[group].length,
+      originalIndex: entry.index,
+    }))
+  })
+
+  return {
+    visible,
+    hiddenCount: Math.max(0, data.length - visible.length),
+    summary: representativeQuadrantOrder
+      .filter((group) => grouped[group].length > 0)
+      .map((group) => ({
+        group,
+        label: representativeQuadrantLabels[group],
+        total: grouped[group].length,
+        visible: Math.min(grouped[group].length, limitPerQuadrant),
+      })),
+  }
+}
+
+function getRepresentativePosition(item: RepresentativeQuadrantItem) {
+  const bounds = representativeQuadrantBounds[item.representativeGroup]
+  const template = representativeScatterTemplate[item.representativeIndex % representativeScatterTemplate.length]
+  const jitterSeed = stableScatterSeed(`${item.representativeGroup}:${item.category}:${item.originalIndex}`)
+  const jitterX = (jitterSeed.x - 0.5) * 4.2
+  const jitterY = (jitterSeed.y - 0.5) * 3.6
+  const x = clampLayoutValue(bounds.minX + (bounds.maxX - bounds.minX) * template.x + jitterX, bounds.minX, bounds.maxX)
+  const y = clampLayoutValue(bounds.minY + (bounds.maxY - bounds.minY) * template.y + jitterY, bounds.minY, bounds.maxY)
+
+  return { x, y }
+}
+
+function stableScatterSeed(text: string) {
+  let hash = 2166136261
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  const x = ((hash >>> 0) % 997) / 997
+  const y = (((hash >>> 8) % 991) / 991)
+  return { x, y }
+}
+
+function clampLayoutValue(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
 }
 
 function StrategyQuadrantCard({
@@ -1192,17 +1399,27 @@ function StrategyQuadrantCard({
     粮油: { x: 27, y: 31, size: 30, color: '#fda4af', textColor: '#7f1d1d' },
   }
   const hasUpliftSummary = data.some((item) => item.count || item.resourceType || item.quadrant)
-  const maxBubbleContribution = Math.max(...data.map((item) => item.contribution ?? item.size ?? 0), 1)
+  const maxBubbleContribution = Math.max(...data.map((item) => Math.abs(item.contribution ?? item.size ?? 0)), 1)
+  const representativeLimitPerQuadrant = 4
+  const {
+    visible: visibleBubbleData,
+    hiddenCount: hiddenBubbleCount,
+    summary: representativeSummary,
+  } = selectRepresentativeQuadrantItems(data, representativeLimitPerQuadrant)
+  const representativeSummaryText = representativeSummary
+    .map((item) => `${item.label} ${item.visible}/${item.total}`)
+    .join(' · ')
   const getBubbleSize = (item: QuadrantItem) => {
-    if (!hasUpliftSummary) return Math.max(30, item.size)
-    const contribution = Math.max(0, item.contribution ?? item.size)
-    return 36 + Math.sqrt(contribution / maxBubbleContribution) * 22
+    if (!hasUpliftSummary) return Math.min(44, Math.max(28, item.size))
+    const contribution = Math.abs(item.contribution ?? item.size)
+    return Math.min(46, 29 + Math.sqrt(contribution / maxBubbleContribution) * 15)
   }
 
-  const laidOutData = data.map((item) => {
+  const laidOutData = visibleBubbleData.map((item) => {
+    const representativePosition = getRepresentativePosition(item)
     const visual = visualLayout[item.category] ?? {
-      x: Math.min(88, Math.max(22, item.x)),
-      y: Math.min(72, Math.max(28, item.y)),
+      x: representativePosition.x,
+      y: representativePosition.y,
       size: getBubbleSize(item),
       color: item.color,
       textColor: item.contribution || item.count ? '#ffffff' : undefined,
@@ -1241,6 +1458,14 @@ function StrategyQuadrantCard({
         <QuadrantLabel className="right-[7%] top-3" text={hasUpliftSummary ? '稳定维持' : '优先加码区'} toneClass="text-blue-600" />
         <QuadrantLabel className="bottom-[34px] left-[18%]" text={hasUpliftSummary ? '控制折扣' : '减少投入区'} toneClass="text-orange-600" />
         <QuadrantLabel className="bottom-[34px] right-[7%]" text={hasUpliftSummary ? '避免打扰' : '保护基本盘区'} toneClass="text-purple-600" />
+        {hiddenBubbleCount > 0 && (
+          <span
+            className="absolute right-3 top-10 max-w-[76%] truncate rounded-full border border-border bg-white px-2 py-1 text-[11px] font-bold text-muted-foreground shadow-sm"
+            title={`每象限最多 ${representativeLimitPerQuadrant} 个代表：${representativeSummaryText}；另 ${hiddenBubbleCount} 个见策略清单`}
+          >
+            每象限最多 {representativeLimitPerQuadrant} 个代表，另 {hiddenBubbleCount} 个见策略清单
+          </span>
+        )}
 
         <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-xs font-medium text-muted-foreground">
           {hasUpliftSummary ? '自然购买倾向' : '增量贡献'}
@@ -1253,9 +1478,9 @@ function StrategyQuadrantCard({
         <span className="absolute left-[5%] top-[14%] text-xs text-muted-foreground">高</span>
         <span className="absolute bottom-[14%] left-[5%] text-xs text-muted-foreground">低</span>
 
-        {laidOutData.map((item) => (
+        {laidOutData.map((item, index) => (
           <button
-            key={item.category}
+            key={`${item.category}-${index}`}
             type="button"
             onClick={(event) => {
               event.stopPropagation()
@@ -1277,7 +1502,8 @@ function StrategyQuadrantCard({
             }}
             title={[
               `${item.category}: ${item.suggestedAction}`,
-              item.contribution ? `品类贡献：${item.contribution.toFixed(1)} 万元` : '',
+              `象限：${representativeQuadrantLabels[item.representativeGroup]} ${item.representativeIndex + 1}/${item.representativeTotal}`,
+              item.contribution ? `品类贡献：${item.contribution.toLocaleString('zh-CN', { maximumFractionDigits: 1 })}` : '',
               item.count ? `品类数：${item.count}` : '',
               item.resourceType ? `资源类型：${item.resourceType}` : '',
               item.representativeCategories?.length
@@ -1341,9 +1567,9 @@ function RecommendationCard({ group, onOpen }: { group: RecommendationGroup; onO
         <Badge variant="outline" className={`max-w-[104px] shrink-0 truncate ${color.tile} ${color.border}`}>{group.countLabel}</Badge>
       </div>
       <div className="mt-2 flex min-h-[24px] gap-1.5 overflow-hidden">
-        {visibleCategories.map((category) => (
+        {visibleCategories.map((category, index) => (
           <button
-            key={category}
+            key={`${category}-${index}`}
             type="button"
             onClick={() => onOpen(category)}
             className="max-w-[96px] flex-none truncate rounded-lg border border-border bg-[#fbfcfe] px-2 py-0.5 text-left text-[11px] font-semibold leading-5 hover:border-[#f2cf4a] hover:bg-secondary"
@@ -1372,11 +1598,13 @@ function DashboardDrilldownDrawer({
   title,
   summary,
   onClose,
+  onAskAgent,
 }: {
   open: boolean
   title: string
   summary: DashboardSummary
   onClose: () => void
+  onAskAgent: (title: string) => void
 }) {
   if (!open) return null
 
@@ -1403,7 +1631,10 @@ function DashboardDrilldownDrawer({
         )}
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="outline">导出明细</Button>
-          <Button>询问 Agent</Button>
+          <Button onClick={() => onAskAgent(title)}>
+            <MessageSquarePlus className="mr-2 h-4 w-4" />
+            询问 Agent
+          </Button>
         </div>
       </aside>
     </div>
@@ -1708,7 +1939,7 @@ function DetailSeriesChart({
   const right = 14
   const top = 18
   const bottom = 136
-  const currencyScale = unitScale && unitScale > 0 ? unitScale : inferCurrencyScale(series.map((item) => item.value))
+  const currencyScale = resolveCurrencyScale(unitScale, unitLabel, series.map((item) => item.value))
   const displaySeries = series.map((item) => ({ ...item, value: item.value / currencyScale }))
   const values = displaySeries.map((item) => item.value).filter(Number.isFinite)
 
@@ -1747,11 +1978,11 @@ function DetailSeriesChart({
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="mt-4 h-44 w-full" role="img" aria-label={`指标明细趋势（${currencyUnitForScale(currencyScale, unitLabel)}）`}>
-      {gridTicks.map((tick) => {
+      {gridTicks.map((tick, index) => {
         const y = yForValue(tick)
 
         return (
-          <g key={tick}>
+          <g key={`detail-grid-${tick}-${index}`}>
             <line x1={left} x2={width - right} y1={y} y2={y} stroke="#eef2f7" />
             <text x="4" y={y + 4} fontSize="10" fill="#6b7280">
               {formatScaledCurrencyNumber(tick, currencyScale)}
@@ -1764,12 +1995,12 @@ function DetailSeriesChart({
       )}
       <line x1={left} x2={width - right} y1={bottom} y2={bottom} stroke="#d9e1ec" />
       {type === 'bar' ? (
-        points.map((point) => {
+        points.map((point, index) => {
           const baseY = signed ? zeroY : bottom
           const y = Math.min(point.y, baseY)
 
           return (
-            <g key={point.label}>
+            <g key={`${point.label}-${index}`}>
               <rect
                 x={point.x - barWidth / 2}
                 y={y}
@@ -1788,8 +2019,8 @@ function DetailSeriesChart({
       ) : (
         <>
           <path d={linePath} fill="none" stroke={palette.stroke} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-          {points.map((point) => (
-            <g key={point.label}>
+          {points.map((point, index) => (
+            <g key={`${point.label}-${index}`}>
               <circle cx={point.x} cy={point.y} r="4" fill="#ffffff" stroke={palette.stroke} strokeWidth="2" />
               <text x={point.x} y={bottom + 18} textAnchor="middle" fontSize="10" fill="#6b7280">
                 {point.label}
@@ -1839,7 +2070,7 @@ function getMinPoint(series: SparklinePoint[]) {
 }
 
 function formatDetailPoint(point: SparklinePoint, unit?: string, scale?: number) {
-  const currencyScale = scale && scale > 0 ? scale : inferCurrencyScale([point.value])
+  const currencyScale = resolveCurrencyScale(scale, unit, [point.value])
   return `${point.label} ${formatCurrencyWithUnit(point.value, currencyScale, false, unit)}`
 }
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -20,6 +21,13 @@ DEFAULT_DASHBOARD_CHART_IDS: tuple[ChartId, ...] = (
     "uplift_quadrant",
 )
 CHART_IDS: set[ChartId] = set(DEFAULT_DASHBOARD_CHART_IDS)
+EVIDENCE_RESULT_PATHS: tuple[str, ...] = (
+    ".analysis/diagnostics_result.json",
+    ".analysis/psm_did_result.json",
+    ".analysis/localgap_result.json",
+    ".analysis/uplift_result.json",
+    ".analysis/latest_result.json",
+)
 
 WIDTH = 1000
 HEIGHT = 400
@@ -80,6 +88,22 @@ def render_dashboard_chart_artifacts(
         )
 
     workspace = Path(workspace_path)
+    evidence = _dashboard_evidence_status(workspace)
+    if not evidence["ok"]:
+        return ToolResult(
+            ok=False,
+            action="chart.render_dashboard",
+            summary="Dashboard chart rendering blocked: usable analysis evidence is missing.",
+            error={
+                "code": "ANALYSIS_EVIDENCE_REQUIRED",
+                "message": "Render analysis dashboard charts only after current analysis result artifacts exist.",
+                "details": evidence,
+            },
+            assistant_hint=(
+                "Run diagnostics/full pipeline first, or fix failed analysis artifacts before refreshing dashboard PNGs."
+            ),
+        )
+
     generated_at = datetime.now().isoformat(timespec="seconds")
     artifacts = []
     for chart_id in requested_chart_ids:
@@ -111,6 +135,44 @@ def render_dashboard_chart_artifacts(
             "Use these images for the result dashboard and regenerate them after analysis data changes."
         ),
     )
+
+
+def _dashboard_evidence_status(workspace: Path) -> dict:
+    evidence = []
+    for rel_path in EVIDENCE_RESULT_PATHS:
+        path = workspace / rel_path
+        exists = path.exists()
+        usable = _usable_evidence_file(path)
+        evidence.append({"path": rel_path, "exists": exists, "usable": usable})
+    return {"ok": any(item["usable"] for item in evidence), "evidence": evidence}
+
+
+def _usable_evidence_file(path: Path) -> bool:
+    if not path.exists() or not path.is_file():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict) or not payload:
+        return False
+    if _contains_truthy_demo(payload):
+        return False
+    status = str(payload.get("method_status") or payload.get("status") or "").lower()
+    return status not in {"failed", "error", "stub"}
+
+
+def _contains_truthy_demo(value) -> bool:
+    if isinstance(value, dict):
+        if value.get("demo") is True or value.get("showcase") is True:
+            return True
+        return any(_contains_truthy_demo(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_truthy_demo(item) for item in value)
+    if isinstance(value, str):
+        lowered = value.lower()
+        return "demo" in lowered or "fixture" in lowered or "mock" in lowered
+    return False
 
 
 def _canvas() -> tuple[Image.Image, ImageDraw.ImageDraw]:

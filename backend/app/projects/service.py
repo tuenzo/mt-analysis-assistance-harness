@@ -27,6 +27,7 @@ from app.workspace.context_summary import ContextSummaryWriter
 
 class ProjectService:
     VALID_DATA_ROLES = {"order_info", "exposure_info", "activity_timeline", "unknown"}
+    RAW_DATA_ROLES = {"order_info", "exposure_info", "activity_timeline"}
     PREVIEW_BYTE_LIMIT = 64 * 1024
     PREVIEW_LINE_LIMIT = 200
 
@@ -232,6 +233,7 @@ class ProjectService:
             imported: list[dict] = []
             skipped: list[dict] = []
             role_overrides = roles or {}
+            selected_raw_roles: set[str] = set()
 
             for selection in selected_files:
                 raw_source = selection.get("source_path") or selection.get("path") or selection.get("name")
@@ -246,12 +248,22 @@ class ProjectService:
                     skipped.append({"name": child.name, "reason": "unsupported_file_type"})
                     continue
 
+                headers = self._read_csv_headers(child)
                 role = selection.get("role") or role_overrides.get(child.name) or "unknown"
                 if role not in self.VALID_DATA_ROLES:
                     skipped.append({"name": child.name, "reason": f"invalid_role:{role}"})
                     continue
+                if role in self.RAW_DATA_ROLES and role in selected_raw_roles:
+                    skipped.append({"name": child.name, "reason": f"duplicate_role:{role}"})
+                    continue
+                if role in self.RAW_DATA_ROLES and self._looks_like_processed_panel(child.name, headers):
+                    skipped.append({"name": child.name, "reason": "processed_panel_not_raw_source"})
+                    continue
+
                 reason = selection.get("reason") or ""
                 project_file = self._register_file_path(db, project, child, role)
+                if role in self.RAW_DATA_ROLES:
+                    selected_raw_roles.add(role)
                 imported.append({
                     "file_id": project_file.id,
                     "role": project_file.role,
@@ -652,6 +664,10 @@ class ProjectService:
             "headers": [],
             "preview": "",
             "preview_truncated": False,
+            "role_guess": "unknown",
+            "role_confidence": 0.0,
+            "role_reason": "not_classified",
+            "looks_processed_panel": False,
         }
         if child.is_dir():
             base["skipped"] = True
@@ -672,6 +688,7 @@ class ProjectService:
             base["headers"] = headers
             base["preview"] = preview
             base["preview_truncated"] = truncated
+            base.update(self._classify_source_file(child.name, headers))
         except Exception as e:
             base["skipped"] = True
             base["skip_reason"] = f"preview_failed:{e}"
@@ -693,3 +710,58 @@ class ProjectService:
         with open(path, newline="", encoding="utf-8-sig", errors="replace") as f:
             reader = csv.reader(f)
             return next(reader, [])
+
+    @classmethod
+    def _classify_source_file(cls, filename: str, headers: list[str]) -> dict:
+        if cls._looks_like_processed_panel(filename, headers):
+            return {
+                "role_guess": "category_day_panel",
+                "role_confidence": 0.95,
+                "role_reason": "filename_or_headers_match_processed_category_day_panel",
+                "looks_processed_panel": True,
+            }
+
+        filename_guess = cls._guess_file_role(filename)
+        header_guess = cls._guess_role_from_headers(headers)
+        if filename_guess != "unknown" and (header_guess in {"unknown", filename_guess}):
+            return {
+                "role_guess": filename_guess,
+                "role_confidence": 0.85 if header_guess == filename_guess else 0.65,
+                "role_reason": "filename_match" if header_guess == "unknown" else "filename_and_headers_match",
+                "looks_processed_panel": False,
+            }
+        if header_guess != "unknown":
+            return {
+                "role_guess": header_guess,
+                "role_confidence": 0.75,
+                "role_reason": "headers_match",
+                "looks_processed_panel": False,
+            }
+        return {
+            "role_guess": "unknown",
+            "role_confidence": 0.0,
+            "role_reason": "no_filename_or_header_match",
+            "looks_processed_panel": False,
+        }
+
+    @staticmethod
+    def _guess_role_from_headers(headers: list[str]) -> str:
+        lowered = {header.strip().lower() for header in headers}
+        if {"base_sku_id", "view_uv"}.issubset(lowered) or ("buy_uv" in lowered and "sku_sale_amt" not in lowered):
+            return "exposure_info"
+        if {"start_date", "end_date"}.issubset(lowered) or "activity_name" in lowered or "activity_id" in lowered or "营销活动" in lowered or "日期" in lowered:
+            return "activity_timeline"
+        if "order_id" in lowered or "stat_pay_main_order_id" in lowered or "sku_sale_amt" in lowered:
+            return "order_info"
+        return "unknown"
+
+    @staticmethod
+    def _looks_like_processed_panel(filename: str, headers: list[str]) -> bool:
+        lower_name = filename.lower()
+        if "category_date_panel" in lower_name or "category_day_panel" in lower_name or "category_daily_panel" in lower_name:
+            return True
+        lowered = {header.strip().lower() for header in headers}
+        has_category_date = "date" in lowered and bool({"category", "category_name", "category_name_cn", "category_key"} & lowered)
+        has_panel_metrics = bool({"gmv", "sku_sale_amt"} & lowered) and bool({"is_activity", "activity_name"} & lowered)
+        has_exposure_metrics = bool({"view_uv", "exposure", "buy_uv"} & lowered)
+        return has_category_date and has_panel_metrics and has_exposure_metrics

@@ -1217,6 +1217,11 @@ If latest_result_available contains "uplift", say uplift_result.json is availabl
 when either of those facts is true.
 Before citing metrics or recommendations, call result.get_latest or artifact.read and cite artifact paths.
 For artifact.read, use payload {{"path": ".analysis/<file>.json"}}.
+Before starting or interpreting a full analysis, run quality.audit_lineage unless a fresh lineage audit already
+exists in this turn. If lineage gates fail, explain the blocking gate instead of treating cached, demo, or
+partial outputs as business evidence. After analysis.run_full_pipeline or a result refresh completes, run
+quality.score_reference_alignment before final business conclusions. Treat hard caps in
+reference_alignment_score.json as blockers and cite the score artifact/diff table.
 Use observed/descriptive language for diagnostics-only claims, directional language for LocalGap or PSM-DID,
 and exploratory language for stub outputs. When generating reports, use report.generate and treat
 .analysis/report_plan.json as the evidence skeleton.

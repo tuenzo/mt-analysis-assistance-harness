@@ -119,8 +119,14 @@ def _prepare_panel(panel: pd.DataFrame) -> pd.DataFrame:
         prepared["is_activity"] = False
     if "is_payday" not in prepared.columns:
         prepared["is_payday"] = False
+    if "pre_activity_window" not in prepared.columns:
+        prepared["pre_activity_window"] = 0
+    if "post_activity_window" not in prepared.columns:
+        prepared["post_activity_window"] = 0
     prepared["is_activity"] = prepared["is_activity"].astype(bool)
     prepared["is_payday"] = prepared["is_payday"].astype(bool)
+    prepared["pre_activity_window"] = pd.to_numeric(prepared["pre_activity_window"], errors="coerce").fillna(0).astype(int)
+    prepared["post_activity_window"] = pd.to_numeric(prepared["post_activity_window"], errors="coerce").fillna(0).astype(int)
     prepared["weekday"] = prepared["date"].dt.weekday
     prepared["weekday_name"] = prepared["date"].dt.day_name()
     prepared["conversion_rate"] = np.where(prepared["view_uv"] > 0, prepared["buy_uv"] / prepared["view_uv"], 0.0)
@@ -130,7 +136,13 @@ def _prepare_panel(panel: pd.DataFrame) -> pd.DataFrame:
 def _gmv_trend(panel: pd.DataFrame) -> list[dict[str, Any]]:
     trend = (
         panel.groupby("date", as_index=False)
-        .agg(gmv=("gmv", "sum"), activity_rows=("is_activity", "sum"), category_count=("category", "nunique"))
+        .agg(
+            gmv=("gmv", "sum"),
+            activity_rows=("is_activity", "sum"),
+            pre_activity_rows=("pre_activity_window", "sum"),
+            post_activity_rows=("post_activity_window", "sum"),
+            category_count=("category", "nunique"),
+        )
         .sort_values("date")
     )
     trend["rolling_7d_gmv"] = trend["gmv"].rolling(7, min_periods=1).mean()
@@ -140,6 +152,8 @@ def _gmv_trend(panel: pd.DataFrame) -> list[dict[str, Any]]:
             "gmv": round(float(row.gmv), 2),
             "rolling_7d_gmv": round(float(row.rolling_7d_gmv), 2),
             "activity_rows": int(row.activity_rows),
+            "pre_activity_rows": int(row.pre_activity_rows),
+            "post_activity_rows": int(row.post_activity_rows),
             "category_count": int(row.category_count),
         }
         for row in trend.itertuples(index=False)

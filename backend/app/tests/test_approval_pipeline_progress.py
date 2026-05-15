@@ -2,7 +2,7 @@ import json
 import os
 import shutil
 import tempfile
-from pathlib import Path
+from io import BytesIO
 
 from fastapi.testclient import TestClient
 
@@ -132,42 +132,67 @@ def _create_project_with_raw_data(client: TestClient) -> dict:
     response = client.post("/api/projects", json={"name": "ApprovalPipelineTest"})
     project = response.json()
 
-    raw_dir = Path(project["workspace_path"]) / "data" / "raw"
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    (raw_dir / "order_info.csv").write_text(
-        "\n".join(
-            [
-                "order_id,user_id,category,date,gmv,discount",
-                "o1,u1,food,2024-01-01,100,10",
-                "o2,u2,food,2024-01-02,160,12",
-                "o3,u3,drink,2024-01-01,80,5",
-                "o4,u4,drink,2024-01-02,120,8",
-            ]
-        ),
-        encoding="utf-8",
+    client.post(
+        f"/api/projects/{project['id']}/files",
+        files={
+            "file": (
+                "order_info.csv",
+                BytesIO(
+                    "\n".join(
+                        [
+                            "order_id,user_id,category,date,gmv,discount",
+                            "o1,u1,food,2024-01-01,100,10",
+                            "o2,u2,food,2024-01-02,160,12",
+                            "o3,u3,drink,2024-01-01,80,5",
+                            "o4,u4,drink,2024-01-02,120,8",
+                        ]
+                    ).encode("utf-8")
+                ),
+                "text/csv",
+            )
+        },
+        data={"role": "order_info"},
     )
-    (raw_dir / "exposure_info.csv").write_text(
-        "\n".join(
-            [
-                "category,date,exposure",
-                "food,2024-01-01,1000",
-                "food,2024-01-02,1200",
-                "drink,2024-01-01,700",
-                "drink,2024-01-02,900",
-            ]
-        ),
-        encoding="utf-8",
+    client.post(
+        f"/api/projects/{project['id']}/files",
+        files={
+            "file": (
+                "exposure_info.csv",
+                BytesIO(
+                    "\n".join(
+                        [
+                            "category,date,exposure",
+                            "food,2024-01-01,1000",
+                            "food,2024-01-02,1200",
+                            "drink,2024-01-01,700",
+                            "drink,2024-01-02,900",
+                        ]
+                    ).encode("utf-8")
+                ),
+                "text/csv",
+            )
+        },
+        data={"role": "exposure_info"},
     )
-    (raw_dir / "activity_timeline.csv").write_text(
-        "\n".join(
-            [
-                "category,date,payday,activity_id",
-                "food,2024-01-01,1,act1",
-                "food,2024-01-02,0,act1",
-                "drink,2024-01-01,1,act1",
-                "drink,2024-01-02,0,",
-            ]
-        ),
-        encoding="utf-8",
+    client.post(
+        f"/api/projects/{project['id']}/files",
+        files={
+            "file": (
+                "activity_timeline.csv",
+                BytesIO(
+                    "\n".join(
+                        [
+                            "category,date,payday,activity_id",
+                            "food,2024-01-01,1,act1",
+                            "food,2024-01-02,0,act1",
+                            "drink,2024-01-01,1,act1",
+                            "drink,2024-01-02,0,",
+                        ]
+                    ).encode("utf-8")
+                ),
+                "text/csv",
+            )
+        },
+        data={"role": "activity_timeline"},
     )
     return project

@@ -186,6 +186,8 @@ function buildTrend(diagnostics: JsonRecord | null, localgap: JsonRecord | null)
       const date = toText(row.date)
       const actualGmv = toNumber(row.gmv)
       const isActivityDay = toNumber(row.activity_rows) > 0
+      const preActivityRows = toNumber(row.pre_activity_rows)
+      const postActivityRows = toNumber(row.post_activity_rows)
       const localGapShare =
         isActivityDay && activityGmvTotal > 0
           ? actualGmv / activityGmvTotal
@@ -204,7 +206,7 @@ function buildTrend(diagnostics: JsonRecord | null, localgap: JsonRecord | null)
         discount: roundMoney(totalDiscount * localGapShare),
         isActivityDay,
         isPayday: inferPayday(date),
-        period: inferPeriod(date, isActivityDay, firstActivityDate, lastActivityDate),
+        period: inferPeriod(date, isActivityDay, preActivityRows, postActivityRows, firstActivityDate, lastActivityDate),
       }
     })
     .filter((item) => item.date)
@@ -480,9 +482,9 @@ function resultSection(latestResult: JsonRecord | null, key: string, ownKeys: st
 
 function defaultUnitContext(): UnitContext {
   return {
-    unitLabel: 'GMV原始单位',
+    unitLabel: '元',
     scale: 1,
-    source: 'No source-unit metadata was available; values remain in raw GMV units.',
+    source: 'No source-unit metadata was available; GMV values are treated as yuan.',
   }
 }
 
@@ -490,7 +492,7 @@ function readUnitContext(panelSummary: JsonRecord | null, localgap: JsonRecord |
   const measureUnits = asRecord(panelSummary?.measure_units) || asRecord(localgap?.measure_units)
   const gmvUnit = asRecord(measureUnits?.gmv)
   if (!gmvUnit) return defaultUnitContext()
-  const unitLabel = toText(gmvUnit.unit_label || gmvUnit.unit) || 'GMV原始单位'
+  const unitLabel = normalizeAmountUnitLabel(toText(gmvUnit.unit_label || gmvUnit.unit))
   const rawScale = toNumber(gmvUnit.scale, 1)
   return {
     unitLabel,
@@ -566,6 +568,19 @@ function categorizeRecommendation(action: JsonRecord, limitedEvidence = false): 
   const score = toNumber(action.uplift_score, Number.NaN)
   const modelUplift = toNumber(action.model_uplift, 0)
   const doseUplift = toNumber(action.dose_uplift, 0)
+  const localGap = toNumber(action.local_gap, Number.NaN)
+  const isNegative = (Number.isFinite(score) && score < 0) || (Number.isFinite(localGap) && localGap < 0)
+  const hasPrioritizeSignal =
+    actionText.includes('prioritize') ||
+    actionText.includes('protect_high_response') ||
+    actionText.includes('boost') ||
+    actionText.includes('scale')
+  const hasObserveSignal =
+    actionText.includes('observe') ||
+    actionText.includes('refresh') ||
+    actionText.includes('selective') ||
+    actionText.includes('holdout') ||
+    actionText.includes('test')
 
   if (actionText.includes('avoid') || actionText.includes('do_not') || actionText.includes('reduce')) return 'avoid'
   if (limitedEvidence) {
@@ -573,9 +588,12 @@ function categorizeRecommendation(action: JsonRecord, limitedEvidence = false): 
     if (modelUplift < 0 || doseUplift < 0) return 'control_discount'
     return 'watch'
   }
+  if (isNegative) return doseUplift < 0 ? 'control_discount' : 'avoid'
+  if (modelUplift < 0 || doseUplift < 0) return 'control_discount'
+  if (hasObserveSignal) return 'watch'
+  if (hasPrioritizeSignal) return 'boost'
   if (Number.isFinite(score) && score >= 60) return 'boost'
   if (Number.isFinite(score) && score < 30) return 'avoid'
-  if (modelUplift < 0 || doseUplift < 0) return 'control_discount'
   if (actionText.includes('discount') && !actionText.includes('exposure')) return 'control_discount'
   return 'watch'
 }
@@ -631,10 +649,14 @@ function sumLocalGapCategory(localgap: JsonRecord | null, key: string) {
 function inferPeriod(
   date: string,
   isActivityDay: boolean,
+  preActivityRows: number,
+  postActivityRows: number,
   firstActivityDate: string,
   lastActivityDate: string,
 ): TrendDatum['period'] {
   if (isActivityDay) return 'during'
+  if (preActivityRows > 0) return 'pre'
+  if (postActivityRows > 0) return 'post'
   if (firstActivityDate && date < firstActivityDate) return 'pre'
   if (lastActivityDate && date > lastActivityDate) return 'post'
   return firstActivityDate ? 'post' : 'pre'
@@ -669,11 +691,12 @@ function getRangeFromPanel(panelSummary: JsonRecord | null) {
 }
 
 function formatCurrencyParts(value: number, signed = false, unitContext = defaultUnitContext()) {
-  const displayValue = value / unitContext.scale
+  const displayScale = displayCurrencyScale([value], unitContext)
+  const displayValue = value / displayScale
   const prefix = signed && value > 0 ? '+' : ''
   return {
     value: `${prefix}${formatNumber(displayValue)}`,
-    unit: unitContext.unitLabel,
+    unit: displayCurrencyUnit(displayScale, unitContext),
   }
 }
 
@@ -691,6 +714,25 @@ function formatSignedPercent(numerator: number, denominator: number) {
 function formatSharePercent(part: number, total: number) {
   if (!Number.isFinite(part) || !Number.isFinite(total) || total === 0) return '0.0%'
   return `${((part / total) * 100).toFixed(1)}%`
+}
+
+function normalizeAmountUnitLabel(unitLabel?: string) {
+  const normalized = String(unitLabel || '').trim()
+  if (!normalized || normalized.includes('原始单位')) return '元'
+  return normalized
+}
+
+function displayCurrencyScale(values: number[], unitContext = defaultUnitContext()) {
+  const baseUnit = normalizeAmountUnitLabel(unitContext.unitLabel)
+  const maxValue = Math.max(0, ...values.filter(Number.isFinite).map((value) => Math.abs(value)))
+  if ((unitContext.scale <= 1 || baseUnit === '元') && maxValue >= 10000) return 10000
+  return unitContext.scale > 0 ? unitContext.scale : 1
+}
+
+function displayCurrencyUnit(scale: number, unitContext = defaultUnitContext()) {
+  const baseUnit = normalizeAmountUnitLabel(unitContext.unitLabel)
+  if (scale === 10000 && baseUnit === '元') return '万元'
+  return baseUnit
 }
 
 function addUnique(list: string[], item: string) {

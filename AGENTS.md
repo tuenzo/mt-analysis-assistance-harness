@@ -2,7 +2,7 @@
 
 > 商业分析伴随式工作区。当前处于 **MVP 0：骨架验证阶段**。
 
-## Current Dev Environment Record (2026-05-12)
+## Current Dev Environment Record (2026-05-13)
 
 This section is the current source of truth for local development environment
 usage confirmed in the active agent-flow validation conversation.
@@ -18,6 +18,7 @@ usage confirmed in the active agent-flow validation conversation.
 
 ```powershell
 cd backend
+$env:APP_DATABASE_URL='sqlite:///E:/CodingProject/meituancomp-analysis-assistance-harness/backend/business_analysis.db'
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 18081
 ```
 
@@ -33,6 +34,10 @@ npm run dev -- -H 127.0.0.1 -p 3010
   - Backend: `http://127.0.0.1:18081`
   - Frontend: `http://127.0.0.1:3010`
   - Agent runtime metadata: `GET http://127.0.0.1:18081/api/agent/runtime`
+- Default SQLite path: repository-root `business_analysis.db` unless
+  `APP_DATABASE_URL` is explicitly set. Current validation runs explicitly use
+  `backend/business_analysis.db` because it contains the active real-data
+  projects.
 - Agent-flow validation project name: `Keemart 促销增长全流程项目`. All current
   end-to-end tests should be run under that project unless the user changes the
   validation target.
@@ -250,6 +255,7 @@ cp .env.example .env
 | `ANTHROPIC_API_MODEL` | 模型名称 | `LongCat-Flash-Chat` |
 | `APP_AGENT_RUNTIME_PROVIDER` | `mock` / `claude_agent_sdk` | `claude_agent_sdk` |
 | `APP_AGENT_PERMISSION_MODE` | `dontAsk` / `manual` | `dontAsk` |
+| `APP_DATABASE_URL` | 显式数据库 URL；未设置时固定为仓库根 `business_analysis.db` | - |
 | `APP_WORKSPACE_ROOT` | 工作区根目录 | `./workspaces` |
 
 配置优先级：环境变量 > `.env` > 代码默认值。
@@ -279,13 +285,14 @@ npm run build                   # 构建验证
 系统目标分析链路（从 specV1）：
 
 1. **Data Intake** — `order_info.csv` / `exposure_info.csv` / `activity_timeline.csv`
-2. **Schema & Quality** — `schema.infer`, `data.validate`
+2. **Schema & Quality** — `schema.infer`, `data.validate`, `quality.audit_lineage`
 3. **Panel Build** — `panel.build_category_day`（category × day，GMV/discount/exposure/order/user）
 4. **Descriptive Diagnostics** — `analysis.run_diagnostics`
 5. **Causal Direction** — `analysis.run_psm_did`
 6. **Increment Decomposition** — `analysis.run_localgap`
 7. **Dose Response** — `analysis.run_gps_uplift`
 8. **Uplift & Strategy** — 策略矩阵（Persuadables / Sure Things / Lost Causes / Do Not Disturb）
-9. **Report Generation** — `report.generate`
+9. **Reference Alignment Quality** — `quality.score_reference_alignment`
+10. **Report Generation** — `report.generate`
 
 当前 MVP0 阶段：stub 实现，接口先行，逐步替换为真实算法。

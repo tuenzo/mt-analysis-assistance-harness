@@ -6,7 +6,7 @@ from io import BytesIO
 from pathlib import Path
 from fastapi.testclient import TestClient
 from app.main import app
-from app.core.database import init_db
+from app.core.database import init_db, reset_engine
 from app.core.permissions import PermissionLevel
 from app.projects.models import ProjectFile
 from app.core.database import get_session
@@ -15,12 +15,17 @@ from app.workspace.manifest import ProjectManifest
 
 
 @pytest.fixture
-def test_db():
+def test_db(monkeypatch):
     tmp = tempfile.mkdtemp()
+    original_cwd = os.getcwd()
+    db_path = Path(tmp) / "test.db"
+    monkeypatch.setenv("APP_DATABASE_URL", f"sqlite:///{db_path.as_posix()}")
     os.chdir(tmp)
+    reset_engine()
     init_db()
     yield
-    os.chdir("..")
+    os.chdir(original_cwd)
+    reset_engine()
     shutil.rmtree(tmp)
 
 
@@ -147,6 +152,35 @@ def test_ingest_data_source_imports_csv_and_refreshes_manifest(client, project):
     assert manifest.current_stage == "data_uploaded"
     assert len(manifest.files) == 3
     assert (workspace_path / ".analysis" / "context_summary.md").read_text(encoding="utf-8")
+
+
+def test_discover_and_ingest_protect_processed_panel_from_raw_role(client, project):
+    proj_id = project["id"]
+    source = Path.cwd() / "panel_source"
+    source.mkdir()
+    (source / "category_date_panel.csv").write_text(
+        "category,date,gmv,view_uv,is_activity\nfood,2026-01-01,100,20,1",
+        encoding="utf-8",
+    )
+
+    client.put(f"/api/projects/{proj_id}/data-source", json={"path": str(source)})
+    discover = client.post(f"/api/projects/{proj_id}/data-source/discover", json={})
+
+    assert discover.status_code == 200
+    candidate = discover.json()["data"]["candidates"][0]
+    assert candidate["role_guess"] == "category_day_panel"
+    assert candidate["looks_processed_panel"] is True
+
+    ingest = client.post(f"/api/projects/{proj_id}/data-source/ingest", json={
+        "selected_files": [
+            {"source_path": str(source / "category_date_panel.csv"), "role": "order_info", "reason": "mistaken raw order"}
+        ]
+    })
+
+    assert ingest.status_code == 200
+    data = ingest.json()["data"]
+    assert data["imported_count"] == 0
+    assert data["skipped"][0]["reason"] == "processed_panel_not_raw_source"
 
 
 def test_data_validate_marks_ingested_files_validated(client, project):
